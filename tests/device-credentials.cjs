@@ -1,0 +1,4 @@
+const fs=require('fs'),path=require('path'),cp=require('child_process');const adb=path.resolve('.tools/android-sdk/platform-tools/adb.exe');const run=(args,options={})=>cp.execFileSync(adb,args,{timeout:90000,maxBuffer:8*1024*1024,...options});
+run(['shell','am','force-stop','com.vocast.app']);run(['shell','run-as','com.vocast.app','mkdir','-p','files']);
+const keys=JSON.stringify({llmKey:process.env.MINIMAX_KEY,ttsKey:process.env.MIMO_KEY,llmBase:'https://api.minimax.cn/v1'});if(!process.env.MINIMAX_KEY||!process.env.MIMO_KEY)throw Error('Missing test credentials');run(['exec-in','run-as','com.vocast.app','tee','files/credentials-import.json'],{input:keys});
+console.log(run(['shell','am','start','-W','-n','com.vocast.app/.MainActivity']).toString());console.log('Test credentials sent via stdin to debug-only importer; values not logged.');

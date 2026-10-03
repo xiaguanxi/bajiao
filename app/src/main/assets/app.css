@@ -1,2 +1,527 @@
-html,body{margin:0;min-height:100%;background:#f8f7f2}body{color-scheme:light}#app{padding:0;max-width:720px;margin:auto;font-size:15px;min-height:100vh}#app .vc-main{padding:22px 22px 100px;min-height:calc(100vh - 125px)}#app h1{font-size:30px}#app .vc-nav{position:fixed;bottom:0;left:0;right:0;padding:14px 10px max(12px,env(safe-area-inset-bottom));z-index:10;background:var(--vc-bg)}#app .vc-nav button{min-height:44px;font-size:12px;flex:1}#app button,#app input,#app select,#app textarea{font:inherit}#app input[type=text],#app input[type=password],#app select,#app textarea{font-size:16px}#app .vc-btn{min-height:48px}#app .vc-link{min-height:44px;font-size:13px}#app .vc-tag{font-size:12px}#app small,#app .vc-sub{font-size:13px}#app .vc-panel h3{font-size:16px}#app .vc-tabs button{font-size:14px}#app .vc-row>div,#app .vc-row>span{min-width:0;overflow-wrap:anywhere}#app #toast{position:fixed;bottom:94px;left:20px;right:20px;z-index:40;border-radius:14px;background:var(--vc-text);color:var(--vc-bg);padding:14px;box-shadow:0 4px 20px #0002;white-space:pre-wrap;overflow-wrap:anywhere}#app #toast:empty{display:none}#app #busy{position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;background:#0006;display:grid;place-items:center;padding:28px}#app #busy[hidden]{display:none}#app #busy>div{padding:24px;border-radius:20px;background:var(--vc-paper);color:var(--vc-text)}#app .vc-cover{height:174px}#app .vc-player-cover{height:252px}#app .vc-detail-cover{height:126px}#app .reader{font:18px/2.1 Georgia,'Noto Serif SC',serif;white-space:pre-wrap;overflow-wrap:anywhere}#app .reader p{margin:16px 0;text-indent:2em}#app .vc-form{font:16px/1.7 sans-serif}#app .wide{width:100%}#app .empty{padding:46px 15px;text-align:center}#app .mini{font-size:12px;color:var(--vc-muted)}#app .danger{color:var(--vc-warn)}#app .footer-note{font-size:12px;color:var(--vc-muted);margin:18px 0}#app .task-row{padding:14px 0;border-bottom:1px solid var(--vc-line)}#app .vc-prose h3{margin:20px 0}#app .pre{white-space:pre-wrap}#app .voice-name{overflow-wrap:anywhere}#app .big-progress{width:100%;accent-color:var(--vc-accent)}@media(prefers-color-scheme:dark){html,body{background:#181d1b}body{color-scheme:dark}}@media(max-width:360px){#app .vc-main{padding:18px 16px 95px}#app .vc-title{font-size:23px}#app .vc-split{gap:8px}}
-#app .vc-detail-cover{width:92px;min-width:92px;flex-shrink:0;padding:12px}#app .vc-detail-cover small{font-size:8px;letter-spacing:1px}#app .vc-detail-cover b{font-size:17px;letter-spacing:2px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}#app details summary{cursor:pointer;min-height:36px;color:var(--vc-accent)}
+/* Vocast Responsive & Aesthetic Typography */
+:root {
+    --vc-font-scale: 1;
+}
+
+html {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #f8f7f2;
+}
+
+body {
+    color-scheme: light;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* 响应式平板/大屏缩放支持：按比例整体放大字号与组件尺度 */
+@media (min-width: 600px) {
+    html {
+        font-size: 17.5px;
+    }
+    #app {
+        max-width: 740px;
+    }
+}
+
+@media (min-width: 800px) {
+    html {
+        font-size: 19px;
+    }
+    #app {
+        max-width: 820px;
+    }
+}
+
+#app {
+    padding: 0;
+    max-width: 720px;
+    margin: auto;
+    font-size: 1rem;
+    line-height: 1.55;
+    min-height: 100vh;
+}
+
+#app .vc-main {
+    padding: 20px 20px 110px;
+    min-height: calc(100vh - 125px);
+}
+
+/* 标题比例统一 */
+#app h1 {
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0.35rem 0 0.6rem;
+}
+
+#app h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+#app h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+#app small,
+#app .vc-sub {
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+/* ========================================================
+   图标与文字间距深度把控（核心优化）
+   ======================================================== */
+
+/* 所有 Lucide SVG 图标基础规范 */
+#app svg.lucide,
+#app i[data-lucide] svg,
+#app svg {
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* 1. 按钮中的图标与文字间距 */
+#app .vc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px; /* 图标与文字保持舒适的 8px 呼吸间距 */
+    min-height: 3rem;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 14px;
+    transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+#app .vc-btn svg {
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+/* 2. 链接与轻量操作项中的图标与文字间距 */
+#app .vc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px; /* 链接文字与图标间距 */
+    min-height: 42px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 6px 4px;
+    vertical-align: middle;
+}
+
+#app .vc-link svg {
+    width: 1.05rem;
+    height: 1.05rem;
+}
+
+/* 3. 底部主导航条 */
+#app .vc-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 10px max(10px, env(safe-area-inset-bottom));
+    z-index: 10;
+    background: var(--vc-bg);
+    border-top: 1px solid var(--vc-line);
+    display: flex;
+    justify-content: space-around;
+    backdrop-filter: blur(12px);
+}
+
+#app .vc-nav button {
+    min-height: 46px;
+    font-size: 0.78rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px; /* 导航图标与文字保持 5px 纵向间距，告别拥挤 */
+    padding: 4px 0;
+    border-radius: 10px;
+    transition: color 0.15s ease;
+}
+
+#app .vc-nav button svg {
+    width: 1.35rem;
+    height: 1.35rem;
+}
+
+#app .vc-nav button span {
+    letter-spacing: 0.02em;
+}
+
+/* 4. 菜单卡片与入口项（如“你的声音档案”） */
+#app .vc-menu {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px; /* 左图标、中间文字、右箭头之间的开阔间距 */
+    text-align: left;
+    background: var(--vc-paper);
+    border: 1px solid var(--vc-line);
+    border-radius: 18px;
+    padding: 16px 18px;
+    margin: 14px 0;
+    cursor: pointer;
+}
+
+#app .vc-menu > svg:first-child {
+    width: 1.45rem;
+    height: 1.45rem;
+    color: var(--vc-accent);
+    margin-right: 2px;
+}
+
+#app .vc-menu > svg:last-child {
+    width: 1.15rem;
+    height: 1.15rem;
+    color: var(--vc-muted);
+    margin-left: auto;
+}
+
+#app .vc-menu span {
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+#app .vc-menu small {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.82rem;
+}
+
+/* 5. 空状态提示：图标与标题充分拉开呼吸感 */
+#app .empty {
+    padding: 52px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#app .empty svg {
+    width: 3.2rem;
+    height: 3.2rem;
+    margin-bottom: 18px; /* 空状态图标下边距加大，视觉层次更清晰 */
+    color: var(--vc-muted);
+    opacity: 0.75;
+}
+
+#app .empty h3 {
+    margin-bottom: 8px;
+    font-size: 1.15rem;
+}
+
+#app .empty .vc-sub {
+    margin-bottom: 22px;
+}
+
+/* 6. 顶部栏与返回按钮 */
+#app .vc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+#app .vc-icon {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+#app .vc-icon svg {
+    width: 1.35rem;
+    height: 1.35rem;
+}
+
+/* 7. 播放控制条与操作按键 */
+#app .vc-player-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin: 24px 0 16px;
+}
+
+#app .vc-player-controls .vc-btn {
+    gap: 8px;
+    padding: 0.75rem 1.1rem;
+}
+
+/* 8. 标注列表与说话人修正项 */
+#app .vc-quote {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--vc-paper);
+    border: 1px solid var(--vc-line);
+    margin: 12px 0;
+}
+
+#app .vc-quote .vc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+#app .vc-quote .vc-link {
+    font-weight: 600;
+    color: var(--vc-accent);
+}
+
+#app .vc-quote .vc-link svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    opacity: 0.85;
+}
+
+#app .vc-quote p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin: 6px 0;
+}
+
+/* 9. 表单、输入框与提示 */
+#app button,
+#app input,
+#app select,
+#app textarea {
+    font: inherit;
+}
+
+#app input[type=text],
+#app input[type=password],
+#app select,
+#app textarea {
+    font-size: 0.95rem;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--vc-line);
+    background: var(--vc-paper);
+    color: var(--vc-text);
+}
+
+#app .vc-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    padding: 4px 9px;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+#app .vc-tag svg {
+    width: 0.85rem;
+    height: 0.85rem;
+}
+
+#app .vc-panel h3 {
+    font-size: 1.05rem;
+}
+
+#app .vc-tabs button {
+    font-size: 0.92rem;
+    padding: 10px 16px;
+}
+
+#app .vc-row > div,
+#app .vc-row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* 10. 阅读器排版优化（大方舒展，符合人体工学） */
+#app .reader {
+    font: 1.15rem/2.1 "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 6px 2px;
+    color: var(--vc-text);
+}
+
+#app .reader p {
+    margin: 1.1em 0;
+    text-indent: 2em;
+    letter-spacing: 0.02em;
+}
+
+/* 弹窗与浮层 */
+#app #toast {
+    position: fixed;
+    bottom: 94px;
+    left: 20px;
+    right: 20px;
+    z-index: 40;
+    border-radius: 14px;
+    background: var(--vc-text);
+    color: var(--vc-bg);
+    padding: 14px;
+    box-shadow: 0 4px 20px #0002;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#app #toast:empty {
+    display: none;
+}
+
+#app #busy {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    background: #0006;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+}
+
+#app #busy[hidden] {
+    display: none;
+}
+
+#app #busy > div {
+    padding: 24px;
+    border-radius: 20px;
+    background: var(--vc-paper);
+    color: var(--vc-text);
+    font-size: 0.95rem;
+}
+
+#app .vc-cover {
+    height: 180px;
+}
+
+#app .vc-player-cover {
+    height: 252px;
+}
+
+#app .vc-detail-cover {
+    height: 132px;
+    width: 96px;
+    min-width: 96px;
+    flex-shrink: 0;
+    padding: 12px;
+}
+
+#app .vc-detail-cover small {
+    font-size: 8px;
+    letter-spacing: 1px;
+}
+
+#app .vc-detail-cover b {
+    font-size: 17px;
+    letter-spacing: 2px;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+#app .vc-form {
+    font: 1rem/1.7 sans-serif;
+}
+
+#app .wide {
+    width: 100%;
+}
+
+#app .mini {
+    font-size: 0.8rem;
+    color: var(--vc-muted);
+}
+
+#app .danger {
+    color: var(--vc-warn);
+}
+
+#app .footer-note {
+    font-size: 0.8rem;
+    color: var(--vc-muted);
+    margin: 18px 0;
+}
+
+#app .task-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--vc-line);
+}
+
+#app .vc-prose h3 {
+    margin: 20px 0;
+}
+
+#app .pre {
+    white-space: pre-wrap;
+}
+
+#app .voice-name {
+    overflow-wrap: anywhere;
+}
+
+#app .big-progress {
+    width: 100%;
+    accent-color: var(--vc-accent);
+}
+
+#app details summary {
+    cursor: pointer;
+    min-height: 38px;
+    color: var(--vc-accent);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+    html, body {
+        background: #181d1b;
+    }
+    body {
+        color-scheme: dark;
+    }
+}
+
+@media (max-width: 360px) {
+    html {
+        font-size: 15px;
+    }
+    #app .vc-main {
+        padding: 16px 14px 95px;
+    }
+    #app .vc-title {
+        font-size: 1.45rem;
+    }
+    #app .vc-split {
+        gap: 8px;
+    }
+}

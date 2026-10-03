@@ -1,0 +1,14 @@
+.tools/
+.gradle/
+**/build/
+local.properties
+.env*
+!.env.example
+artifacts/*
+!artifacts/.gitkeep
+test-results/
+*.jks
+*.keystore
+node_modules/
+
+books/

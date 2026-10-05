@@ -1,0 +1,89 @@
+const fs = require('node:fs');
+const file = 'tests/core.test.cjs';
+let content = fs.readFileSync(file, 'utf8');
+
+const t1 = [
+  "test('deleteBook removes book, cleans tasks, and deletes audio files', async () => {",
+  " const adapter = io(), e = new Engine(adapter);",
+  " const deletedAudio = [];",
+  " adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 1000 }; };",
+  " const b = await e.addBook('测试书', ['第1章 序', '内容'].join('\\n'));",
+  " b.chapters[0].audio = 'ch1_audio.wav';",
+  " b.chapters[0].segments = [{ id: 0, text: '内容', speaker: '旁白', audio: 'seg1_audio.wav' }];",
+  " e.state.tasks.push({ id: 'task1', bookId: b.id, chapterId: b.chapters[0].id, status: 'done' });",
+  " await e.deleteBook(b.id);",
+  " assert.equal(e.state.books.length, 0);",
+  " assert.equal(e.state.tasks.length, 0);",
+  " assert(deletedAudio.includes('ch1_audio.wav'));",
+  " assert(deletedAudio.includes('seg1_audio.wav'));",
+  "});"
+].join('\n');
+
+const t2 = [
+  "test('clearBookAudio and clearChapterAudio release audio files while keeping text and status', async () => {",
+  " const adapter = io(), e = new Engine(adapter);",
+  " const deletedAudio = [];",
+  " adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 500 }; };",
+  " const b = await e.addBook('测试小说', ['第001章 序章', '第一章正文', '第002章 出发', '第二章正文'].join('\\n'));",
+  " assert.equal(b.chapters.length, 2);",
+  " b.chapters[0].audio = 'audio1.wav';",
+  " b.chapters[0].listened = true;",
+  " b.chapters[1].audio = 'audio2.wav';",
+  " b.chapters[1].listened = false;",
+  " const res = await e.clearBookAudio(b.id, { onlyListened: true });",
+  " assert.equal(res.clearedCount, 1);",
+  " assert.equal(b.chapters[0].audio, null);",
+  " assert.equal(b.chapters[0].audioCleared, true);",
+  " assert.equal(b.chapters[1].audio, 'audio2.wav');",
+  " assert.equal(deletedAudio.includes('audio1.wav'), true);",
+  " assert.equal(deletedAudio.includes('audio2.wav'), false);",
+  " await e.clearChapterAudio(b.id, b.chapters[1].id);",
+  " assert.equal(b.chapters[1].audio, null);",
+  " assert.equal(b.chapters[1].audioCleared, true);",
+  " assert.equal(deletedAudio.includes('audio2.wav'), true);",
+  "});"
+].join('\n');
+
+const t3 = [
+  "test('updatePlaybackProgress saves position, detects completion, and triggers autoDeletePlayed', async () => {",
+  " const adapter = io(), e = new Engine(adapter);",
+  " const deletedAudio = [];",
+  " adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 200 }; };",
+  " e.state.settings.autoDeletePlayed = true;",
+  " const b = await e.addBook('长篇故事', ['第1章 序', '正文'].join('\\n'));",
+  " const c = b.chapters[0];",
+  " c.audio = 'ch1_finish.wav';",
+  " c.duration = 100;",
+  " let res = await e.updatePlaybackProgress(b.id, c.id, 50000, 100000);",
+  " assert.equal(res.listened, false);",
+  " assert.equal(b.lastPlayedChapterId, c.id);",
+  " assert.equal(b.lastPlayedPosition, 50000);",
+  " assert.equal(c.audio, 'ch1_finish.wav');",
+  " res = await e.updatePlaybackProgress(b.id, c.id, 99000, 100000);",
+  " assert.equal(res.listened, true);",
+  " assert.equal(res.newlyFinished, true);",
+  " assert.equal(c.audio, null);",
+  " assert.equal(c.audioCleared, true);",
+  " assert(deletedAudio.includes('ch1_finish.wav'));",
+  "});"
+].join('\n');
+
+const t4 = [
+  "test('garbageCollectAudio collects unreferenced audio files and removes them', async () => {",
+  " const adapter = io(), e = new Engine(adapter);",
+  " let cleanedKeep = null;",
+  " adapter.cleanupAudio = async (keepIds) => { cleanedKeep = keepIds; return { deletedCount: 3, freedBytes: 3000, freedMb: 2.9 }; };",
+  " const b = await e.addBook('书1', ['第1章 序', '段落'].join('\\n'));",
+  " b.chapters[0].audio = 'active_audio.wav';",
+  " e.state.voices.push({ id: 'v1', sample: 'sample1.wav' });",
+  " const res = await e.garbageCollectAudio();",
+  " assert.equal(res.deletedCount, 3);",
+  " assert(cleanedKeep.includes('active_audio.wav'));",
+  " assert(cleanedKeep.includes('sample1.wav'));",
+  "});"
+].join('\n');
+
+content = content.trimEnd() + '\n\n' + [t1, t2, t3, t4].join('\n\n') + '\n';
+fs.writeFileSync(file, content, 'utf8');
+console.log('tests added cleanly');
+

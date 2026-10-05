@@ -428,15 +428,16 @@ body {
 #app #toast {
     pointer-events: none;
     position: fixed;
-    bottom: 94px;
+    bottom: 132px;
     left: 20px;
     right: 20px;
-    z-index: 40;
+    z-index: 200;
     border-radius: 14px;
-    background: var(--vc-text);
-    color: var(--vc-bg);
+    background: var(--vc-paper);
+    color: var(--vc-text);
+    border: 1px solid var(--vc-line);
     padding: 14px;
-    box-shadow: 0 4px 20px #0002;
+    box-shadow: 0 8px 28px #0003;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }

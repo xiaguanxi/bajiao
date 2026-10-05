@@ -24,3 +24,76 @@ test('changing a bound voice invalidates that role across chapters only',async()
 test('malformed batch is retried with fewer lines without corrupting source',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(50));let calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines.length);return {characters:[],lines:(calls.length===1?lines.slice(1):lines).map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[45,22,22,6]);assert.equal(b.chapters[0].segments.length,50);assert.equal(b.chapters[0].analysisIssues.length,1);});
 test('lazy chapter metadata saves without overwriting body and shared loads deduplicate',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。');const original=JSON.parse(JSON.stringify(b.chapters[0]));b.chapters[0]={id:original.id,title:original.title,textLength:2,segmentCount:0,unloaded:true,segments:[]};let reads=0,writes=[];const lazy=new Engine({...io(),loadChapter:async()=>{reads++;return original;},saveSnapshot:async(h,c)=>writes.push(JSON.parse(c))},e.state);await lazy.persist();assert.equal(writes[0].length,0);await Promise.all([lazy.ensureChapter(b.id,original.id),lazy.ensureChapter(b.id,original.id)]);assert.equal(reads,1);assert.equal(lazy.chapter(b.id,original.id).text,'甲。');assert.equal(lazy.chapter(b.id,original.id).unloaded,undefined);});
 test('explicit speech cue beats collective attribution; weaker conflicting context needs review',async()=>{const e=new Engine(io()),b=await e.addBook('t','暮雨神色慌张。\n“喂。”\n霏霏说道：\n“你好。”');b.characters.push({name:'双胞胎女娃',aliases:[]});e.llm=async()=>({characters:[{name:'暮雨',description:'女孩'},{name:'霏霏',description:'女孩'}],lines:units(b.chapters[0].text).map(x=>({id:x.id,speaker:x.id%2?'双胞胎女娃':'旁白',emotion:'自然',confidence:.99}))});await e.analyze(b.id,b.chapters[0].id);assert.equal(b.chapters[0].segments[1].speaker,'未知角色');assert.equal(b.chapters[0].segments[3].speaker,'霏霏');});
+
+test('deleteBook removes book, cleans tasks, and deletes audio files', async () => {
+ const adapter = io(), e = new Engine(adapter);
+ const deletedAudio = [];
+ adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 1000 }; };
+ const b = await e.addBook('测试书', ['第1章 序', '内容'].join('\n'));
+ b.chapters[0].audio = 'ch1_audio.wav';
+ b.chapters[0].segments = [{ id: 0, text: '内容', speaker: '旁白', audio: 'seg1_audio.wav' }];
+ e.state.tasks.push({ id: 'task1', bookId: b.id, chapterId: b.chapters[0].id, status: 'done' });
+ await e.deleteBook(b.id);
+ assert.equal(e.state.books.length, 0);
+ assert.equal(e.state.tasks.length, 0);
+ assert(deletedAudio.includes('ch1_audio.wav'));
+ assert(deletedAudio.includes('seg1_audio.wav'));
+});
+
+test('clearBookAudio and clearChapterAudio release audio files while keeping text and status', async () => {
+ const adapter = io(), e = new Engine(adapter);
+ const deletedAudio = [];
+ adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 500 }; };
+ const b = await e.addBook('测试小说', ['第001章 序章', '这是第一章正文内容。', '第002章 出发', '这是第二章正文内容。'].join('\n'));
+ assert.equal(b.chapters.length, 2);
+ b.chapters[0].audio = 'audio1.wav';
+ b.chapters[0].listened = true;
+ b.chapters[1].audio = 'audio2.wav';
+ b.chapters[1].listened = false;
+ const res = await e.clearBookAudio(b.id, { onlyListened: true });
+ assert.equal(res.clearedCount, 1);
+ assert.equal(b.chapters[0].audio, null);
+ assert.equal(b.chapters[0].audioCleared, true);
+ assert.equal(b.chapters[1].audio, 'audio2.wav');
+ assert.equal(deletedAudio.includes('audio1.wav'), true);
+ assert.equal(deletedAudio.includes('audio2.wav'), false);
+ await e.clearChapterAudio(b.id, b.chapters[1].id);
+ assert.equal(b.chapters[1].audio, null);
+ assert.equal(b.chapters[1].audioCleared, true);
+ assert.equal(deletedAudio.includes('audio2.wav'), true);
+});
+
+test('updatePlaybackProgress saves position, detects completion, and triggers autoDeletePlayed', async () => {
+ const adapter = io(), e = new Engine(adapter);
+ const deletedAudio = [];
+ adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 200 }; };
+ e.state.settings.autoDeletePlayed = true;
+ const b = await e.addBook('长篇故事', ['第1章 序', '正文'].join('\n'));
+ const c = b.chapters[0];
+ c.audio = 'ch1_finish.wav';
+ c.duration = 100;
+ let res = await e.updatePlaybackProgress(b.id, c.id, 50000, 100000);
+ assert.equal(res.listened, false);
+ assert.equal(b.lastPlayedChapterId, c.id);
+ assert.equal(b.lastPlayedPosition, 50000);
+ assert.equal(c.audio, 'ch1_finish.wav');
+ res = await e.updatePlaybackProgress(b.id, c.id, 99000, 100000);
+ assert.equal(res.listened, true);
+ assert.equal(res.newlyFinished, true);
+ assert.equal(c.audio, null);
+ assert.equal(c.audioCleared, true);
+ assert(deletedAudio.includes('ch1_finish.wav'));
+});
+
+test('garbageCollectAudio collects unreferenced audio files and removes them', async () => {
+ const adapter = io(), e = new Engine(adapter);
+ let cleanedKeep = null;
+ adapter.cleanupAudio = async (keepIds) => { cleanedKeep = keepIds; return { deletedCount: 3, freedBytes: 3000, freedMb: 2.9 }; };
+ const b = await e.addBook('书1', ['第1章 序', '段落'].join('\n'));
+ b.chapters[0].audio = 'active_audio.wav';
+ e.state.voices.push({ id: 'v1', sample: 'sample1.wav' });
+ const res = await e.garbageCollectAudio();
+ assert.equal(res.deletedCount, 3);
+ assert(cleanedKeep.includes('active_audio.wav'));
+ assert(cleanedKeep.includes('sample1.wav'));
+});

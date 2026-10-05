@@ -97,3 +97,20 @@ test('garbageCollectAudio collects unreferenced audio files and removes them', a
  assert(cleanedKeep.includes('active_audio.wav'));
  assert(cleanedKeep.includes('sample1.wav'));
 });
+
+test('units rejects non-string input with readable message', () => {
+  assert.throws(() => units(undefined), /文本缺失/);
+  assert.throws(() => units(123), /文本缺失/);
+});
+
+test('corrupt chapter file fails loudly without mutating stub', async () => {
+  const adapter = io(), e = new Engine(adapter);
+  const b = await e.addBook('t', '甲。');
+  const orig = b.chapters[0];
+  b.chapters[0] = { id: orig.id, title: orig.title, textLength: 2, segmentCount: 0, unloaded: true, segments: [] };
+  const lazy = new Engine({ ...io(), loadChapter: async () => ({ id: orig.id, title: orig.title }) }, e.state);
+  await assert.rejects(lazy.ensureChapter(b.id, orig.id), /文本缺失/);
+  const c = lazy.chapter(b.id, orig.id);
+  assert.equal(c.unloaded, true);
+  assert.equal(typeof c.text, 'undefined');
+});

@@ -174,3 +174,67 @@ test('auto voice reuse matches gender/age/features and skips used voices', async
   assert.equal(e.autoVoiceFor(b.id, '老妇'), null);
   assert.equal(e.autoVoiceFor(b.id, '老汉'), null);
 });
+
+test('confirmed task jumps to front of queue instead of waiting at back', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。\n第三章\n丙。');
+  const calls = [];
+  e.work = async (t) => { calls.push(t.chapterId); t.status = 'done'; };
+  await e.enqueue(b.id, b.chapters.map(c => c.id));
+  const ids = e.state.tasks.map(t => t.chapterId);
+  e.state.tasks.forEach(t => { t.status = 'queued'; t.prio = 0; });
+  e.state.tasks.find(t => t.chapterId === ids[1]).status = 'waiting';
+  calls.length = 0;
+  await e.resumeWaiting(b.id);
+  assert.equal(calls[0], ids[1]);
+});
+
+test('resumed task jumps to front of queue', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。');
+  const calls = [];
+  e.work = async (t) => { calls.push(t.chapterId); t.status = 'done'; };
+  await e.enqueue(b.id, b.chapters.map(c => c.id));
+  const ids = e.state.tasks.map(t => t.chapterId);
+  e.state.tasks.forEach(t => { t.status = 'queued'; t.prio = 0; });
+  e.state.tasks.find(t => t.chapterId === ids[1]).status = 'paused';
+  calls.length = 0;
+  await e.resume(e.state.tasks.find(t => t.chapterId === ids[1]).id);
+  assert.equal(calls[0], ids[1]);
+});
+
+test('moveTask reorders pending tasks by priority', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。\n第三章\n丙。');
+  e.work = async (t) => { t.status = 'done'; };
+  await e.enqueue(b.id, b.chapters.map(c => c.id));
+  const ids = e.state.tasks.map(t => t.chapterId);
+  e.state.tasks.forEach(t => { t.status = 'queued'; t.prio = 0; });
+  await e.moveTask(e.state.tasks.find(t => t.chapterId === ids[2]).id, 'top');
+  assert.equal(e.pendingOrder()[0].chapterId, ids[2]);
+  await e.moveTask(e.state.tasks.find(t => t.chapterId === ids[2]).id, 'down');
+  assert.equal(e.pendingOrder()[1].chapterId, ids[2]);
+  await assert.rejects(e.moveTask('no-such-id', 'up'), /仅可调整/);
+});
+
+test('taskParallel runs multiple chapters concurrently', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。');
+  e.state.settings.taskParallel = 2;
+  assert.equal(e.taskPar(), 2);
+  e.state.settings.taskParallel = 9;
+  assert.equal(e.taskPar(), 1);
+  e.state.settings.taskParallel = 2;
+  e.work = async (t) => { await new Promise(r => setTimeout(r, 50)); t.status = 'done'; };
+  for (const c of b.chapters) e.state.tasks.push({id: c.id + '-t', bookId: b.id, chapterId: c.id, status: 'queued', prio: 0, created: Date.now()});
+  const p = e.run();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(e.state.tasks.filter(t => t.status === 'running').length, 2);
+  await p;
+  assert(e.state.tasks.every(t => t.status === 'done'));
+});
+
+test('ttsParallel defaults to 2 with safe fallback', () => {
+  const e = new Engine(io());
+  assert.equal(e.ttsPar(), 2);
+  e.state.settings.ttsParallel = 4;
+  assert.equal(e.ttsPar(), 4);
+  e.state.settings.ttsParallel = 9;
+  assert.equal(e.ttsPar(), 2);
+});

@@ -544,14 +544,26 @@ function syncDisplayedPlayback(p){
     }
     if (best) best.classList.add('active');
     const key = best ? String(best.dataset.start) : '';
-    if (best && key !== String(lastActiveStart) && Date.now() >= listenUserHoldUntil) {
-      lastActiveStart = key;
+    const nowMs = Date.now();
+    const centerBest = () => {
       try {
         const pr = panel.getBoundingClientRect(), br = best.getBoundingClientRect();
-        if (br.top < pr.top || br.bottom > pr.bottom) {
+        const want = panel.scrollTop + (br.top - pr.top) - (panel.clientHeight / 2) + (br.height / 2);
+        if (Math.abs(want - panel.scrollTop) > 2) {
           listenProgScrollUntil = Date.now() + 800;
-          panel.scrollTop += (br.top - pr.top) - (panel.clientHeight / 2) + (br.height / 2);
+          panel.scrollTop = want;
         }
+      } catch (e2) {}
+    };
+    if (best && key !== String(lastActiveStart)) {
+      lastActiveStart = key;
+      if (nowMs >= listenUserHoldUntil) centerBest();
+    } else if (best && nowMs >= listenUserHoldUntil) {
+      // 同一行但位置偏离正中（用户滑走后hold过期）：拉回正中
+      try {
+        const pr = panel.getBoundingClientRect(), br = best.getBoundingClientRect();
+        const off = (br.top - pr.top) - (panel.clientHeight / 2) + (br.height / 2);
+        if (Math.abs(off) > 4) centerBest();
       } catch (e2) {}
     } else if (!best) {
       lastActiveStart = '';

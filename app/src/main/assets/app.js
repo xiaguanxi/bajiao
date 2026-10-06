@@ -219,14 +219,13 @@ if(page==='listen'){
     const doneSegs = tc?.segments?.filter(seg => seg.audio).length || 0;
     const totalSegs = tc?.segments?.length || 0;
     const pct = totalSegs > 0 ? Math.round((doneSegs / totalSegs) * 100) : 0;
-    prodBanner = '<div class="vc-listening-prod-banner"><span class="vc-pulse-dot"></span><span>后台正在制作：' + E(tc?.title || '下一章') + ' (' + pct + '%)</span></div>';
+    prodBanner = '<button class="vc-listening-prod-banner" data-act="gotasksactive"><span class="vc-pulse-dot"></span><span>正在制作 ' + E(tc?.title || '下一章') + ' ' + pct + '%，点此查看 →</span></button>';
   }
   h += prodBanner;
   h += '<div class="vc-player"><div class="vc-player-head"><h3 class="vc-marquee"><span>' + E(c.title) + '</span></h3></div>';
   h += c.audio?(()=>{ const segs = engine?.computeSegmentTimestamps ? engine.computeSegmentTimestamps(c.segments || [], c.duration || 0) : (c.segments || []); if (!segs || !segs.length) { return '<div class="vc-center"><small>时长 ' + fmt(c.duration || 0) + ' · 多角色演绎</small></div>'; } return '<div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="逐句字幕跟读">' + segs.map((s, idx) => { return '<div class="vc-transcript-line' + (s.speaker && s.speaker !== '旁白' ? ' is-dialogue' : '') + '" data-act="seekseg:' + Math.round(s.startMs || 0) + '" data-start="' + Math.round(s.startMs || 0) + '" data-end="' + Math.round(s.endMs || 0) + '">' + '<span class="vc-transcript-speaker">' + E(s.speaker || '旁白') + '</span>' + '<span class="vc-transcript-text">' + E(s.text || '') + '</span>' + '</div>'; }).join('') + '</div>'; })():'<div class="empty"><p>本章尚未生成完整音频。</p>' + B('制作本章','makeone') + '</div>';
   if(c.audio){
-    h += '<div class="vc-player-tools"><button class="vc-link-tag' + (engine?.state?.autoDeletePlayed ? ' active' : '') + '" data-act="toggleautodelete">完播自删 · ' + (engine?.state?.autoDeletePlayed ? '开' : '关') + '</button><button class="vc-link-tag' + (engine?.state?.settings?.autoProduceUpcoming !== false ? ' active' : '') + '" data-act="toggleautoproduce">边听边做 · ' + (engine?.state?.settings?.autoProduceUpcoming !== false ? '开' : '关') + '</button><button class="vc-link-tag" data-act="listensettings">' + I('sliders-horizontal') + ' 设置</button></div>';
-h += '<div class="vc-dock"><div class="vc-player-progress"><small id="playtime">00:00</small><input type="range" id="seek" class="big-progress" min="0" max="' + ((c.duration||0)*1000) + '" value="0" aria-label="播放进度"><small>' + fmt(c.duration||0) + '</small></div>';
+h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-link-tag' + (engine?.state?.autoDeletePlayed ? ' active' : '') + '" data-act="toggleautodelete">完播自删 · ' + (engine?.state?.autoDeletePlayed ? '开' : '关') + '</button><button class="vc-link-tag' + (engine?.state?.settings?.autoProduceUpcoming !== false ? ' active' : '') + '" data-act="toggleautoproduce">边听边做 · ' + (engine?.state?.settings?.autoProduceUpcoming !== false ? '开' : '关') + '</button><button class="vc-link-tag" data-act="listensettings">' + I('sliders-horizontal') + ' 设置</button></div><div class="vc-player-progress"><small id="playtime">00:00</small><input type="range" id="seek" class="big-progress" min="0" max="' + ((c.duration||0)*1000) + '" value="0" aria-label="播放进度"><small>' + fmt(c.duration||0) + '</small></div>';
     h += '<div class="vc-ctlbar"><button class="vc-ctl vc-ctl-speed" data-act="speedmodal" title="倍速">' + I('gauge') + '<span class="vc-spd-val" id="speedBtnVal">' + curSpeed + 'x</span></button><button class="vc-ctl' + (hasPrev?'':' disabled') + '" data-act="prevchapter" title="上一集"' + (hasPrev?'':' disabled') + '>' + I('skip-back') + '</button><button class="vc-ctl primary" data-act="playchapter" id="playBtn">' + I('play') + '</button><button class="vc-ctl' + (hasNext?'':' disabled') + '" data-act="nextchapter" title="下一集"' + (hasNext?'':' disabled') + '>' + I('skip-forward') + '</button><button class="vc-ctl" data-act="back" title="回到本书目录">' + I('list') + '</button></div></div>';
 
     
@@ -567,14 +566,15 @@ function syncDisplayedPlayback(p){
       const segs=tc?.segments||[];
       const doneN=segs.filter(s=>s.audio).length,totalN=segs.length;
       const pct=totalN>0?Math.round(doneN/totalN*100):0;
-      const txt='后台正在制作：'+(tc?.title||'下一章')+' ('+pct+'%)';
+      const txt='正在制作 '+(tc?.title||'下一章')+' '+pct+'%，点此查看 →';
       if(existingBanner){
         if(existingBanner.__txt!==txt){existingBanner.__txt=txt;const label=existingBanner.querySelector('span:last-child');if(label)label.textContent=txt;}
       }else{
-        const d=document.createElement('div');d.className='vc-listening-prod-banner';d.__txt=txt;
+        const d=document.createElement('button');d.className='vc-listening-prod-banner';d.__txt=txt;d.setAttribute('data-act','gotasksactive');
         const dot=document.createElement('span');dot.className='vc-pulse-dot';
         const label=document.createElement('span');label.textContent=txt;
         d.appendChild(dot);d.appendChild(label);
+        d.addEventListener('click',()=>{try{taskTab='active';go('tasks');}catch(e){}});
         const playerEl=document.querySelector('.vc-player');
         if(playerEl&&playerEl.parentNode)playerEl.parentNode.insertBefore(d,playerEl);
       }
@@ -733,6 +733,7 @@ if(a==='book'){bookId=x;chapterId=book().chapters[0].id;multi=false;selected=[];
 if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);go(getChapterTarget(c));return;}
 if(a==='confirm'){chapterId=x;pendingSeg=null;const cc=book()?.chapters?.find(ch=>ch.id===x);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,x);},'读取章节…');}go('annotated');return;}
 if(a==='tasktab'){taskTab=x;render();return;}
+if(a==='gotasksactive'){taskTab='active';go('tasks');return;}
 if(a==='ignorerole'){const b=book();const ch=b.characters.find(r=>r.name===x);if(ch){const reuse=engine.autoVoiceFor(bookId,x);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';await engine.persist();toast('角色「'+ch.name+'」已自动复用已有音色');}else{ch.autoDesign=true;await engine.persist();toast('角色「'+ch.name+'」稍后后台自动设计');}engine.resumeWaiting(bookId).catch(e=>toast(e.message));}taskTab='active';go('tasks');return;}
 if(a==='ignorespeaker'){const c=chapter();const seg=c.segments.find(s=>s.id===Number(x));if(seg){seg.speaker='旁白';seg.confidence=1;seg.audio=null;seg.emotion='自然朗读';c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;if(t.status==='done')t.status='paused';}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('该句说话人已设为旁白');taskTab='active';go('tasks');}return;}
 if(a==='ignoreall'){const b=book(),c=chapter();const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const rolesToFix=b.characters.filter(r=>(activeSpeakers.includes(r.name)||r.candidate)&&!r.voice);for(const ch of rolesToFix){const reuse=engine.autoVoiceFor(bookId,ch.name);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';continue;}ch.autoDesign=true;}for(const seg of c.segments){if(!seg.skip&&!seg.isAd&&seg.speaker!=='广告'&&(seg.confidence<engine.spkThr()||!b.characters.some(r=>r.name===seg.speaker))){seg.speaker='旁白';seg.confidence=1;seg.audio=null;seg.emotion='自然朗读';}}c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('已记录选择，后台继续制作');taskTab='active';go('tasks');return;}

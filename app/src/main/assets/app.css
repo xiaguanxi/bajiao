@@ -1226,20 +1226,26 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(22, 119, 255, 0.08);
-  border: 1px solid rgba(22, 119, 255, 0.25);
-  color: var(--vc-primary, #1677ff);
+  width: 100%;
+  background: var(--vc-paper-warm);
+  border: 1px solid var(--vc-line);
+  border-left: 3px solid var(--vc-accent);
+  color: var(--vc-text);
   padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  margin: 10px 0;
+  border-radius: 0 10px 10px 0;
+  font-size: 0.82rem;
+  margin: 8px 0 10px;
   font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
 }
+.vc-listening-prod-banner:active{opacity:.7;}
 .vc-pulse-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--vc-primary, #1677ff);
+  background: var(--vc-accent);
   animation: vc-pulse 1.5s infinite;
   flex-shrink: 0;
 }
@@ -1372,8 +1378,10 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 10px 0 6px;
+  margin: 0 0 6px;
 }
+#app .vc-dock .vc-player-tools{padding-top:2px;}
+#app .vc-dock .vc-player-progress{margin:0 0 4px}
 @media (prefers-color-scheme: dark) {
   #app .vc-transcript-line.active .vc-transcript-text {
     color: #d7e6d2;

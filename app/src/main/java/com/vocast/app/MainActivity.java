@@ -19,7 +19,9 @@ public class MainActivity extends Activity {
     private WebView web;
     private final ExecutorService executor=Executors.newFixedThreadPool(3);
     private SecretStore vault;private AudioFiles audio;private AtomicFile store;private SnapshotStore snapshots;
-    private String pendingId,pickKind,exportFile;
+    private String pendingId,pickKind,exportFile,pendingNav;
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String nav=intent!=null?intent.getStringExtra("nav"):null;if(nav!=null){pendingNav=nav;forwardNav(nav);}}
+    private void forwardNav(String nav){if(web==null||nav==null)return;final String js="window.__applyInitialNav&&window.__applyInitialNav('"+nav.replace("'","")+"')";web.post(()->{if(web!=null)web.evaluateJavascript(js,null);});}
     @Override public void onCreate(Bundle state){super.onCreate(state);vault=new SecretStore(this);audio=new AudioFiles(new File(getFilesDir(),"audio"));store=new AtomicFile(new File(getFilesDir(),"state.json"));snapshots=new SnapshotStore(getFilesDir());
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0){try{File f=new File(getFilesDir(),"credentials-import.json");if(f.isFile()){vault.save(new JSONObject(new String(AudioFiles.read(f,100000),StandardCharsets.UTF_8)));if(!f.delete())throw new IOException("Credential import cleanup failed");}}catch(Exception e){android.widget.Toast.makeText(this,"测试配置导入失败",android.widget.Toast.LENGTH_SHORT).show();}}
         web=new WebView(this);setContentView(web);web.setBackgroundColor(0xfff8f7f2);WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setMediaPlaybackRequiresUserGesture(true);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);settings.setTextZoom(100);
@@ -42,7 +44,7 @@ public class MainActivity extends Activity {
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
             executor.execute(()->{try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
-                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty());break;}
+                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
                     case "loadChapter":result=snapshots.loadChapter(p.getString("id"));break;
                     case "saveSnapshot":snapshots.save(p.getString("header"),p.getString("chapters"));result=true;break;
                     case "saveState":saveState(p.getString("text"));result=true;break;
@@ -88,7 +90,7 @@ public class MainActivity extends Activity {
                         NotificationChannel channel=new NotificationChannel(chId,chName,importance);
                         channel.setDescription("Vocast 消息与系统通知");
                         nm.createNotificationChannel(channel);
-                        PendingIntent pi=PendingIntent.getActivity(MainActivity.this,0,new Intent(MainActivity.this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
+                        PendingIntent pi=PendingIntent.getActivity(MainActivity.this,1,new Intent(MainActivity.this,MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra("nav","tasks_attention"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
                         String title=p.optString("title","Vocast 提示");
                         String msg=p.optString("message","");
                         int notifId=p.optInt("id",(int)(System.currentTimeMillis()%100000));

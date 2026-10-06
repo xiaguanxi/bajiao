@@ -80,6 +80,7 @@ public class ProductionService extends Service {
     private Notification buildNotification(String title, String message, int progress, int total) {
         Intent openIntent = new Intent(this, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        openIntent.putExtra("nav", "tasks_attention");
         PendingIntent pi = PendingIntent.getActivity(
             this,
             0,

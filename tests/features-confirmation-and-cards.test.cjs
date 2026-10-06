@@ -152,6 +152,17 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     assert.equal(roleVoiceAssigned, true, '忽略角色后应标记后台自动设计或已分配音色');
     console.log('✓ 验证 3.4 成功：忽略后角色自动采用设计的音色并分配！');
 
+    // 忽略角色后已跳任务页"制作中"栏，验证后从任务卡片进详情、点"去处理确认"回到确认页
+    await page.getByRole('heading',{name:'制作任务'}).waitFor();
+    assert.equal(await page.locator('[data-act="tasktab:active"].active').count(), 1, '忽略角色后应跳到任务页"制作中"栏');
+    await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);const __t=e.state.tasks.find(x=>x.chapterId===c.id);if(__t){__t.status='waiting';__t.phase='等待确认';}await e.persist();});
+    await click('tasktab:attention');
+    await page.locator('.vc-panel.vc-card-clickable').first().locator('h3').click();
+    await page.getByRole('heading',{name:'制作详情'}).waitFor();
+    const backCid2 = await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].id);
+    await click('confirm:'+backCid2);
+    await page.locator('.vc-issue-card').first().waitFor();
+
     // 检查说话人忽略按钮
     const speakerIgnoreBtn = page.locator('[data-act="ignorespeaker:2"]');
     await speakerIgnoreBtn.waitFor();
@@ -175,10 +186,11 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     assert.equal(roleMarked, true, '角色应已分配音色或标记后台自动设计');
     console.log('✓ 验证 3.7 成功：说话人已解决，角色已记录后台继续！');
 
-    // 测试返回上一级章节目录
-    await page.locator('.vc-top [data-act="back"]').click();
-    await page.getByRole('heading',{name:'章节目录'}).waitFor();
-    console.log('✓ 验证 3.8 成功：确认界面点击左上角返回按钮，直接回到上一级章节目录！');
+    // 忽略后应跳到任务页"制作中"栏
+    await page.getByRole('heading',{name:'制作任务'}).waitFor();
+    const activeTab = await page.locator('[data-act="tasktab:active"].active').count();
+    assert.equal(activeTab, 1, '确认后应跳到任务页"制作中"栏');
+    console.log('✓ 验证 3.8 成功：确认后跳到任务页"制作中"栏！');
 
     // --- 测试 4：测试一键「全部忽略并继续」按钮 ---
     // 再次制造问题
@@ -195,6 +207,9 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
       e.touch(c);
       await e.persist();
     });
+    await click('go:shelf');
+    await page.locator('.vc-book').click();
+    await page.waitForTimeout(800);
     await click('confirm:'+state.books[0].chapters[1].id);
     await page.locator('[data-act="ignoreall:'+state.books[0].chapters[1].id+'"]').first().click();
     await page.waitForTimeout(800);

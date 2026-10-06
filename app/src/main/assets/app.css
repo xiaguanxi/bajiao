@@ -1511,7 +1511,10 @@ body {
 #app .vc-player-head h3{margin:2px 0 4px;font-size:1.2rem}
 
 /* 听书五键固定控制栏 + 进度条连体底座 */
-#app main.vc-main-listen{padding-bottom:196px!important}
+#app main.vc-main-listen{padding-bottom:196px!important;display:flex;flex-direction:column;min-height:calc(100vh - 125px);}
+#app main.vc-main-listen .vc-player{flex:1;display:flex;flex-direction:column;min-height:0;}
+#app main.vc-main-listen .vc-lyric.vc-transcript-panel,
+#app main.vc-main-listen .vc-lyric{flex:1;max-height:none;min-height:220px;margin:0;}
 #app .vc-dock{position:fixed;bottom:72px;left:0;right:0;max-width:720px;margin:0 auto;z-index:95;display:flex;flex-direction:column;gap:0;padding:10px 20px 8px;background:var(--vc-bg);border-top:1px solid var(--vc-line)}
 #app .vc-dock .vc-player-progress{margin:0 0 4px}
 #app .vc-ctlbar{display:flex;align-items:center;justify-content:space-around;padding:0;background:transparent}

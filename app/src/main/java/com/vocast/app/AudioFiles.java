@@ -72,6 +72,7 @@ final class AudioFiles {
             try{obj.put("deletedCount",deleted);obj.put("freedBytes",freed);obj.put("freedMb",Math.round(freed/1024.0/1024.0*10.0)/10.0);}catch(Exception ignored){}
             return obj;
         }
+        JSONObject durations(java.util.List<String> ids){JSONObject o=new JSONObject();for(String id:ids){try{if(id==null||!id.matches("[a-f0-9]{64}\.(wav|mp3)")){o.put(String.valueOf(id),-1);continue;}java.io.File f=new java.io.File(dir,id);if(!f.isFile()){o.put(id,-1);continue;}if(id.endsWith(".wav")){byte[] head=new byte[44];try(java.io.FileInputStream in=new java.io.FileInputStream(f)){int n=in.read(head);if(n<44){o.put(id,-1);continue;}}java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(head).order(java.nio.ByteOrder.LITTLE_ENDIAN);int byteRate=b.getInt(28);long dataLen=f.length()-44;double dur=byteRate>0?dataLen/(double)byteRate:-1;o.put(id,Math.round(dur*1000));}else{o.put(id,-1);}}catch(Exception e){try{o.put(String.valueOf(id),-1);}catch(Exception ignored){}}}return o;}
         File get(String id) throws Exception {if(!id.matches("[a-f0-9]{64}\\.(wav|mp3)"))throw new Exception("无效音频引用");File f=new File(dir,id);if(!f.isFile())throw new Exception("参考音频已丢失，请重新导入");return f;}
     JSONObject save(byte[] data,String format) throws Exception {
         if(!format.equals("wav")&&!format.equals("mp3"))throw new Exception("不支持的音频格式");

@@ -477,6 +477,7 @@ let __keepTop=null;try{const __p=document.getElementById('transcriptPanel');if(p
 $('#screen').innerHTML=`<main class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${['raw','annotated','listen'].includes(page)?modebar():nav()}${modalHtml}`;lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
 try{if(pendingSeg!=null){const __el=document.querySelector('[data-seg="'+pendingSeg+'"]')||document.getElementById('confirm-seg-'+pendingSeg);if(__el){__el.scrollIntoView({block:'center'});__el.classList.add('vc-flash');setTimeout(()=>{try{__el.classList.remove('vc-flash');}catch(e){}},1800);}pendingSeg=null;}}catch(__e){}
 try{if(page==='listen'&&__keepTop!==null&&__keepTop!==undefined){const __n=document.getElementById('transcriptPanel');if(__n)__n.scrollTop=__keepTop;}}catch(__e){}
+try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(window.__calibKey!==__ck){window.__calibKey=__ck;engine.calibrateDurations(bookId,chapterId).then(n=>{if(n>0&&page==='listen')render();}).catch(()=>{});}}}catch(__e){}
 }
 const value=id=>$('#'+id)?.value||'';
 async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){

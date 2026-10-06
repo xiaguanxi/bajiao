@@ -19,7 +19,7 @@ assert(coreCode.includes('computeSegmentTimestamps'), 'core.js must have compute
 
 assert(appCode.includes('vc-transcript-panel'), 'app.js must render vc-transcript-panel');
 assert(appCode.includes('seekseg:'), 'app.js must handle seekseg');
-assert(appCode.includes('togglekeeprecent'), 'app.js must support togglekeeprecent');
+assert(appCode.includes('setkeepcount'), 'app.js must support setkeepcount');
 assert(appCode.includes('[Vocast有声书]《'), 'app.js must format export title cleanly');
 assert(appCode.includes('STORAGE DASHBOARD'), 'app.js must include storage dashboard');
 assert(appCode.includes('vc-storage-bar'), 'app.js must include storage bar');
@@ -97,14 +97,14 @@ async function runCoreTests() {
 
   engine.state.books = [book];
 
-  // A. Test performAutoCleanup with keepRecentTwoChapters
+  // A. Test performAutoCleanup with keepRecentCount
   engine.state.settings.autoDeletePlayed = true;
-  engine.state.settings.keepRecentTwoChapters = true;
+  engine.state.settings.keepRecentCount = 2;
 
   // Currently playing c4 (index 3). c1, c2, c3 are listened.
-  // With keepRecent=true, c2 and c3 are within curIdx-2 (index 1 & 2), so only c1 should be cleaned!
+  // With keep 2, c2 and c3 are within curIdx-2 (index 1 & 2), so only c1 should be cleaned!
   const cleanRes = await engine.performAutoCleanup('b1', 'c4');
-  assert.strictEqual(cleanRes.clearedCount, 1, 'Only c1 should be cleared when keepRecent=true');
+  assert.strictEqual(cleanRes.clearedCount, 1, 'Only c1 should be cleared when keep=2');
   assert.strictEqual(book.chapters[0].audio, null, 'c1 audio should be cleared');
   assert.strictEqual(book.chapters[1].audio, 'a2', 'c2 audio should be preserved');
   assert.strictEqual(book.chapters[2].audio, 'a3', 'c3 audio should be preserved');

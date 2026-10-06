@@ -49,17 +49,17 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 3. Switch tabs: raw -> annotated -> listen -> raw -> listen
     await click('go:annotated');
-    await page.locator('.vc-tabs .active').waitFor();
-    assert.equal(await page.locator('.vc-tabs .active').textContent(), '标注');
+    await page.locator('.vc-modebar .active').waitFor();
+    assert.equal(await page.locator('.vc-modebar .active').textContent(), '标注');
 
     await click('go:listen');
-    assert.equal(await page.locator('.vc-tabs .active').textContent(), '听书');
+    assert.equal(await page.locator('.vc-modebar .active').textContent(), '听书');
 
     await click('go:raw');
-    assert.equal(await page.locator('.vc-tabs .active').textContent(), '原文');
+    assert.equal(await page.locator('.vc-modebar .active').textContent(), '原文');
 
     await click('go:listen');
-    assert.equal(await page.locator('.vc-tabs .active').textContent(), '听书');
+    assert.equal(await page.locator('.vc-modebar .active').textContent(), '听书');
     console.log('✓ 在章节内反复切换 原文 -> 标注 -> 听书 标签');
 
     // 4. Click left-top back button: should DIRECTLY return to chapter directory (detail)
@@ -78,7 +78,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await click('read:'+ch1.id);
     await page.locator('.reader').waitFor();
     await click('go:annotated');
-    assert.equal(await page.locator('.vc-tabs .active').textContent(), '标注');
+    assert.equal(await page.locator('.vc-modebar .active').textContent(), '标注');
 
     // Simulate Android onBackPressed:
     await page.evaluate(()=>window.appBack());
@@ -111,7 +111,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.getByRole('heading',{name:'制作详情'}).waitFor();
     // From task detail, click '校对说话人' (go:annotated)
     await click('go:annotated');
-    await page.locator('.vc-tabs').waitFor();
+    await page.locator('.vc-modebar').waitFor();
     console.log('✓ 从制作详情跳转至章节标注页');
 
     // Click back button: should go to detail (the chapter directory)

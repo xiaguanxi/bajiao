@@ -120,7 +120,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // Case 4.1: 未开始标注的章节 -> 点击跳转 原文 raw
     await click('read:' + ch0.id);
     await page.locator('.reader').waitFor();
-    const activeTabRaw = await page.locator('.vc-tabs .active').textContent();
+    const activeTabRaw = await page.locator('.vc-modebar .active').textContent();
     assert.equal(activeTabRaw, '原文', '未标注章节应跳转至原文');
     console.log('✓ 验证 4.1 成功：未开始标注的章节智能跳转至【原文】(raw)');
 
@@ -145,7 +145,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 此时 ch1 已被忽略并标记为 annotated 且无 audio
     await click('read:' + ch1.id);
     await page.locator('.vc-annotated-topbar').waitFor();
-    const activeTabAnn = await page.locator('.vc-tabs .active').textContent();
+    const activeTabAnn = await page.locator('.vc-modebar .active').textContent();
     assert.equal(activeTabAnn, '标注', '有标注但未完成章节应跳转至标注列表');
     console.log('✓ 验证 4.3 成功：有标注的章节智能跳转至【标注列表】(annotated)');
 
@@ -165,8 +165,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     });
 
     await click('read:' + ch0.id);
-    await page.locator('.vc-controls').waitFor();
-    const activeTabListen = await page.locator('.vc-tabs .active').textContent();
+    await page.locator('.vc-ctlbar').waitFor();
+    const activeTabListen = await page.locator('.vc-modebar .active').textContent();
     assert.equal(activeTabListen, '听书', '整章已完成音频的章节应跳转至听书');
     console.log('✓ 验证 4.4 成功：整章完成的章节智能跳转至【听书】(listen)');
 

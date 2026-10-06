@@ -130,7 +130,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.locator('.vc-issue-card').first().waitFor();
     console.log('✓ 新角色设计页自动带入已有音色描述');
 
-    await click('editseg:2');await page.locator('#segmentSpeaker').selectOption({label:'旁白'});await click('saveseg');
+    await click('editseg:2');await click('dropdown:segSpeaker');await page.locator('[data-act="pickopt:segSpeaker|旁白"]').click();await click('saveseg');
     assert((await page.locator('body').innerText()).includes('处理确认'),'Saving a correction from review must return to remaining review items');
     await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);await e.persist();});
     console.log('✓ 校对保存后保留待确认处理页');

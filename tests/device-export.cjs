@@ -9,7 +9,9 @@ const {waveInfo}=require('./node-io.cjs');
  for(const c of chapters){
   const number=Number(c.title.match(/^第(\d+)章/)[1]);if(!c.audio||report.some(x=>x.number===number&&x.audio===c.audio))continue;
   const name='chapter-'+String(number).padStart(4,'0')+'.wav',nativeName=(process.argv[2]||'')+name;
-  await h.tap('[data-act="go:shelf"]');await h.tap('[data-act="book:'+b.id+'"]');await h.tap('[data-act="read:'+c.id+'"]');await h.tap('[data-act="export:'+c.audio+'"]');
+  await h.tap('[data-act="go:shelf"]');await h.tap('[data-act="book:'+b.id+'"]');await h.tap('[data-act="read:'+c.id+'"]');
+  const t=(await h.state()).tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id);assert(t,'chapter task must exist for export');
+  await h.tap('[data-act="go:tasks"]');await h.tap('[data-act="task:'+t.id+'"]');await h.tap('[data-act="exportcur"]');
   let n;for(let attempt=0;attempt<12;attempt++){try{n=nodes().find(n=>n.class==='android.widget.EditText'&&n['resource-id']==='android:id/title');}catch(e){if(!e.message.includes('Fresh Android UI hierarchy'))throw e;}if(n)break;await sleep(250);}assert(n,'Native export filename field');
   const [x1,y1,x2,y2]=n.bounds.match(/\d+/g).map(Number);finger(Math.round((x1+x2)/2),Math.round((y1+y2)/2));
   run(['shell','input','keyevent','KEYCODE_MOVE_END']);run(['shell','input','keyevent',...Array(n.text.length).fill('KEYCODE_DEL')]);run(['shell','input','text',nativeName]);run(['shell','input','keyevent','4']);log({type:'nativeField',id:n['resource-id'],value:nativeName});

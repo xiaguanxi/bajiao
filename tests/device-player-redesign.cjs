@@ -66,20 +66,22 @@ const { connect, run, sleep, dir } = require('./device-harness.cjs');
     assert(!gone.text.includes('定时关闭') && !gone.text.includes('播放设置'), '页面不应再出现定时/播放设置文字');
     check('timer buttons and settings sheet removed');
 
-    // 4. 倍速行:6 选项,直选联动 engine + 高亮,回切 1x 时 native 真实速度也回 1
-    assert.equal(await h.read(() => document.querySelectorAll('[data-act^="setspeed:"]').length), 6, '倍速行应有 6 个选项');
+    // 4. 倍速浮窗:带刻度滑块,拖动联动 engine + native,刻度回切 1x
+    await h.tap('[data-act="speedmodal"]');await sleep(400);
+    assert.equal(await h.read(() => document.querySelectorAll('.vc-tick').length), 7, '倍速浮窗应有 7 个刻度');
     const speedBefore = await h.read(() => window.vocastEngine.state.playbackSpeed) || 1;
-    await h.tap('[data-act="setspeed:1.5"]');
+    await h.read(() => { const r = document.querySelector('#speedRange'); r.value = '1.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
     await sleep(600);
     assert.equal(await h.read(() => window.vocastEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
-    assert(await h.read(() => !!document.querySelector('[data-act="setspeed:1.5"].active')), '1.5x 应高亮');
-    check('speed 1.5x links engine and highlight');
+    assert.equal(await h.read(() => document.querySelector('#speedBtnVal').textContent), '1.5x', '控制栏倍速签应更新');
+    check('speed 1.5x links engine and badge');
     await h.tap('[data-act="setspeed:1"]');
     await sleep(600);
     assert.equal(await h.read(() => window.vocastEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
-    assert(await h.read(() => !!document.querySelector('[data-act="setspeed:1"].active')), '1x 应高亮');
+    assert.equal(await h.read(() => document.querySelector('#speedBtnVal').textContent), '1x', '控制栏倍速签应回到 1x');
     assert.equal((await status()).speed ?? 1, 1, 'native 实际速度应为 1');
-    check('speed 1x links engine, native and highlight', { restoredFrom: speedBefore });
+    await h.tap('[data-act="closespeed"]');
+    check('speed 1x links engine, native and badge', { restoredFrom: speedBefore });
 
     // 5. 播放:高亮行出现,且播放时钟在走
     await h.tap('[data-act="playchapter"]');
@@ -136,8 +138,8 @@ const { connect, run, sleep, dir } = require('./device-harness.cjs');
     await h.tap('[data-act="playchapter"]'); await sleep(400);
     assert.equal((await status()).playing, true, '恢复应继续播放');
     p = await status();
-    await h.tap('[data-act="seeknext"]'); await sleep(400);
-    assert((await status()).position > p.position + 10000, '快进 15 秒应生效');
+    await h.read(() => { const s = document.querySelector('#seek'); s.value = String(Math.min(Number(s.max), Number(s.value) + 15000)); s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(400);
+    assert((await status()).position > p.position + 10000, '进度条快进应生效');
     check('play/pause/seek regression ok');
 
     const crash = run(['logcat', '-d', '-b', 'crash']).toString();

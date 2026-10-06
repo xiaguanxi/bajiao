@@ -28,10 +28,10 @@ const reportFile = path.join(dir, 'five-chapters.json');
         const live = await h.state();
         if (live.books.find(x => x.id === b.id).chapters.find(x => x.id === ids[0]).segments.find(x => x.id === id).speaker === '双胞胎女娃') continue;
         await h.tap('[data-act="editseg:' + id + '"]');
-        await h.tap('#segmentSpeaker');await nativeTap('双胞胎女娃');await h.tap('[data-act="saveseg"]');
+        await h.tap('[data-act="dropdown:segSpeaker"]');await h.tap('[data-act="pickopt:segSpeaker|双胞胎女娃"]');await h.tap('[data-act="saveseg"]');
         run(['shell', 'input', 'keyevent', '4']);log({ type: 'back', purpose: 'Exit annotation to directory' });await sleep(500);await h.tap('[data-act="confirm:' + ids[0] + '"]');
       }
-      report.checks.push({ name: 'Two uncertain lines corrected through native speaker dropdown using source context' });save();
+      report.checks.push({ name: 'Two uncertain lines corrected through custom speaker dropdown using source context' });save();
       for (const role of ['陆涯', '双胞胎女娃']) {
         const live = await h.state();const r = live.books.find(x => x.id === b.id).characters.find(x => x.name === role);
         await h.tap('[data-act="play:' + r.candidate.sample + '"]');await sleep(1500);

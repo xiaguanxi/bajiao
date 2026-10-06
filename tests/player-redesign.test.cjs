@@ -94,21 +94,23 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     assert(!bodyText.includes('定时关闭') && !bodyText.includes('播放设置'), '页面不应再出现定时/播放设置文字');
     console.log('PASS timer buttons and settings sheet removed');
 
-    // 5. 倍速行:6 个选项,当前 1x 高亮;选 1.5 后 engine + native 联动
-    assert.equal(await page.locator('[data-act^="setspeed:"]').count(), 6, '应有 6 个倍速选项');
-    assert.equal(await page.locator('[data-act="setspeed:1"].active').count(), 1, '默认 1x 应高亮');
-    await click('setspeed:1.5');
+    // 5. 倍速:点控制栏倍速钮弹浮窗,拖带刻度滑块联动 engine + native
+    await click('speedmodal');
+    await page.locator('#speedRange').waitFor();
+    assert.equal(await page.locator('.vc-tick').count(), 7, '应有 7 个刻度');
+    await page.evaluate(() => { const r = document.querySelector('#speedRange'); r.value = '1.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.vocastEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
     assert.equal(playbackCalls.filter(c => c.op === 'speed').at(-1)?.value, 1.5, 'native 应收到 1.5');
-    assert.equal(await page.locator('[data-act="setspeed:1.5"].active').count(), 1, '1.5x 应高亮');
-    assert.equal(await page.locator('[data-act="setspeed:1"].active').count(), 0, '旧 1x 高亮应消失');
-    console.log('PASS speed selection links engine and native');
-    // 再选 1x,确认回切联动(覆盖"选了1倍速上面还是1.25"类 bug)
+    assert.equal(await page.locator('#speedBtnVal').textContent(), '1.5x', '控制栏倍速签应更新');
+    console.log('PASS speed slider links engine and native');
+    // 点刻度回 1x,确认回切联动(覆盖"选了1倍速上面还是1.25"类 bug)
     await click('setspeed:1');
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.vocastEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
     assert.equal(playbackCalls.filter(c => c.op === 'speed').at(-1)?.value, 1, 'native 应收到 1');
+    assert.equal(await page.locator('#speedBtnVal').textContent(), '1x', '控制栏倍速签应回到 1x');
+    await click('closespeed');
     console.log('PASS speed switches back to 1x');
 
     // 6. 字幕跟随:播放第 0 句→高亮第1行;跳到第 3 句→高亮跟过去且滚动

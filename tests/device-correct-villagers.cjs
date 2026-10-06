@@ -10,7 +10,7 @@ const {connect,run,sleep,nativeTap,dir}=require('./device-harness.cjs');
   if(!(await h.state()).books.find(x=>x.id===b.id).characters.some(x=>x.name==='妇人们')){
    await h.field('#newRole','妇人们');await h.field('#newRoleDescription','中年女性，嗓音爽朗略低，说话泼辣直率，语速自然，普通话');await h.tap('[data-act="addrole"]');
   }
-  await h.tap('#segmentSpeaker');await nativeTap('妇人们');await h.tap('[data-act="saveseg"]');
+  await h.tap('[data-act="dropdown:segSpeaker"]');await h.tap('[data-act="pickopt:segSpeaker|妇人们"]');await h.tap('[data-act="saveseg"]');
   run(['shell','input','keyevent','4']);await sleep(300);await h.tap('[data-act="confirm:'+c.id+'"]');
   corrections.push({id,speaker:'妇人们',basis:[81,82,83].includes(id)?'前文明确一个身材彪悍的妇女朝暮雨霏霏喊道':'前文明确妇人们聊天或回头偷笑',nativeDropdown:true});fs.writeFileSync(dir+'/chapter-3-corrections.json',JSON.stringify(corrections,null,2));console.log('Corrected villager dialogue',id);
  }

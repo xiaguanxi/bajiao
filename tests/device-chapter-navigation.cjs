@@ -12,8 +12,8 @@ const {connect,run,sleep,nativeTap,finger,log,dir}=require('./device-harness.cjs
   assert(await h.read(()=>document.querySelector('[data-act="nextchapter"]').disabled));check('Chapter boundary controls disabled correctly');
   for(let i=3;i>=0;i--){await h.tap('[data-act="prevchapter"]');await playing(chapters[i]);}check('UI previous traverses all five chapters');
   await h.tap('[data-act="back"]');await h.tap('[data-act="read:'+chapters[4].id+'"]');await sleep(1200);
-  assert((await h.read(()=>document.querySelector('#playBtn').textContent)).includes('播放'));assert.equal(await h.read(()=>document.querySelector('#seek').value),'0');
-  const beforeUnrelated=(await status()).position;await h.tap('[data-act="seeknext"]');const afterUnrelated=await status();assert.equal(afterUnrelated.id,chapters[0].audio);assert(afterUnrelated.position<beforeUnrelated+10000);check('Browsing another chapter shows its own idle state and cannot seek the playing chapter');
+  assert((await h.read(()=>!!document.querySelector('#playBtn'))));assert.equal(await h.read(()=>document.querySelector('#seek').value),'0');
+  const beforeUnrelated=(await status()).position;await h.read(()=>{const s=document.querySelector('#seek');s.value=String(Math.min(Number(s.max),Number(s.value)+15000));s.dispatchEvent(new Event('change',{bubbles:true}));});await sleep(400);const afterUnrelated=await status();assert.equal(afterUnrelated.id,chapters[0].audio);assert(afterUnrelated.position<beforeUnrelated+10000);check('Browsing another chapter shows its own idle state and cannot seek the playing chapter');
   await h.tap('[data-act="playchapter"]');await playing(chapters[4]);for(let i=3;i>=0;i--){await h.tap('[data-act="prevchapter"]');await playing(chapters[i]);}
   // Tap the actual seek slider at its right endpoint to exercise natural completion.
   await h.tap('#seek');

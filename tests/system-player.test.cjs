@@ -85,35 +85,40 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // 3. 点击第 1 章直接智能跳转至听书页面
     await click('read:' + ch0Id);
-    await page.locator('.vc-controls').waitFor();
+    await page.locator('.vc-ctlbar').waitFor();
     console.log('✓ 成功进入听书页面');
 
     await page.setViewportSize({width:393,height:736});
-    await page.locator('[data-act="setspeed:1.25"]').scrollIntoViewIfNeeded();
-    await click('setspeed:1.25');
+    await click('speedmodal');
+    await page.locator('#speedRange').waitFor();
+    await page.evaluate(() => { const r = document.querySelector('#speedRange'); r.value = '1.25'; r.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.waitForTimeout(300);
     assert((await page.locator('#toast').textContent()).includes('1.25'));
-    assert.equal(await page.locator('[data-act="setspeed:1.25"].active').count(),1,'所选倍速应高亮');
+    assert.equal(await page.locator('#speedBtnVal').textContent(),'1.25x','所选倍速应显示');
     assert.equal(await page.locator('[data-act="sleep"]').count(),0,'旧定时按钮已删除');
     assert.equal(await page.locator('[data-act="speed"]').count(),0,'旧倍速按钮已删除');
-    console.log('✓ 倍速行选择联动 toast 与高亮,定时伪需求按钮已删除');
+    await click('closespeed');
+    console.log('✓ 倍速滑块选择联动 toast 与显示,定时伪需求按钮已删除');
 
-    // 4. 验证 5 按钮播放控制器排版与存在性（上一章、快退15秒、播放/暂停、快进15秒、下一章）
+    // 4. 验证新 5 键控制栏（倍速、上一集、播放/暂停、下一集、回目录）
+    const speedBtn = page.locator('[data-act="speedmodal"]');
     const prevBtn = page.locator('[data-act="prevchapter"]');
-    const seekBackBtn = page.locator('[data-act="seekback"]');
     const playBtn = page.locator('[data-act="playchapter"]');
-    const seekNextBtn = page.locator('[data-act="seeknext"]');
     const nextBtn = page.locator('[data-act="nextchapter"]');
+    const catalogBtn = page.locator('.vc-ctlbar [data-act="back"]');
 
-    assert.equal(await prevBtn.count(), 1, '应渲染上一章按钮');
-    assert.equal(await seekBackBtn.count(), 1, '应渲染快退15秒按钮');
+    assert.equal(await speedBtn.count(), 1, '应渲染倍速按钮');
+    assert.equal(await prevBtn.count(), 1, '应渲染上一集按钮');
     assert.equal(await playBtn.count(), 1, '应渲染播放/暂停主按钮');
-    assert.equal(await seekNextBtn.count(), 1, '应渲染快进15秒按钮');
-    assert.equal(await nextBtn.count(), 1, '应渲染下一章按钮');
+    assert.equal(await nextBtn.count(), 1, '应渲染下一集按钮');
+    assert.equal(await catalogBtn.count(), 1, '应渲染回目录按钮');
+    assert.equal(await page.locator('[data-act="seekback"]').count(), 0, '旧快退按钮应删除');
+    assert.equal(await page.locator('[data-act="seeknext"]').count(), 0, '旧快进按钮应删除');
 
-    // 第1章上一章应为 disabled，下一章有音频因此可用
-    assert.ok(await prevBtn.getAttribute('disabled') !== null, '第1章上一章应被禁用');
-    assert.ok(await nextBtn.getAttribute('disabled') === null, '第1章下一章可用');
-    console.log('✓ 验证 1 成功：5 按钮系统级听书控制器正常渲染且边界状态正确');
+    // 第1章上一集应为 disabled，下一集有音频因此可用
+    assert.ok(await prevBtn.getAttribute('disabled') !== null, '第1章上一集应被禁用');
+    assert.ok(await nextBtn.getAttribute('disabled') === null, '第1章下一集可用');
+    console.log('✓ 验证 1 成功：新 5 键听书控制栏正常渲染且边界状态正确');
 
     // 5. 点击播放按钮，验证传递给 Native 的系统媒体元数据
     await playBtn.click();

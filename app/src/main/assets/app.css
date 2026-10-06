@@ -151,6 +151,7 @@ body {
 }
 
 #app .vc-nav button {
+    position: relative;
     min-height: 46px;
     font-size: 0.78rem;
     flex: 1;
@@ -163,6 +164,8 @@ body {
     border-radius: 10px;
     transition: color 0.15s ease;
 }
+
+#app .vc-nav-badge{position:absolute;top:2px;right:calc(50% - 24px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#c43d00;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;pointer-events:none}
 
 #app .vc-nav button svg {
     width: 1.35rem;
@@ -440,6 +443,12 @@ body {
     box-shadow: 0 8px 28px #0003;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    transition: opacity 0.35s ease;
+    opacity: 1;
+}
+
+#app #toast.vc-toast-hide {
+    opacity: 0;
 }
 
 #app #toast:empty {
@@ -1457,6 +1466,62 @@ body {
 #app .vc-input{font-size:0.95rem;padding:10px 12px;border-radius:10px;border:1px solid var(--vc-line);background:var(--vc-paper);color:var(--vc-text);box-sizing:border-box}
 #app .vc-mini-btn svg{width:1.25rem;height:1.25rem}
 #app .vc-mini-btn.primary{color:var(--vc-accent)}
+
+/* 自制下拉框（替代原生 select 弹窗） */
+#app .vc-field-label{display:block;font-size:0.85rem;color:var(--vc-muted);margin:14px 0 6px}
+#app .vc-dropdown{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;background:var(--vc-paper);border:1px solid var(--vc-line);border-radius:12px;padding:12px 14px;font-size:0.95rem;color:var(--vc-text);min-height:48px;cursor:pointer}
+#app .vc-dropdown svg{width:1.1rem;height:1.1rem;color:var(--vc-muted);flex-shrink:0}
+#app .vc-opt{width:100%;display:flex;align-items:center;gap:10px;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--vc-line);padding:14px 6px;font-size:0.95rem;color:var(--vc-text);cursor:pointer}
+#app .vc-opt:last-child{border-bottom:0}
+#app .vc-opt.selected{font-weight:600;color:var(--vc-accent)}
+#app .vc-opt svg{width:1.1rem;height:1.1rem;margin-left:auto;flex-shrink:0}
+
+/* 提示行不折行 */
+#app .vc-nowrap{white-space:nowrap}
+#app .vc-issue-card .vc-btn{white-space:nowrap;flex-shrink:0}
+
+/* 章节行内的状态徽标按钮不参与弹性拉伸，与右侧对齐 */
+#app .vc-chapter > button.vc-tag{flex:0 0 auto;min-width:0;white-space:nowrap;align-self:center}
+
+/* 角色待确认时的引导按钮 */
+#app .vc-btn-attn{background:var(--vc-warm);color:var(--vc-warn);border:2px solid var(--vc-warn);animation:vcAttn 1.6s ease-in-out infinite}
+#app .vc-btn-attn svg{width:1.2rem;height:1.2rem}
+@keyframes vcAttn{0%,100%{box-shadow:0 0 0 0 rgba(154,94,38,.45)}50%{box-shadow:0 0 0 9px rgba(154,94,38,0)}}
+
+/* 章节页底部阅读模式栏（复用主导航外观） */
+#app .vc-modebar{max-width:720px;margin-left:auto;margin-right:auto}
+
+/* 听书：标题单行，超长滚动展示 */
+#app .vc-marquee{display:block;overflow:hidden;white-space:nowrap;min-width:0}
+#app .vc-marquee>span{display:inline-block;will-change:transform}
+#app .vc-marquee.scroll>span{animation:vcMarquee 9s ease-in-out infinite}
+@keyframes vcMarquee{0%,18%{transform:translateX(0)}48%,62%{transform:translateX(var(--mq,0px))}92%,100%{transform:translateX(0)}}
+#app .vc-top h2{min-width:0;overflow:hidden}
+#app .vc-player-head h3{margin:2px 0 4px;font-size:1.2rem}
+
+/* 听书五键固定控制栏 + 进度条连体底座 */
+#app main.vc-main-listen{padding-bottom:196px!important}
+#app .vc-dock{position:fixed;bottom:72px;left:0;right:0;max-width:720px;margin:0 auto;z-index:95;display:flex;flex-direction:column;gap:0;padding:10px 20px 8px;background:var(--vc-bg);border-top:1px solid var(--vc-line)}
+#app .vc-dock .vc-player-progress{margin:0 0 4px}
+#app .vc-ctlbar{display:flex;align-items:center;justify-content:space-around;padding:0;background:transparent}
+#app .vc-ctl{background:none;border:0;color:var(--vc-text);width:52px;height:52px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:50%}
+#app .vc-ctl svg{width:1.7rem;height:1.7rem}
+#app .vc-ctl.primary{background:var(--vc-accent);color:var(--vc-on);width:68px;height:68px;box-shadow:0 6px 18px #0003}
+#app .vc-ctl.primary svg{width:2rem;height:2rem}
+#app .vc-ctl.disabled{opacity:.3}
+#app .vc-ctl-speed{flex-direction:column;gap:2px}
+#app .vc-ctl-speed svg{width:1.45rem;height:1.45rem}
+#app .vc-spd-val{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+#app .vc-player-tools .vc-link-tag svg{width:1rem;height:1rem}
+
+/* 倍速弹窗 */
+#app .vc-speed-big{text-align:center;font-size:2rem;font-weight:700;margin:8px 0 4px;font-variant-numeric:tabular-nums}
+#app .vc-speed-range{width:100%;accent-color:var(--vc-accent);margin:10px 0 4px}
+#app .vc-speed-ticks{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap;margin-top:6px}
+#app .vc-tick{border:1px solid var(--vc-line);background:transparent;border-radius:14px;padding:6px 0;font-size:0.8rem;flex:1;color:var(--vc-text);font-variant-numeric:tabular-nums;cursor:pointer;min-width:0}
+#app .vc-tick.active{background:var(--vc-accent);color:var(--vc-on);border-color:var(--vc-accent);font-weight:600}
+#app .vc-set-label{font-size:0.85rem;color:var(--vc-muted);margin:14px 0 6px}
+#app .vc-chip-row{display:flex;gap:8px;flex-wrap:wrap}
 
 /* 返回听书目录后的横向溢出兜底：防止长书名/章节名撑宽页面导致 mini 条与导航错位 */
 #app .vc-row > div[style*="flex:1"] {

@@ -24,6 +24,9 @@ test('changing a bound voice invalidates that role across chapters only',async()
 test('malformed batch is retried with fewer lines without corrupting source',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(50));let calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines.length);return {characters:[],lines:(calls.length===1?lines.slice(1):lines).map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[45,22,22,6]);assert.equal(b.chapters[0].segments.length,50);assert.equal(b.chapters[0].analysisIssues.length,1);});
 test('lazy chapter metadata saves without overwriting body and shared loads deduplicate',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。');const original=JSON.parse(JSON.stringify(b.chapters[0]));b.chapters[0]={id:original.id,title:original.title,textLength:2,segmentCount:0,unloaded:true,segments:[]};let reads=0,writes=[];const lazy=new Engine({...io(),loadChapter:async()=>{reads++;return original;},saveSnapshot:async(h,c)=>writes.push(JSON.parse(c))},e.state);await lazy.persist();assert.equal(writes[0].length,0);await Promise.all([lazy.ensureChapter(b.id,original.id),lazy.ensureChapter(b.id,original.id)]);assert.equal(reads,1);assert.equal(lazy.chapter(b.id,original.id).text,'甲。');assert.equal(lazy.chapter(b.id,original.id).unloaded,undefined);});
 test('explicit speech cue beats collective attribution; weaker conflicting context needs review',async()=>{const e=new Engine(io()),b=await e.addBook('t','暮雨神色慌张。\n“喂。”\n霏霏说道：\n“你好。”');b.characters.push({name:'双胞胎女娃',aliases:[]});e.llm=async()=>({characters:[{name:'暮雨',description:'女孩'},{name:'霏霏',description:'女孩'}],lines:units(b.chapters[0].text).map(x=>({id:x.id,speaker:x.id%2?'双胞胎女娃':'旁白',emotion:'自然',confidence:.99}))});await e.analyze(b.id,b.chapters[0].id);assert.equal(b.chapters[0].segments[1].speaker,'未知角色');assert.equal(b.chapters[0].segments[3].speaker,'霏霏');});
+test('speaker threshold defaults to 0.5 and gates synthesis',async()=>{const e=new Engine(io());assert.equal(e.spkThr(),0.5);const b=await e.addBook('t','甲。');b.characters.push({name:'甲',description:'男声',voice:'preset:白桦'});const mk=(text,conf)=>({id:0,text,speaker:'甲',confidence:conf,emotion:'平静',audio:null});b.chapters[0].segments=[mk('甲。',0.6)];e.synthesize=async()=>({id:'out.wav'});await e.enqueue(b.id,[b.chapters[0].id]);assert.equal(e.state.tasks[0].status,'done');e.state.settings.speakerThreshold=0.8;const c2={id:'c2',title:'乙章',text:'乙。',status:'raw',segments:[mk('乙。',0.6)]};b.chapters.push(c2);await e.enqueue(b.id,[c2.id]);assert.equal(e.state.tasks[1].status,'waiting');});
+test('invalid speaker threshold falls back to 0.5',()=>{const e=new Engine(io(),{version:1,books:[],voices:[],tasks:[],settings:{speakerThreshold:9},read:{},usage:[]});assert.equal(e.spkThr(),0.5);});
+test('analyze prompt carries full-chapter context and inference rules',async()=>{const e=new Engine(io()),b=await e.addBook('t','沈砚推开木门。\n“你终于来了。”');let prompt='';e.llm=async p=>{prompt=p;const lines=JSON.parse(p.split('本批片段：')[1]);return {characters:[],lines:lines.map(x=>({id:x.id,speaker:'旁白',emotion:'平静',confidence:0.9})),summary:''};};await e.analyze(b.id,b.chapters[0].id);for(const k of ['本章完整上下文','前文摘要','对话轮次','本章前文已判定'])assert(prompt.includes(k),'prompt 缺 '+k);});
 
 test('deleteBook removes book, cleans tasks, and deletes audio files', async () => {
  const adapter = io(), e = new Engine(adapter);
@@ -68,7 +71,7 @@ test('updatePlaybackProgress saves position, detects completion, and triggers au
  const deletedAudio = [];
  adapter.deleteAudio = async (ids) => { deletedAudio.push(...ids); return { count: ids.length, freedBytes: 200 }; };
  e.state.settings.autoDeletePlayed = true;
- const b = await e.addBook('长篇故事', ['第1章 序', '正文'].join('\n'));
+ const b = await e.addBook('长篇故事', ['第1章 序', '正文甲', '第2章 承', '正文乙'].join('\n'));
  const c = b.chapters[0];
  c.audio = 'ch1_finish.wav';
  c.duration = 100;
@@ -80,9 +83,16 @@ test('updatePlaybackProgress saves position, detects completion, and triggers au
  res = await e.updatePlaybackProgress(b.id, c.id, 99000, 100000);
  assert.equal(res.listened, true);
  assert.equal(res.newlyFinished, true);
- assert.equal(c.audio, null);
- assert.equal(c.audioCleared, true);
- assert(deletedAudio.includes('ch1_finish.wav'));
+ assert.equal(c.audio, 'ch1_finish.wav', 'default keepRecentCount=2 retains current chapter');
+ e.state.settings.keepRecentCount = 0;
+ const c2 = b.chapters[1];
+ c2.audio = 'ch2_finish.wav';
+ c2.duration = 100;
+ res = await e.updatePlaybackProgress(b.id, c2.id, 99000, 100000);
+ assert.equal(res.listened, true);
+ assert.equal(c2.audio, null);
+ assert.equal(c2.audioCleared, true);
+ assert(deletedAudio.includes('ch2_finish.wav'));
 });
 
 test('garbageCollectAudio collects unreferenced audio files and removes them', async () => {
@@ -113,4 +123,54 @@ test('corrupt chapter file fails loudly without mutating stub', async () => {
   const c = lazy.chapter(b.id, orig.id);
   assert.equal(c.unloaded, true);
   assert.equal(typeof c.text, 'undefined');
+});
+
+test('cancel sticks and pause/resume refuse terminal states', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '甲。'), c = b.chapters[0];
+  c.segments = [{ id: 0, text: '甲。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null }];
+  e.synthesize = async () => ({ id: 'out.wav' });
+  const p1 = e.enqueue(b.id, [c.id]);
+  const t = e.state.tasks[0];
+  await e.cancel(t.id);
+  assert.equal(t.status, 'cancelled');
+  await p1;
+  assert.equal(t.status, 'cancelled');
+  assert.ok(!c.audio);
+  await e.pause(t.id);
+  assert.equal(t.status, 'cancelled');
+  await e.resume(t.id);
+  assert.equal(t.status, 'cancelled');
+});
+
+test('removed task stops in-flight work without resurrection', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '甲。'), c = b.chapters[0];
+  c.segments = [{ id: 0, text: '甲。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null }];
+  let release;
+  const gate = new Promise(r => { release = r; });
+  e.synthesize = async () => { await gate; return { id: 'out.wav' }; };
+  const p1 = e.enqueue(b.id, [c.id]);
+  const t = e.state.tasks[0];
+  await e.removeTask(t.id);
+  assert.equal(e.state.tasks.length, 0);
+  release();
+  await p1;
+  assert.equal(e.state.tasks.length, 0);
+});
+
+test('auto voice reuse matches gender/age/features and skips used voices', async () => {
+  const e = new Engine(io()), b = await e.addBook('t', '甲。');
+  b.characters.push(
+    { name: '陆涯', description: '二十一岁青年男子，声音清朗沉稳', aliases: [], voice: null },
+    { name: '小女孩', description: '六七岁的小女孩，说话奶声奶气', aliases: [], voice: null },
+    { name: '用了', description: '二十二岁青年男子，声音洪亮', aliases: [], voice: 'v-used' },
+    { name: '老妇', description: '六十岁的老妇，声音慈祥', aliases: [], voice: null },
+    { name: '老汉', description: '六十岁的老汉，嗓音苍老', aliases: [], voice: null });
+  e.state.voices.push(
+    { id: 'v1', description: '二十一岁的青年男子，声音清朗随性', enabled: true },
+    { id: 'v-used', description: '二十二岁青年男子，声音洪亮有力', enabled: true },
+    { id: 'v-girl', description: '六七岁的小女孩，奶声奶气，声音清亮', enabled: true });
+  assert.equal(e.autoVoiceFor(b.id, '陆涯'), 'v1');
+  assert.equal(e.autoVoiceFor(b.id, '小女孩'), 'v-girl');
+  assert.equal(e.autoVoiceFor(b.id, '老妇'), null);
+  assert.equal(e.autoVoiceFor(b.id, '老汉'), null);
 });

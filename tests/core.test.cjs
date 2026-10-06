@@ -238,3 +238,46 @@ test('ttsParallel defaults to 2 with safe fallback', () => {
   e.state.settings.ttsParallel = 9;
   assert.equal(e.ttsPar(), 2);
 });
+
+test('bit part files under alias, auto voices, reuses sibling voice, never blocks', async () => {
+  const {isBitPart, splitEnsemble, bitPartVoiceDesc} = require('../app/src/main/assets/core.js');
+  assert(isBitPart('路人甲'));assert(isBitPart('路人大婶'));assert(isBitPart('某甲'));
+  assert(!isBitPart('乙'));assert(!isBitPart('沈砚'));
+  assert.deepEqual(splitEnsemble('小女孩A和小女孩B'), ['小女孩A', '小女孩B']);
+  assert.equal(splitEnsemble('沈砚'), null);
+  assert(bitPartVoiceDesc('路人大婶').includes('女子'));
+  const e = new Engine(io());
+  const b = await e.addBook('t', '路人大婶说。\n“菜来了。”');
+  e.llm = async () => ({characters: [{name: '路人大婶', description: '妇人声音'}], lines: [{id: 0, speaker: '旁白', emotion: '平静', confidence: 1}, {id: 1, speaker: '路人大婶', emotion: '热情', confidence: .99}]});
+  await e.analyze(b.id, b.chapters[0].id);
+  const seg = b.chapters[0].segments[1];
+  assert.equal(seg.speaker, '路人大婶');assert.equal(seg.confidence, 1);
+  assert(b.characters.some(r => r.name === '路人大婶' && r.bitPart));
+  e.design = async (desc) => ({id: 'v1', sample: 's.wav', description: desc, enabled: true});
+  e.synthesize = async () => ({id: 'a1'});
+  await e.enqueue(b.id, [b.chapters[0].id]);
+  assert.equal(b.characters.find(r => r.name === '路人大婶').voice, 'v1');
+  assert.equal(e.state.tasks[0].status, 'done');
+});
+
+test('ensemble speech splits to one member without merged filing', async () => {
+  const e = new Engine(io());
+  const b = await e.addBook('t2', '两个女孩说。\n“我们来了。”');
+  e.llm = async () => ({characters: [], lines: [{id: 0, speaker: '旁白', emotion: '平静', confidence: 1}, {id: 1, speaker: '小女孩A和小女孩B', emotion: '开心', confidence: .99}]});
+  await e.analyze(b.id, b.chapters[0].id);
+  assert.equal(b.chapters[0].segments[1].speaker, '小女孩A');
+  assert(!b.characters.some(r => r.name.includes('小女孩A和小女孩B')));
+});
+
+test('parallel tasks share one global TTS budget', async () => {
+  const e = new Engine(io());
+  const b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。');
+  for (const c of b.chapters) c.segments = [{id: 0, text: 'a。', speaker: '旁白', confidence: 1, emotion: '平静', audio: null}, {id: 1, text: 'b。', speaker: '旁白', confidence: 1, emotion: '平静', audio: null}, {id: 2, text: 'c。', speaker: '旁白', confidence: 1, emotion: '平静', audio: null}, {id: 3, text: 'd。', speaker: '旁白', confidence: 1, emotion: '平静', audio: null}];
+  e.state.settings.taskParallel = 2;
+  e.state.settings.ttsParallel = 2;
+  let cur = 0, peak = 0, n = 0;
+  e.synthesize = async () => { n++; cur++; peak = Math.max(peak, cur); await new Promise(r => setTimeout(r, 40)); cur--; return {id: 'a' + n}; };
+  await e.enqueue(b.id, b.chapters.map(c => c.id));
+  assert(peak <= 2, 'TTS 并发峰值 ' + peak + ' 超出全局总量 2');
+  assert(e.state.tasks.every(t => t.status === 'done'));
+});

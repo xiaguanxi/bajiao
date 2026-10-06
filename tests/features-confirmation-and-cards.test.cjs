@@ -98,6 +98,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     // --- 测试 2：任务卡片整卡点击 ---
     await click('go:tasks');
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
+    await click('tasktab:attention');
     const taskCard = page.locator('.vc-panel.vc-card-clickable').first();
     // 点击任务卡片的书名文本区域
     await taskCard.locator('h3').click();
@@ -142,13 +143,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     console.log('✓ 验证 3.3 成功：点击角色的「忽略」按钮');
     console.log('Toast:', await page.locator('#toast').textContent());
 
-    // 验证角色已自动设计并分配音色
+    // 验证角色已标记后台自动设计（不再前台卡住设计）
     const roleVoiceAssigned = await page.evaluate(()=>{
       const b=window.vocastEngine.state.books[0];
       const r=b.characters.find(c=>c.name==='神秘人');
-      return !!r.voice;
+      return !!r.voice || !!r.autoDesign;
     });
-    assert.equal(roleVoiceAssigned, true, '忽略角色后应自动采用设计的音色');
+    assert.equal(roleVoiceAssigned, true, '忽略角色后应标记后台自动设计或已分配音色');
     console.log('✓ 验证 3.4 成功：忽略后角色自动采用设计的音色并分配！');
 
     // 检查说话人忽略按钮
@@ -166,9 +167,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     assert.equal(speakerChangedToNarrator, true, '忽略说话人后应默认设为旁白');
     console.log('✓ 验证 3.6 成功：忽略后该句说话人默认变更为「旁白」！');
 
-    // 此时全部问题已解决，页面显示已无待确认问题
-    await page.getByRole('heading',{name:'本章已无待确认问题'}).waitFor();
-    console.log('✓ 验证 3.7 成功：全部问题处理完后界面呈现完成就绪状态！');
+    // 此时说话人问题已解决，角色已标记后台自动设计（不再前台卡住）
+    const roleMarked = await page.evaluate(()=>{
+      const r=window.vocastEngine.state.books[0].characters.find(c=>c.name==='神秘人');
+      return !!r.voice || !!r.autoDesign;
+    });
+    assert.equal(roleMarked, true, '角色应已分配音色或标记后台自动设计');
+    console.log('✓ 验证 3.7 成功：说话人已解决，角色已记录后台继续！');
 
     // 测试返回上一级章节目录
     await page.locator('.vc-top [data-act="back"]').click();
@@ -192,15 +197,16 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     });
     await click('confirm:'+state.books[0].chapters[1].id);
     await page.locator('[data-act="ignoreall:'+state.books[0].chapters[1].id+'"]').first().click();
-    await page.getByRole('heading',{name:'本章已无待确认问题'}).waitFor();
+    await page.waitForTimeout(800);
     const batchFixed = await page.evaluate(()=>{
       const b=window.vocastEngine.state.books[0];
       const c=b.chapters[1];
-      const roleOk = !!b.characters.find(x=>x.name==='剑客')?.voice;
+      const r=b.characters.find(x=>x.name==='剑客');
+      const roleOk = !!r?.voice || !!r?.autoDesign;
       const segOk = c.segments[1].speaker === '旁白' && c.segments[1].confidence === 1;
       return roleOk && segOk;
     });
-    assert.equal(batchFixed, true, '一键全部忽略后角色与说话人应全部修复');
+    assert.equal(batchFixed, true, '一键全部忽略后说话人应修复、角色应记录后台继续');
     console.log('✓ 验证 4 成功：一键「全部忽略并继续」一键处理全部角色与说话人问题！');
 
     assert.equal(errors.length, 0, 'No errors during test: '+errors.join('; '));

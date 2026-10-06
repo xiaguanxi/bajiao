@@ -22,9 +22,9 @@ function toast(message){const t=$('#toast');if(!t)return;clearTimeout(toast.time
 function hideToast(){const t=$('#toast');if(!t||!t.textContent)return;clearTimeout(toast.timer);t.classList.add('vc-toast-hide');clearTimeout(hideToast._t);hideToast._t=setTimeout(()=>{t.textContent='';t.classList.remove('vc-toast-hide');},380);}
 document.addEventListener('click',()=>{try{hideToast();}catch(e){}},true);
 async function busy(fn,label='正在处理…'){if(!$('#busy').hidden)return;$('#busy').hidden=false;$('#busy div').textContent=label;try{return await fn();}catch(e){toast(e.message||String(e));}finally{$('#busy').hidden=true;render();}}
-function go(p){const open=()=>{const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}page=p;render();window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task','confirm'].includes(p)&&chapter().unloaded){busy(async()=>{await engine.ensureChapter(bookId,chapterId);open();},'读取章节…');}else open();}
-function getChapterTarget(c){if(!c)return 'raw';const activeTask=engine?.state?.tasks?.slice()?.reverse()?.find(t=>t.bookId===bookId&&t.chapterId===c.id);if(c.status==='waiting'||(activeTask&&activeTask.status==='waiting')){return 'confirm';}if(c.audio){return 'listen';}const hasAnnotation=c.unloaded?((c.segmentCount||0)>0):(c.segments&&c.segments.length>0);if(hasAnnotation||c.status==='annotated'){return 'annotated';}return 'raw';}
-window.appBack=()=>{if(['raw','annotated','listen','editseg','confirm'].includes(page)){while(history.length&&['raw','annotated','listen','editseg','confirm'].includes(history[history.length-1].page)){history.pop();}if(history.length&&history[history.length-1].page==='detail'&&history[history.length-1].bookId===bookId){const previous=history.pop();({page,bookId,chapterId,voiceId,roleName}=previous);}else{page='detail';}render();window.scrollTo(0,0);return;}const previous=history.pop();if(previous){({page,bookId,chapterId,voiceId,roleName}=previous);}else page='shelf';render();window.scrollTo(0,0);};
+function go(p){const open=()=>{const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}page=p;render();window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task'].includes(p)&&chapter().unloaded){busy(async()=>{await engine.ensureChapter(bookId,chapterId);open();},'读取章节…');}else open();}
+function getChapterTarget(c){if(!c)return 'raw';if(c.audio){return 'listen';}const hasAnnotation=c.unloaded?((c.segmentCount||0)>0):(c.segments&&c.segments.length>0);if(hasAnnotation||c.status==='annotated'||c.status==='waiting'){return 'annotated';}return 'raw';}
+window.appBack=()=>{if(['raw','annotated','listen','editseg'].includes(page)){while(history.length&&['raw','annotated','listen','editseg'].includes(history[history.length-1].page)){history.pop();}if(history.length&&history[history.length-1].page==='detail'&&history[history.length-1].bookId===bookId){const previous=history.pop();({page,bookId,chapterId,voiceId,roleName}=previous);}else{page='detail';}render();window.scrollTo(0,0);return;}const previous=history.pop();if(previous){({page,bookId,chapterId,voiceId,roleName}=previous);}else page='shelf';render();window.scrollTo(0,0);};
 let lastProdStatus = null;
 let waitingForNextChapterId = null;
 window.checkAutoProduceUpcoming = checkAutoProduceUpcoming;
@@ -103,12 +103,14 @@ case 'detail':{
       </div>
       <div class="vc-batch-right">
         <button class="vc-btn primary vc-top-make-btn" data-act="go:make" ${!selected.length?'disabled':''}>制作所选（${selected.length}）</button>
+        <button class="vc-btn danger" data-act="resetchapters" ${!selected.length?'disabled':''}>删除所选（${selected.length}）</button>
         ${L('完成','multiselect')}
       </div>
     </div>
     <div class="vc-batch-toolbar">
       <div class="vc-batch-tools">
         ${L('全选本页','selectpage')}
+        ${L('全选整书','selectall')}
         ${L('全选未完成','selectunfinished')}
         ${L('清空','selectnone')}
       </div>
@@ -122,7 +124,7 @@ case 'detail':{
       </div>
       <div class="vc-heading-actions">
         ${totalPages>1?`<button class="vc-btn-sub" data-act="openepisodes">选集 ${pageStart+1}-${pageEnd} ▾</button>`:''}
-        ${L('批量制作','multiselect')}
+        ${L('编辑','multiselect')}
       </div>
     </div>
   `;
@@ -193,7 +195,9 @@ if(page==='raw')h+=typeof c.text==='string'?`<article class="reader">${E(c.text)
 if(page==='annotated'){
   if((c.segments||[]).length){
     const probCount=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker))).length;
-    h+=`<div class="vc-annotated-topbar"><div class="vc-annotated-summary"><span>共 ${segCount(c)} 个段落</span>${probCount?`<span class="vc-issue-badge">${I('alert-circle')} ${probCount} 处待确认</span>`:''}</div><div class="vc-annotated-actions">${c.audio?L('听书播放 →','go:listen'):B('制作本章音频','makeone',true)}</div></div>`+(c.segments||[]).map(s=>{const isProblem=!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker));return `<div class="vc-quote ${isProblem?'vc-issue-card uncertain':s.speaker==='旁白'?'':'speaker'}" data-seg="${s.id}"><div class="vc-row">${L(E(s.speaker)+' '+I('pencil'),'editseg:'+s.id)}<small>${E(s.emotion)}</small>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认说话人</span>`:''}</div><p class="vc-quote-text">${E(s.text)}</p>${isProblem?`<div class="vc-issue-actions">${L(I('pencil')+'修改说话人','editseg:'+s.id)}<button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（默认旁白）</button></div>`:''}${s.audio&&s.audio!=='skip'?L(I('play')+'试听此句','play:'+s.audio):''}</div>`;}).join('');
+    const __actSpk=[...new Set((c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];
+    const __probRoles=b.characters.filter(r=>(__actSpk.includes(r.name)||r.candidate)&&!r.voice).length;
+    h+=`<div class="vc-annotated-topbar"><div class="vc-annotated-summary"><span>共 ${segCount(c)} 个段落</span>${probCount?`<span class="vc-issue-badge">${I('alert-circle')} ${probCount} 处待确认</span>`:''}${__probRoles?`<button class="vc-tag warn clickable" data-act="go:roles">角色音色 · ${__probRoles}待确认</button>`:''}</div><div class="vc-annotated-actions">${c.audio?L('听书播放 →','go:listen'):B('制作本章音频','makeone',true)}${probCount?`<button class="vc-btn secondary" data-act="ignoreall:${c.id}">${I('check-check')} 一键全部忽略并继续制作</button>`:''}</div></div>`+(c.segments||[]).map(s=>{const isProblem=!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker));return `<div class="vc-quote ${isProblem?'vc-issue-card uncertain':s.speaker==='旁白'?'':'speaker'}" data-seg="${s.id}"><div class="vc-row">${L(E(s.speaker)+' '+I('pencil'),'editseg:'+s.id)}<small>${E(s.emotion)}</small>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认说话人</span>`:''}</div><p class="vc-quote-text">${E(s.text)}</p>${isProblem?`<div class="vc-issue-actions">${L(I('pencil')+'修改说话人','editseg:'+s.id)}<button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（默认旁白）</button></div>`:''}${s.audio&&s.audio!=='skip'?L(I('play')+'试听此句','play:'+s.audio):''}</div>`;}).join('');
   }else{
     h+=`<div class="empty"><p>还没有标注结果。</p>${B('AI 识别角色','analyze')}</div>`;
   }
@@ -231,118 +235,20 @@ h += '<div class="vc-dock"><div class="vc-player-progress"><small id="playtime">
   h += '</div>';
 }
 break;}case 'editseg':{const c=chapter(),seg=c.segments.find(x=>x.id===editSegment);h=top('修正说话人')+`<div class="vc-quote"><p>${E(seg.text)}</p></div>${dd('segSpeaker','角色',book().characters.map(r=>[r.name,r.name]),seg.speaker)}${field('本句演绎','segmentEmotion',seg.emotion)}${B('保存修正','saveseg')}<hr class="vc-sep">${field('如需新增角色','newRole','')}${field('角色音色描述（性别、年龄、声音听起来怎么样）','newRoleDescription','')}${B('添加角色','addrole',true)}<p class="footer-note">修正会将本句标记为待重生成，其他已完成片段保留。</p>`;break;}
-case 'confirm':{
-  const b=book(),c=chapter();
-  const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];
-  const problemRoles=b.characters.filter(r=>(activeSpeakers.includes(r.name)||r.candidate)&&!r.voice&&!r.bitPart&&!Vocast.isBitPart(r.name));
-  const problemSegments=c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker)));
-  const hasProblems=problemRoles.length>0||problemSegments.length>0;
-
-  h=top(c.title+' · 处理确认');
-
-  if(hasProblems){
-    const problemDesc=(problemRoles.length?problemRoles.length+' 个角色音色':'')+(problemRoles.length&&problemSegments.length?' · ':'')+(problemSegments.length?problemSegments.length+' 处说话人':'');
-    h+=`
-      <div class="vc-confirm-top-panel">
-        <div class="vc-confirm-top-header">
-          <div class="vc-confirm-top-title-wrap">
-            <span class="vc-confirm-top-badge">${I('alert-circle')} 待确认处理</span>
-            <span class="vc-confirm-top-count">${problemDesc}</span>
-          </div>
-          <p class="vc-sub">系统检测到待确认的角色音色或对白，可在下方逐项校对，或一键全部忽略直接进入制作。</p>
-        </div>
-        <div class="vc-confirm-top-actions">
-          <button class="vc-btn primary full vc-btn-ignoreall-top" data-act="ignoreall:${c.id}">
-            ${I('check-check')} 一键全部忽略并继续制作
-          </button>
-        </div>
-      </div>
-    `;
-  }else{
-    h+=`
-      <div class="vc-note">
-        <b>${E(b.name)}</b> · ${E(c.title)}
-        <br><small>本章所有角色与说话人已就绪。</small>
-      </div>
-    `;
-  }
-
-  if(problemRoles.length){
-    h+=`<div class="vc-issue-header">
-      <h4>${I('users')} 待确认角色音色 (${problemRoles.length})</h4>
-      <p class="vc-sub">检测到新角色或未配置音色，忽略则自动设计并采用专属音色</p>
-    </div>`+problemRoles.map(r=>`
-      <div class="vc-panel vc-issue-card">
-        <div class="vc-row">
-          <div class="vc-avatar warn">${E(r.name[0])}</div>
-          <div style="flex:1">
-            <h3 class="vc-issue-speaker">${E(r.name)}</h3>
-            <small>${r.candidate?'AI 已设计候选样本':r.suggestedVoice?'AI 建议匹配已有音色':'等待设计或分配音色'}</small>
-          </div>
-          <span class="vc-issue-badge">${I('alert-circle')} 待确认音色</span>
-        </div>
-        <p class="vc-sub" style="margin-top:8px">${E(r.description||'无描述')}</p>
-        ${r.candidate?`<div class="vc-row" style="margin:8px 0"><small>试听音色：「${E(r.candidate.name||r.name)}」</small>${L(I('play')+'试听样本','play:'+r.candidate.sample)}</div>`:''}
-        <div class="vc-issue-actions">
-          ${r.candidate?B('采用此音色','acceptrole:'+r.name):r.suggestedVoice?B('采用匹配音色','acceptsuggested:'+r.name):B('设计并试听','candidate:'+r.name,true)}
-          ${L('手动选音色','chooserole:'+r.name)}
-          <button class="vc-btn-ignore" data-act="ignorerole:${E(r.name)}">${I('fast-forward')} 忽略（自动设计）</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  if(problemSegments.length){
-    h+=`<div class="vc-issue-header">
-      <h4>${I('message-square-warning')} 待确认说话人 (${problemSegments.length})</h4>
-      <p class="vc-sub">AI 识别置信度偏低或说话人归属存疑，忽略则默认归为「旁白」</p>
-    </div>`+problemSegments.map(s=>{
-      const __segs=c.segments||[];const __idx=__segs.findIndex(x=>x.id===s.id);
-      const __ctx=__segs.slice(Math.max(0,__idx-2),__idx).concat(__segs.slice(__idx+1,__idx+3));
-      return `
-      <div class="vc-quote vc-issue-card" id="confirm-seg-${s.id}">
-        <div class="vc-row">
-          <span class="vc-issue-speaker">${E(s.speaker)}</span>
-          <span class="vc-issue-badge">${I('alert-circle')} 待确认说话人</span>
-        </div>
-        ${__ctx.length?`<div class="vc-context"><p class="vc-sub" style="margin:6px 0 4px">上下文</p>`+__ctx.map(x=>`<p class="vc-sub" style="margin:2px 0"><b>${E(x.speaker||'')}</b>：${E(String(x.text||'').slice(0,60))}${String(x.text||'').length>60?'…':''}</p>`).join('')+`</div>`:''}
-        <p class="vc-quote-text">${E(s.text)}</p>
-        <div class="vc-issue-actions">
-          ${L(I('pencil')+'修改说话人','editseg:'+s.id)}
-          ${L(I('list')+'去标注页改（含上下文）','gotoannotated:'+s.id)}
-          <button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（默认旁白）</button>
-        </div>
-      </div>
-    `;}).join('');
-  }
-
-  if(!hasProblems){
-    h+=`<div class="vc-panel" style="text-align:center;padding:28px 16px">
-      <div style="font-size:36px;color:var(--vc-accent);margin-bottom:10px">${I('check-circle')}</div>
-      <h3>本章已无待确认问题</h3>
-      <p class="vc-sub">角色音色与对白说话人均已就绪，可继续进行配音合成。</p>
-      <div class="vc-split" style="margin-top:18px">
-        ${B('继续制作本章','resumechapter:'+c.id)}
-        ${B('返回章节目录','back',true)}
-      </div>
-    </div>`;
-  }
-  break;
-}
 case 'voices':h=title('VOICE LIBRARY · 声音档案','音色库',B(I('plus'),'importvoices',true))+`<div class="vc-tabs"><button class="${voiceTab==='mine'?'active':''}" data-act="voicetab:mine">我的音色 · ${state.voices.length}</button><button class="${voiceTab==='preset'?'active':''}" data-act="voicetab:preset">MiMo 预设</button></div>`+(voiceTab==='mine'?`<div class="vc-note">导入和设计统一保存，AI 根据描述匹配可用音色。</div><div class="vc-split">${B('导入音频','importvoices')}${B('设计新音色','newdesign',true)}</div>${state.voices.length?state.voices.map(v=>`<div class="vc-panel vc-card-clickable" data-act="voice:${v.id}"><div class="vc-row"><div class="vc-avatar">${I(v.source==='import'?'mic':'sparkles')}</div><div style="flex:1"><h3 class="voice-name">${E(v.name)}</h3><small>${v.source==='import'?'用户导入':'AI 设计'} · ${v.format.toUpperCase()}${v.tested?' · 已试音':''}</small></div>${v.sample?`<button class="vc-preset-btn" data-act="play:${v.sample}">${I('play')} 试听</button>`:T(v.tested?'已试音':'可使用')}</div><p class="vc-sub">${E(v.description)}</p><div class="vc-row"><small>${v.enabled?'参与 AI 匹配':'仅手动选用'}</small><div style="display:flex;align-items:center;gap:14px"><span class="vc-link-text">管理 →</span>${L(I('trash-2')+'删除','deletevoice:'+v.id)}</div></div></div>`).join(''):'<div class="empty"><p>还没有自己的音色。</p><small>导入文件名即描述，朗读内容不限。</small></div>'}`:Vocast.PRESETS.map(v=>`<div class="vc-preset-row"><div class="vc-preset-title">${I('volume-2')}${E(v)}</div><button class="vc-preset-btn" data-act="preset:${E(v)}">${I('play')} 试听</button></div>`).join(''));break;
 case 'voiceimport':h=top('导入样本')+`<h1 class="vc-title">一段朗读，就是一种声音。</h1><p class="vc-sub">文件名自动成为音色描述，可修改。MP3 / WAV；编码后不超过 10 MB。</p>${imports.map((f,i)=>`<div class="vc-panel"><p class="vc-filename">${E(f.name)}</p>${field('音色描述','import-'+i,f.name.replace(/\.[^.]+$/,''))}<div class="vc-row"><small>${f.format.toUpperCase()} · ${(f.size/1000000).toFixed(2)} MB</small>${L('播放样本','play:'+f.id)}</div></div>`).join('')}<button class="vc-btn full" data-act="saveimports">保存 ${imports.length} 个样本</button><p class="footer-note">可直接用于克隆合成，不必先设计或创建声音 ID。</p>`;break;
 case 'voicedetail':{const v=voice();h=top('我的音色')+field('音色名称','vname',v.name)+area('音色描述 · 匹配依据（性别、年龄、声音听起来怎么样）','vdescription',v.description)+`<label class="vc-label"><span>参与 AI 自动匹配</span><input type="checkbox" id="venabled" ${v.enabled?'checked':''}></label><div class="vc-split">${B('播放参考样本','play:'+v.sample,true)}${B('保存描述','savevoice')}</div><div class="vc-panel"><h3>克隆试音</h3>${area('用此声线朗读新文本','trialText','山里的风停了，故事才刚刚开始。')}${B('生成并播放试音','trial')}</div><div class="vc-danger-zone"><button class="vc-btn danger full" data-act="deletevoice:${v.id}">${I('trash-2')} 删除此音色</button></div><p class="footer-note">删除后，该音色将从音色库移除，已绑定此音色的角色将恢复为未分配状态。</p>`;break;}
 case 'design':h=top(roleName?'确认新角色音色':'设计新音色')+`${roleName?`<div class="vc-note">音色名直接使用角色名「${E(roleName)}」，采用后存入我的音色并继续制作。</div>`:field('音色名称（直接使用角色名或简练特征）','designName',candidate?.name||'新音色')}${area('音色描述（仅描述声音：性别、年龄、声音听起来怎么样，如：六七岁的小女孩，说话奶声奶气）','designDescription',candidate?.description||(roleName?book().characters.find(r=>r.name===roleName)?.description:'')||'')}${area('样本朗读内容','designText',candidate?.previewText||'清晨的风穿过树林，远方的故事刚刚开始。')}<div class="vc-split">${B(candidate?'重新生成样本':'生成试听样本','designsample')}${candidate?B('试听样本','play:'+candidate.sample,true):''}</div>${candidate?`<div class="vc-note">候选样本已返回，确认后可复用。</div><button class="vc-btn full" data-act="acceptsample">${roleName?'采用样本并继续配音':'保存到我的音色'}</button>`:''}`;break;
-case 'roles':{const b=book();h=top('角色与音色')+`<h1 class="vc-title">角色绑定，全书一致。</h1><p class="vc-sub">${E(b.name)} · 已有音色直接复用，仅新设计等待确认。</p>${b.characters.map(r=>{const isProblem=!r.voice;return `<div class="vc-panel ${isProblem?'vc-issue-card':''}"><div class="vc-row"><div class="vc-avatar ${isProblem?'warn':''}">${E(r.name[0])}</div><div style="flex:1"><h3 class="${isProblem?'vc-issue-speaker':''}">${E(r.name)}</h3><small>${E(voiceName(r.voice))}</small></div>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认音色</span>`:T('已分配')}</div><p class="vc-sub">${E(r.description)}</p>${r.reason?`<p class="mini">${E(r.reason)}</p>`:''}<div class="${isProblem?'vc-issue-actions':'vc-row'}">${L('手选音色','chooserole:'+r.name)}${r.candidate?L('试听并确认新设计','candidate:'+r.name):''}${isProblem?`<button class="vc-btn-ignore" data-act="ignorerole:${E(r.name)}">${I('fast-forward')} 忽略（自动设计）</button>`:''}</div></div>`;}).join('')}${menu('workflow','全局音色策略','优先复用我的音色','go:policy')}`;break;}
+case 'roles':{const b=book();h=top('角色与音色')+`<h1 class="vc-title">角色绑定，全书一致。</h1><p class="vc-sub">${E(b.name)} · 已有音色直接复用，仅新设计等待确认。</p>${b.characters.map(r=>{const isProblem=!r.voice;return `<div class="vc-panel ${isProblem?'vc-issue-card':''}"><div class="vc-row"><div class="vc-avatar ${isProblem?'warn':''}">${E(r.name[0])}</div><div style="flex:1"><h3 class="${isProblem?'vc-issue-speaker':''}">${E(r.name)}</h3><small>${E(voiceName(r.voice))}</small></div>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认音色</span>`:T('已分配')}</div><p class="vc-sub">${E(r.description)}</p>${r.reason?`<p class="mini">${E(r.reason)}</p>`:''}<div class="${isProblem?'vc-issue-actions':'vc-row'}">${L('手选音色','chooserole:'+r.name)}${r.candidate?L('试听并确认新设计','candidate:'+r.name):B('设计并试听','candidate:'+r.name,true)}${isProblem?`<button class="vc-btn-ignore" data-act="ignorerole:${E(r.name)}">${I('fast-forward')} 忽略（自动设计）</button>`:''}</div></div>`;}).join('')}${menu('workflow','全局音色策略','优先复用我的音色','go:policy')}`;break;}
 case 'choose':h=top('为'+roleName+'选音色')+`<div class="vc-note">更换绑定后，本书已有的该角色片段将标记为待重制，其他角色保留。</div><h3>我的音色</h3>${state.voices.map(v=>menu('audio-lines',E(v.name),E(v.description),'bind:'+v.id)).join('')}<h3 style="margin-top:22px">MiMo 预设</h3>${Vocast.PRESETS.map(v=>menu('volume-2',E(v),'直接合成','bind:preset:'+v)).join('')}`;break;
 case 'policy':{const st=state.settings;h=top('全局音色策略')+`<div class="vc-flow"><div><b>1</b><span>沿用角色已有绑定</span></div><div><b>2</b><span>AI 按描述匹配我的音色</span></div><div><b>3</b><span>没有合适音色才新设计</span></div></div>${dd('policyMode','新设计确认方式',[['manual','确认样本后使用（默认）'],['auto','全自动，仅失败时处理']],st.mode)}<label class="vc-label"><span>允许匹配 MiMo 预设</span><input id="usePresets" type="checkbox" ${st.usePresets?'checked':''}></label>${dd('retries','可恢复错误重试',[['0','0'],['1','1'],['2','2'],['3','3']],String(state.settings.retries))}${dd('speakerThreshold','说话人确认阈值（低于此置信度需人工确认）',[['0.3','0.3 · 宽松（更少打扰）'],['0.5','0.5 · 适中（默认）'],['0.65','0.65 · 严格（旧版）'],['0.8','0.8 · 很严格']],String(st.speakerThreshold??0.5))}${dd('taskParallel','同时制作任务数（章节级并行）',[['1','1 · 一次一章（默认，最稳）'],['2','2 · 同时做两章'],['3','3 · 同时做三章']],String(st.taskParallel??1))}${dd('ttsParallel','TTS 总并发句数（全部任务共用）',[['1','1 · 逐句合成（最稳）'],['2','2 · 默认'],['3','3 · 更快'],['4','4 · 最快（易被限流）']],String(st.ttsParallel??2))}${B('保存策略','savepolicy')}<p class="footer-note">鉴权与额度错误不会持续重试。修改策略不会更换已有角色音色。</p>`;break;}
 case 'make':h=top('批量制作')+`<h1 class="vc-title">制作 ${selected.length} 个章节</h1><div class="vc-panel"><h3>${E(book().name)}</h3><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).slice(0,3).map(c=>E(c.title)).join('、')}${selected.length>3?' 等 '+selected.length+' 章':''}</p>${selected.length>3?`<details><summary>查看全部所选章节</summary><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).map(c=>E(c.title)).join('、')}</p></details>`:''}</div>${menu('brain-circuit','语言模型',E(state.settings.llmModel),'go:llm')}${menu('audio-lines','MiMo TTS','预设 / 参考音频克隆自动选择','go:mimo')}${menu('workflow','新角色音色策略',state.settings.mode==='auto'?'全自动，失败后处理':'新设计候选样本等待确认','go:policy')}<button class="vc-btn full vc-bottom" data-act="enqueue">加入队列并开始制作</button><p class="footer-note">离开应用时在当前请求结束后暂停并保存。返回制作页可继续；已完成片段不重复调用。</p>`;break;
 case 'tasks':{const isMaking=t=>['running','queued','waiting','paused','failed'].includes(t.status);const isFinished=t=>['done','cancelled'].includes(t.status);const isActive=t=>['running','queued'].includes(t.status);const isAttention=t=>['waiting','paused','failed'].includes(t.status);const hasProducing=state.tasks.some(t=>['queued','running'].includes(t.status));const hasPausedTasks=state.tasks.some(t=>['paused','failed'].includes(t.status));let topBtn='';if(hasProducing)topBtn=B('全部暂停','pauseall',true);else if(hasPausedTasks)topBtn=B('继续制作','resumeall',true);const rank=t=>t.status==='running'?0:t.status==='queued'?1:t.status==='waiting'?2:t.status==='paused'?3:t.status==='failed'?4:9;const ord=(a,b)=>rank(a)-rank(b)||((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0));const makingList=state.tasks.filter(isMaking).sort(ord);const finishedList=state.tasks.filter(isFinished).sort((a,b)=>(b.created||0)-(a.created||0));const activeList=state.tasks.filter(isActive).sort(ord);const attentionList=state.tasks.filter(isAttention).sort(ord);const card=t=>{const missingData=isMissingData(t.message);let b=null,c=null;try{b=engine.book(t.bookId);c=engine.chapter(t.bookId,t.chapterId);}catch(e){b=null;c=null;}if(!b||!c){const pct0=t.total?Math.round(t.done/t.total*100):0;return `<div class="vc-panel"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase||'')}</small></div><h3 style="margin-top:14px">关联内容已移除</h3><p>该任务对应的书籍或章节已不存在，可安全移除此条记录，不影响其他任务。</p><div class="vc-meter"><span style="width:${pct0}%"></span></div><p class="vc-sub">${t.done} / ${t.total||'—'} 句 ${E(cleanErr(t.message)||'')}${missingData?'<br><small>章节数据缺失，删除本书并重导后重新导入</small>':''}</p><div class="vc-row"><span class="vc-link-text">查看详情 →</span>${L(I('trash-2')+'移除','removetask:'+t.id)}</div></div>`;}const pct=t.total?Math.round(t.done/t.total*100):0;let acts='';const pendOrder=['queued','waiting','paused','failed'].includes(t.status);if(pendOrder){const sibs=state.tasks.filter(o=>['queued','waiting','paused','failed'].includes(o.status)).sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0)));const si=sibs.findIndex(o=>o.id===t.id);if(si>0)acts+=L('↑ 上移','taskup:'+t.id);if(si>=0&&si<sibs.length-1)acts+=L('↓ 下移','taskdown:'+t.id);if(si>0)acts+=L('⤒ 置顶','tasktop:'+t.id);}
-if(t.status==='waiting')acts+=L('处理确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('移除任务','removetask:'+t.id)+`<button class="vc-btn danger" data-act="deletebookconfirm:${t.bookId}">删除本书并重导</button>`;}else if(['paused','failed'].includes(t.status))acts+=L('继续 / 重试','resume:'+t.id);else if(t.status==='running'||t.status==='queued')acts+=L('暂停','pause:'+t.id);else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);else acts+=L(I('trash-2')+'移除','removetask:'+t.id);return `<div class="vc-panel vc-card-clickable" data-act="task:${t.id}"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h3 style="margin-top:14px">${E(b.name)}</h3><p>${E(c.title)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.done} / ${t.total||'—'} 句 ${E(cleanErr(t.message)||'')}${missingData?'<br><small>章节数据缺失，删除本书并重导后重新导入</small>':''}</p><div class="vc-row"><span class="vc-link-text">查看详情 →</span>${acts}</div></div>`;};
+if(t.status==='waiting')acts+=L('去标注页确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('移除任务','removetask:'+t.id)+`<button class="vc-btn danger" data-act="deletebookconfirm:${t.bookId}">删除本书并重导</button>`;}else if(['paused','failed'].includes(t.status))acts+=L('继续 / 重试','resume:'+t.id);else if(t.status==='running'||t.status==='queued')acts+=L('暂停','pause:'+t.id);else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);else acts+=L(I('trash-2')+'移除','removetask:'+t.id);return `<div class="vc-panel vc-card-clickable" data-act="task:${t.id}"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h3 style="margin-top:14px">${E(b.name)}</h3><p>${E(c.title)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.done} / ${t.total||'—'} 句 ${E(cleanErr(t.message)||'')}${missingData?'<br><small>章节数据缺失，删除本书并重导后重新导入</small>':''}</p><div class="vc-row"><span class="vc-link-text">查看详情 →</span>${acts}</div></div>`;};
 const tabBtn=(id,label,n)=>`<button class="${taskTab===id?'active':''}" data-act="tasktab:${id}">${label} · ${n}</button>`;
 const tabList=taskTab==='active'?activeList:taskTab==='attention'?attentionList:finishedList;
 h=title('PRODUCTION STUDIO','制作任务',topBtn)+`<div class="vc-tabs">${tabBtn('active','制作中',activeList.length)}${tabBtn('attention','待确认',attentionList.length)}${tabBtn('done','已完成',finishedList.length)}</div>`+(state.tasks.length?(tabList.length?tabList.map(card).join(''):'<div class="empty"><p>'+(taskTab==='active'?'暂无制作中的任务':taskTab==='attention'?'暂无待确认的任务':'暂无已完成的任务')+'</p></div>'):'<div class="empty"><p>暂无制作任务</p>'+B('从书架选择章节','go:shelf')+'</div>');break;}
-case 'task':{const t=state.tasks.find(t=>t.id===window.currentTask);if(!t){h=top('制作详情')+`<div class="empty"><p>任务记录不存在或已被移除。</p>`+B('返回任务列表','go:tasks')+`</div>`;break;}let c=null;try{c=engine.chapter(t.bookId,t.chapterId);}catch(e){c=null;}if(!c){h=top('制作详情')+`<div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase||'')}</small></div><h1 class="vc-title">关联内容已移除</h1><p class="vc-sub">${E(t.message||'该任务对应的书籍或章节已不存在。')}</p><div class="vc-bottom">`+B('移除任务记录','removetask:'+t.id,true)+B('返回任务列表','go:tasks',true)+`</div>`;break;}h=top('制作详情')+`<div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h1 class="vc-title">${E(c.title)}</h1><p class="vc-sub">${E(cleanErr(t.message))}</p>${isMissingData(t.message)?'<p class="footer-note">章节数据缺失：请返回任务列表删除本书后重新导入，已生成的单句音频会保留。</p>':''}${t.status==='waiting'?`<div class="vc-panel vc-issue-card" style="margin:12px 0"><div class="vc-row"><b class="vc-nowrap">待确认事项</b>${B('去处理确认','confirm:'+c.id)}</div></div>`:''}${menu('users-round','角色与音色','查看匹配结果及待确认的新样本','go:roles')}${menu('file-text','校对说话人','不确定的对白等待你校对','go:annotated')}${c.audio?menu('sparkles','优化句末停顿','保留配音，补足句末间隔','repacecur')+menu('download','导出本章 WAV','保存为 wav 文件','exportcur'):''}${c.segments?c.segments.map(s=>`<div class="task-row"><div class="vc-row"><span>${E(s.speaker)}</span>${T(s.audio?'已完成':s.confidence<engine.spkThr()?'待校对':'待合成',!s.audio)}</div><p class="vc-sub">${E(s.text)}</p>${s.confidence<engine.spkThr()?`<div class="vc-issue-actions" style="margin-top:6px"><button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（设为旁白）</button></div>`:''}${s.audio&&s.audio!=='skip'?L('试听','play:'+s.audio):''}</div>`).join(''):''}<div class="vc-bottom">${t.status==='done'?B('返回任务列表','go:tasks',true):t.status==='running'?B('完成当前句后暂停','pause:'+t.id,true):t.status==='cancelled'?B('重新加入制作','remake:'+t.id):B('继续 / 重试任务','resume:'+t.id)}${!['done','cancelled'].includes(t.status)?B('取消此任务','cancel:'+t.id,true,false,'danger'):B('移除任务记录','removetask:'+t.id,true)}</div>`;break;}
+case 'task':{const t=state.tasks.find(t=>t.id===window.currentTask);if(!t){h=top('制作详情')+`<div class="empty"><p>任务记录不存在或已被移除。</p>`+B('返回任务列表','go:tasks')+`</div>`;break;}let c=null;try{c=engine.chapter(t.bookId,t.chapterId);}catch(e){c=null;}if(!c){h=top('制作详情')+`<div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase||'')}</small></div><h1 class="vc-title">关联内容已移除</h1><p class="vc-sub">${E(t.message||'该任务对应的书籍或章节已不存在。')}</p><div class="vc-bottom">`+B('移除任务记录','removetask:'+t.id,true)+B('返回任务列表','go:tasks',true)+`</div>`;break;}h=top('制作详情')+`<div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h1 class="vc-title">${E(c.title)}</h1><p class="vc-sub">${E(cleanErr(t.message))}</p>${isMissingData(t.message)?'<p class="footer-note">章节数据缺失：请返回任务列表删除本书后重新导入，已生成的单句音频会保留。</p>':''}${t.status==='waiting'?`<div class="vc-panel vc-issue-card" style="margin:12px 0"><div class="vc-row"><b class="vc-nowrap">待确认事项</b>${B('去标注页处理确认','confirm:'+c.id)}</div></div>`:''}${menu('users-round','角色与音色','查看匹配结果及待确认的新样本','go:roles')}${menu('file-text','校对说话人','不确定的对白等待你校对','go:annotated')}${c.audio?menu('sparkles','优化句末停顿','保留配音，补足句末间隔','repacecur')+menu('download','导出本章 WAV','保存为 wav 文件','exportcur'):''}${c.segments?c.segments.map(s=>`<div class="task-row"><div class="vc-row"><span>${E(s.speaker)}</span>${T(s.audio?'已完成':s.confidence<engine.spkThr()?'待校对':'待合成',!s.audio)}</div><p class="vc-sub">${E(s.text)}</p>${s.confidence<engine.spkThr()?`<div class="vc-issue-actions" style="margin-top:6px"><button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（设为旁白）</button></div>`:''}${s.audio&&s.audio!=='skip'?L('试听','play:'+s.audio):''}</div>`).join(''):''}<div class="vc-bottom">${t.status==='done'?B('返回任务列表','go:tasks',true):t.status==='running'?B('完成当前句后暂停','pause:'+t.id,true):t.status==='cancelled'?B('重新加入制作','remake:'+t.id):B('继续 / 重试任务','resume:'+t.id)}${!['done','cancelled'].includes(t.status)?B('取消此任务','cancel:'+t.id,true,false,'danger'):B('移除任务记录','removetask:'+t.id,true)}</div>`;break;}
 case 'models':h=top('模型配置')+`<h1 class="vc-title">一个声音引擎，自选理解模型。</h1><div class="vc-panel"><div class="vc-row"><h3>MiMo TTS</h3>${T(configured.ttsConfigured?'已配置':'待配置',!configured.ttsConfigured)}</div><p class="vc-sub">预设合成、音色设计、参考样本克隆。</p>${L('配置连接 →','go:mimo')}</div><div class="vc-panel"><div class="vc-row"><h3>语言模型</h3>${T(configured.llmConfigured?'已配置':'待配置',!configured.llmConfigured)}</div><p class="vc-sub">${E(state.settings.llmModel)}</p><p class="vc-model-id">${E(state.settings.llmBase)}</p>${L('配置连接 →','go:llm')}</div>`;break;
 case 'llm':h=top('语言模型')+`<div class="vc-note">默认 MiniMax 中国区 Token Plan。密钥与区域必须对应，不自动切换国际区。</div>${dd('llmProtocol','接口协议',[['openai','OpenAI 兼容'],['anthropic','Anthropic Messages']],state.settings.llmProtocol)}${field('Base URL','llmBase',state.settings.llmBase)}${field('模型 ID','llmModel',state.settings.llmModel)}${field('API Key','llmKey','','password')}<div class="vc-split">${B('保存配置','savellm')}${B('真实连接测试','testllm',true)}</div><p class="footer-note">测试使用已保存的配置，会实际调用一次语言模型。</p>`;break;
 case 'mimo':h=top('MiMo TTS')+field('API Key','ttsKey','','password')+`<div class="vc-panel"><h3>按任务自动使用</h3><p>预设音色</p><div class="vc-model-id">mimo-v2.5-tts</div><p>样本设计</p><div class="vc-model-id">mimo-v2.5-tts-voicedesign</div><p>样本克隆合成</p><div class="vc-model-id">mimo-v2.5-tts-voiceclone</div></div><div class="vc-split">${B('保存配置','savemimo')}${B('真实合成测试','testmimo',true)}</div><p class="footer-note">测试使用已保存的配置并生成可播放音频。统一输出 WAV，章节合并保留原音质。</p>`;break;
@@ -824,9 +730,8 @@ if(a==='miniplaypause'){const isPlay=!!miniPlayingState?.playing;await device.ca
 if(a==='mininext'){await window.onNativePlaybackAction('next',0);return;}
 if(a==='book'){bookId=x;chapterId=book().chapters[0].id;multi=false;selected=[];chapterPage=0;episodeModalOpen=false;go('detail');return;}
 if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);go(getChapterTarget(c));return;}
-if(a==='confirm'){chapterId=x;go('confirm');return;}
+if(a==='confirm'){chapterId=x;pendingSeg=null;const cc=book()?.chapters?.find(ch=>ch.id===x);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,x);},'读取章节…');}go('annotated');return;}
 if(a==='tasktab'){taskTab=x;render();return;}
-if(a==='gotoannotated'){editSegment=Number(x);delete dropdownSel.segSpeaker;openDropdown=null;pendingSeg=Number(x);go('annotated');return;}
 if(a==='ignorerole'){const b=book();const ch=b.characters.find(r=>r.name===x);if(ch){const reuse=engine.autoVoiceFor(bookId,x);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';await engine.persist();toast('角色「'+ch.name+'」已自动复用已有音色');}else{ch.autoDesign=true;await engine.persist();toast('角色「'+ch.name+'」稍后后台自动设计');}engine.resumeWaiting(bookId).catch(e=>toast(e.message));}taskTab='active';go('tasks');return;}
 if(a==='ignorespeaker'){const c=chapter();const seg=c.segments.find(s=>s.id===Number(x));if(seg){seg.speaker='旁白';seg.confidence=1;seg.audio=null;seg.emotion='自然朗读';c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;if(t.status==='done')t.status='paused';}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('该句说话人已设为旁白');taskTab='active';go('tasks');}return;}
 if(a==='ignoreall'){const b=book(),c=chapter();const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const rolesToFix=b.characters.filter(r=>(activeSpeakers.includes(r.name)||r.candidate)&&!r.voice);for(const ch of rolesToFix){const reuse=engine.autoVoiceFor(bookId,ch.name);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';continue;}ch.autoDesign=true;}for(const seg of c.segments){if(!seg.skip&&!seg.isAd&&seg.speaker!=='广告'&&(seg.confidence<engine.spkThr()||!b.characters.some(r=>r.name===seg.speaker))){seg.speaker='旁白';seg.confidence=1;seg.audio=null;seg.emotion='自然朗读';}}c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('已记录选择，后台继续制作');taskTab='active';go('tasks');return;}
@@ -839,6 +744,8 @@ if(a==='multiselect'){multi=!multi;render();return;}
 if(a==='selectunfinished'){selected=book().chapters.filter(c=>!c.audio).map(c=>c.id);render();return;}
 if(a==='selectpage'){const b=book();const cur=b.chapters.slice(chapterPage*50,(chapterPage+1)*50).map(c=>c.id);selected=[...new Set([...selected,...cur])];render();return;}
 if(a==='selectnone'){selected=[];render();return;}
+if(a==='selectall'){selected=book().chapters.map(c=>c.id);render();return;}
+if(a==='resetchapters'){await busy(async()=>{const ids=[...selected];for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&ids.includes(t.chapterId)&&['running','queued'].includes(t.status)))await engine.cancel(t.id);const n=await engine.resetChapters(bookId,ids);selected=[];multi=false;try{storageStats=await device.call('audioStats');}catch(e){}toast('已清除 '+n+' 章的标注与音频，原文保留，可重新制作');},'正在清除所选章节的标注与音频…');return;}
 if(a==='openepisodes'){episodeModalOpen=true;render();return;}
 if(a==='dropdown'){openDropdown=x;render();return;}
 if(a==='closedropdown'){openDropdown=null;render();return;}
@@ -854,7 +761,7 @@ if(a==='setchpage'){chapterPage=Number(x)||0;episodeModalOpen=false;render();ret
 if(a==='analyze'){await busy(()=>engine.analyze(bookId,chapterId),'正在实际调用语言模型，识别角色…');return;}
 if(a==='makeone'){selected=[chapterId];go('make');return;}
 if(a==='enqueue'){if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}const ids=[...selected];go('tasks');engine.enqueue(bookId,ids).catch(e=>toast(e.message));return;}
-if(a==='task'||a==='taskroles'){const t=engine.state.tasks.find(t=>t.id===x);window.currentTask=t.id;bookId=t.bookId;chapterId=t.chapterId;go(a==='task'?'task':'roles');return;}
+if(a==='task'||a==='taskroles'){const t=engine.state.tasks.find(t=>t.id===x);if(a==='task'&&t.status==='waiting'){window.currentTask=t.id;bookId=t.bookId;chapterId=t.chapterId;pendingSeg=null;const cc=book().chapters.find(ch=>ch.id===t.chapterId);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,t.chapterId);},'读取章节…');}go('annotated');return;}window.currentTask=t.id;bookId=t.bookId;chapterId=t.chapterId;go(a==='task'?'task':'roles');return;}
 if(a==='pause'){await engine.pause(x);toast('将在当前请求完成后暂停');return;}
 if(a==='taskup'){await engine.moveTask(x,'up');render();return;}
 if(a==='taskdown'){await engine.moveTask(x,'down');render();return;}
@@ -918,7 +825,7 @@ if(a==='savemimo'){await device.call('saveCredentials',{ttsKey:value('ttsKey')})
 if(a==='testllm'){await busy(async()=>{const result=await engine.llm('只输出 JSON：{"ok":true}');if(result.ok!==true)throw Error('模型测试返回格式不符合预期');await engine.persist();toast('真实语言模型调用成功');},'正在验证真实语言模型调用…');return;}
 if(a==='testmimo'){await busy(async()=>{const f=await engine.synthesize('连接成功，现在可以开始制作有声书。','preset:白桦');await engine.persist();await device.call('play',{id:f.id,title:'MiMo 连接测试'});toast('真实合成成功，音频已播放');},'正在调用 MiMo 合成测试语音…');return;}
 if(a==='editseg'){editSegment=Number(x);delete dropdownSel.segSpeaker;openDropdown=null;go('editseg');return;}
-if(a==='saveseg'){const reviewing=history.some(h=>h.page==='confirm'&&h.bookId===bookId&&h.chapterId===chapterId);const __seg=chapter().segments.find(s=>s.id===editSegment);await engine.correct(bookId,chapterId,editSegment,dropdownSel.segSpeaker||(__seg&&__seg.speaker),value('segmentEmotion'));const __b=book(),__c=chapter();const __act=[...new Set(__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const __ps=__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!__b.characters.some(r=>r.name===s.speaker)));const __pr=__b.characters.filter(r=>(__act.includes(r.name)||r.candidate)&&!r.voice);if(!__ps.length&&!__pr.length){engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');return;}go(reviewing?'confirm':'annotated');return;}
+if(a==='saveseg'){const __seg=chapter().segments.find(s=>s.id===editSegment);await engine.correct(bookId,chapterId,editSegment,dropdownSel.segSpeaker||(__seg&&__seg.speaker),value('segmentEmotion'));const __b=book(),__c=chapter();const __act=[...new Set(__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const __ps=__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!__b.characters.some(r=>r.name===s.speaker)));const __pr=__b.characters.filter(r=>(__act.includes(r.name)||r.candidate)&&!r.voice);if(!__ps.length&&!__pr.length){engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');return;}go('annotated');return;}
 if(a==='addrole'){const name=value('newRole').trim(),description=value('newRoleDescription').trim();if(!name||!description)throw Error('请填写姓名和音色描述');if(book().characters.some(r=>r.name===name))throw Error('角色已存在');const emotion=value('segmentEmotion');book().characters.push({name,description,aliases:[],voice:null});await engine.persist();dropdownSel.segSpeaker=name;render();const __se=$('#segmentEmotion');if(__se)__se.value=emotion;return;}
 }catch(e){toast(e.message||String(e));}});
 $('#screen').addEventListener('change',e=>{if(e.target.dataset.check){const id=e.target.dataset.check;selected=e.target.checked?[...new Set([...selected,id])]:selected.filter(x=>x!==id);render();}if(e.target.id==='speedRange'){applySpeed(parseFloat(e.target.value));return;}if(e.target.id==='seek')seekDisplayedChapter('seek',Number(e.target.value)).catch(e=>toast(e.message));});

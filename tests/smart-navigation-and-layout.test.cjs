@@ -89,12 +89,12 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // 重新渲染或跳转确认页
     await click('confirm:' + state.books[0].chapters[1].id);
-    await page.getByRole('heading', { name: '处理确认' }).waitFor();
+    await page.locator('.vc-annotated-topbar').waitFor();
 
     // 检查上方操作面板
-    const topPanel = page.locator('.vc-confirm-top-panel');
+    const topPanel = page.locator('.vc-annotated-topbar');
     await topPanel.waitFor();
-    const topActionBtn = page.locator('.vc-btn-ignoreall-top');
+    const topActionBtn = page.locator('[data-act^="ignoreall:"]');
     await topActionBtn.waitFor();
 
     // 检查顶部按钮位置在问题卡片之前（上方）
@@ -106,7 +106,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 检查列表底部不再有 .vc-bottom
     const confirmBottomBtn = await page.locator('.vc-issue-card ~ .vc-bottom').count();
     assert.equal(confirmBottomBtn, 0, '确认页面底部不应再有 .vc-bottom 按钮');
-    console.log('✓ 验证 2.2 成功：标注确认页面主操作按钮已移至列表上方，下方反人类按钮已移除！');
+    console.log('✓ 验证 2.2 成功：标注页顶栏一键忽略按钮在上，下方无冗余按钮！');
 
     // 返回章节目录
     await page.locator('.vc-top [data-act="back"]').click();
@@ -130,15 +130,17 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // Case 4.2: 待确认章节 -> 点击跳转 确认 confirm
     await click('confirm:' + ch1.id);
-    await page.locator('.vc-confirm-top-panel').waitFor();
-    console.log('✓ 验证 4.2 成功：待确认状态章节智能跳转至【处理确认】(confirm)');
+    await page.locator('.vc-annotated-topbar').waitFor();
+    console.log('✓ 验证 4.2 成功：待确认状态章节直接跳转至【标注】(annotated)，无中间确认页');
 
     // 一键全部忽略
     await topActionBtn.click();
-    await page.getByRole('heading', { name: '本章已无待确认问题' }).waitFor();
+    await page.getByRole('heading', { name: '制作任务' }).waitFor();
+    console.log('一键忽略后跳任务页制作中栏');
 
-    // 返回目录
-    await click('back');
+    // 一键忽略后跳任务页，回书架进章节目录
+    await click('go:shelf');
+    await page.locator('.vc-book').click();
     await page.getByRole('heading', { name: '章节目录' }).waitFor();
 
     // Case 4.3: 有任意标注的章节（未合成整章音频） -> 点击跳转 标注列表 annotated

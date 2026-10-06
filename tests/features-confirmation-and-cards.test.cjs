@@ -100,14 +100,14 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
     await click('tasktab:attention');
     const taskCard = page.locator('.vc-panel.vc-card-clickable').first();
-    // 点击任务卡片的书名文本区域
+    // 待确认任务卡片点击直接进入标注页处理（确认页已并入标注页）
     await taskCard.locator('h3').click();
-    await page.getByRole('heading',{name:'制作详情'}).waitFor();
-    console.log('✓ 验证 2 成功：点击任务卡片任意位置自动进入制作详情页！');
+    await page.locator('.vc-annotated-topbar').waitFor();
+    console.log('✓ 验证 2 成功：待确认任务卡片点击直接进入标注页处理！');
 
-    // --- 测试 3：章节目录待确认状态点击直接进入确认界面 ---
-    await click('go:shelf');
-    await page.locator('.vc-book').click();
+    // --- 测试 3：章节目录待确认状态点击直接进入标注页 ---
+    // 测试 2 结束停在标注页，点返回回到章节目录
+    await page.locator('.vc-top [data-act="back"]').click();
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
 
     // 待确认章节高亮显示并可点击
@@ -115,28 +115,34 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await waitingTag.waitFor();
     assert.equal(await waitingTag.textContent(), '待确认');
 
-    // 点击待确认标签直接进入确认界面
+    // 点击待确认标签直接进入标注页（确认已并入标注，无中间页）
     await waitingTag.click();
+    await page.locator('.vc-annotated-topbar').waitFor();
     await page.locator('.vc-issue-card').first().waitFor();
-    console.log('✓ 验证 3.1 成功：章节目录点击「待确认」直接进入确认界面！');
+    console.log('✓ 验证 3.1 成功：章节目录点击「待确认」直接进入标注页！');
 
-    // 检查淡红色提示
+    // 检查淡红色提示（标注页内直接展示待确认说话人）
     const issueCards = await page.locator('.vc-issue-card').all();
-    assert.equal(issueCards.length, 2, '应有 2 处待确认问题卡片（角色+说话人）');
-    console.log('✓ 验证 3.2 成功：角色音色问题与说话人问题均呈现美观淡红色提示！');
+    assert.ok(issueCards.length >= 1, '标注页应直接展示待确认问题卡片');
+    console.log('✓ 验证 3.2 成功：标注页内直接展示待确认说话人，无中间确认页！');
 
+    // 角色音色确认已搬去角色页：进角色页走设计流程
+    await click('go:roles');
     await click('candidate:神秘人');
     assert.equal(await page.locator('#designDescription').inputValue(),'神秘莫测的声音','New role design must inherit its saved voice description');
     await page.locator('.vc-top [data-act="back"]').click();
-    await page.locator('.vc-issue-card').first().waitFor();
+    await page.getByRole('heading',{name:'角色绑定，全书一致。'}).waitFor();
+    await page.locator('.vc-top [data-act="back"]').click();
     console.log('✓ 新角色设计页自动带入已有音色描述');
 
     await click('editseg:2');await click('dropdown:segSpeaker');await page.locator('[data-act="pickopt:segSpeaker|旁白"]').click();await click('saveseg');
-    assert((await page.locator('body').innerText()).includes('处理确认'),'Saving a correction from review must return to remaining review items');
+    await page.locator('.vc-annotated-topbar').waitFor();
     await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);await e.persist();});
     console.log('✓ 校对保存后保留待确认处理页');
 
-    // 检查角色忽略按钮
+    // 角色确认已搬去角色页：从标注页进角色页忽略
+    await click('go:roles');
+    await page.getByRole('heading',{name:'角色绑定，全书一致。'}).waitFor();
     const roleIgnoreBtn = page.locator('[data-act="ignorerole:神秘人"]');
     await roleIgnoreBtn.waitFor();
     await roleIgnoreBtn.click();
@@ -152,15 +158,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     assert.equal(roleVoiceAssigned, true, '忽略角色后应标记后台自动设计或已分配音色');
     console.log('✓ 验证 3.4 成功：忽略后角色自动采用设计的音色并分配！');
 
-    // 忽略角色后已跳任务页"制作中"栏，验证后从任务卡片进详情、点"去处理确认"回到确认页
+    // 忽略角色后已跳任务页"制作中"栏，验证后从任务卡片直接进标注页
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
     assert.equal(await page.locator('[data-act="tasktab:active"].active').count(), 1, '忽略角色后应跳到任务页"制作中"栏');
     await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);const __t=e.state.tasks.find(x=>x.chapterId===c.id);if(__t){__t.status='waiting';__t.phase='等待确认';}await e.persist();});
     await click('tasktab:attention');
     await page.locator('.vc-panel.vc-card-clickable').first().locator('h3').click();
-    await page.getByRole('heading',{name:'制作详情'}).waitFor();
-    const backCid2 = await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].id);
-    await click('confirm:'+backCid2);
+    await page.locator('.vc-annotated-topbar').waitFor();
     await page.locator('.vc-issue-card').first().waitFor();
 
     // 检查说话人忽略按钮

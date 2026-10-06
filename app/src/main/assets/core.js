@@ -176,6 +176,20 @@ class Engine{
   await this.persist();
   return freedRes;
  }
+ async resetChapters(bid,cids){
+  const b=this.book(bid);const set=new Set(Array.isArray(cids)?cids:[cids]);const audioIds=[];let n=0;
+  for(const c of b.chapters.filter(c=>set.has(c.id))){
+    if(c.unloaded){try{await this.ensureChapter(bid,c.id);}catch(e){continue;}}
+    if(c.audio)audioIds.push(c.audio);
+    for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);}
+    c.segments=[];c.audio=null;c.duration=0;c.pacingVersion=0;c.status='raw';c.audioCleared=false;delete c.analysisDraft;n++;
+    this.touch(c);
+  }
+  this.state.tasks=this.state.tasks.filter(t=>!(t.bookId===bid&&set.has(t.chapterId)));
+  this._releaseTtsSlot();
+  if(audioIds.length&&this.io.deleteAudio){try{await this.io.deleteAudio([...new Set(audioIds)]);}catch(ignored){}}
+  await this.persist();return n;
+ }
  collectReferencedAudio(){
   const set=new Set();
   for(const b of this.state.books){for(const c of b.chapters){if(c.audio)set.add(c.audio);for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')set.add(s.audio);}}}

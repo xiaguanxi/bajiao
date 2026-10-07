@@ -1,6 +1,6 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.Vocast=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
-const PRESETS=['mimo_default','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
+const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
 const DEFAULTS={llmBase:'https://api.minimax.cn/v1',llmModel:'MiniMax-M3',llmProtocol:'openai',mode:'manual',usePresets:false,retries:2,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,taskParallel:1,ttsParallel:2};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 const normalize=s=>String(s).replace(/\s/g,'');

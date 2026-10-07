@@ -150,6 +150,10 @@ body {
     backdrop-filter: blur(12px);
 }
 
+#app .vc-nav button.active {
+    color: var(--vc-accent);
+    font-weight: 700;
+}
 #app .vc-nav button {
     position: relative;
     min-height: 46px;
@@ -165,7 +169,7 @@ body {
     transition: color 0.15s ease;
 }
 
-#app .vc-nav-badge{position:absolute;top:2px;right:calc(50% - 24px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#c43d00;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+#app .vc-nav-badge{position:absolute;top:4px;right:calc(50% - 20px);min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:#c43d00;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center}
 
 #app .vc-nav button svg {
     width: 1.35rem;
@@ -897,6 +901,7 @@ body {
     opacity: 0.92;
 }
 
+#app .vc-link.danger{color:#c0392b;}
 #app .vc-link.danger,
 #app [data-act^="deletevoice"].vc-link {
     color: #e04b4b;
@@ -1530,6 +1535,7 @@ body {
 
 /* 章节页底部阅读模式栏（复用主导航外观） */
 #app .vc-modebar{max-width:720px;margin-left:auto;margin-right:auto}
+#app .vc-modebar button.active{color:var(--vc-accent);font-weight:700}
 
 /* 听书：标题单行，超长滚动展示 */
 #app .vc-marquee{display:block;overflow:hidden;white-space:nowrap;min-width:0}

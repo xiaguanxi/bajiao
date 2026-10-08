@@ -345,3 +345,15 @@ test('organized group names file as one collective role',async()=>{
   assert.equal(b.chapters[0].segments[0].speaker,'黑莲十一人');
   assert.equal(b.chapters[0].segments[0].confidence,1);
 });
+
+test('model-named speaker is filed even when absent from characters list',async()=>{
+  const e=new Engine(io());
+  const b=await e.addBook('t','老妪忙喝道。\
+“改变战术。”');
+  e.llm=async()=>({characters:[],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:1,speaker:'老妪',emotion:'威严',confidence:.9}]});
+  await e.analyze(b.id,b.chapters[0].id);
+  const role=b.characters.find(r=>r.name==='老妪');
+  assert(role,'老妪 should be filed');
+  assert.equal(b.chapters[0].segments[1].speaker,'老妪');
+  assert(b.chapters[0].segments[1].confidence>0);
+});

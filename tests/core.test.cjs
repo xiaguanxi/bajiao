@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,splitBook,parseJson,normalize}=require('../app/src/main/assets/core.js');
+const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
 test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
@@ -285,4 +285,37 @@ test('parallel tasks share one global TTS budget', async () => {
   await e.enqueue(b.id, b.chapters.map(c => c.id));
   assert(peak <= 2, 'TTS 并发峰值 ' + peak + ' 超出全局总量 2');
   assert(e.state.tasks.every(t => t.status === 'done'));
+});
+
+test('emotion maps to MiMo doc style tag at assistant text head',()=>{
+  assert.equal(styleTagOf('高兴'),'Happy');
+  assert.equal(styleTagOf('平静'),'Calm');
+  assert.equal(styleTagOf('愤怒地吼道'),'Angry');
+  assert.equal(styleTagOf('自然朗读'),'');
+  assert.equal(tagTextOf('你好。','高兴'),'(Happy)你好。');
+  assert.equal(tagTextOf('你好。','自然朗读'),'你好。');
+});
+test('synthesize prefers whole-segment single call with pace hint',async()=>{
+  const e=new Engine(io());
+  e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
+  const calls=[];
+  const origRequest=e.request.bind(e);
+  e.request=async(prov,body)=>{calls.push(body);return {choices:[{message:{audio:{data:'AAA'}}}]}};
+  e.io.saveAudio=async()=>({id:'one.wav'});
+  const out=await e.synthesize('甲说你好。今天天气不错。','v1','平静');
+  assert.equal(out.id,'one.wav');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].messages[1].content,'(Calm)甲说你好。今天天气不错。');
+  assert.match(calls[0].messages[0].content,/280/);
+});
+test('whole-segment failure falls back to split synthesis',async()=>{
+  const e=new Engine(io());
+  e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
+  let n=0;const bodies=[];
+  e.request=async(prov,body)=>{n++;bodies.push(body);if(n===1)throw Object.assign(Error('too long'),{retryable:false});return {choices:[{message:{audio:{data:'AAA'}}}]}};
+  let k=0;e.io.saveAudio=async()=>({id:'p'+(k++)+'.wav'});
+  const out=await e.synthesize('甲。乙。','v1','高兴');
+  assert.equal(out.id,'merged.wav');
+  assert(n>=3);
+  assert(bodies.slice(1).every(b=>b.messages[1].content.startsWith('(Happy)')));
 });

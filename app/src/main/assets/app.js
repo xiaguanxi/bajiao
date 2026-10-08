@@ -614,7 +614,11 @@ window.onNativePlaybackAction=async(act,val)=>{
         await device.call('playback',{op:'pause'});
         toast('已播完本章，睡眠定时停止');
         render();
-        const chIdx = b?.chapters.findIndex(ch => ch.id === playingChapterId) ?? -1;
+        return;
+      }
+      // 正常播完：自动连播下一章（与睡眠定时无关）
+      {
+      const chIdx = b?.chapters.findIndex(ch => ch.id === playingChapterId) ?? -1;
       const nextCh = (chIdx >= 0 && chIdx + 1 < (b?.chapters.length || 0)) ? b.chapters[chIdx + 1] : null;
       if(nextCh){
         if(nextCh.audio){

@@ -357,3 +357,15 @@ test('model-named speaker is filed even when absent from characters list',async(
   assert.equal(b.chapters[0].segments[1].speaker,'老妪');
   assert(b.chapters[0].segments[1].confidence>0);
 });
+
+test('auto mode never blocks on uncertain attribution',async()=>{
+  const e=new Engine(io()),b=await e.addBook('t','X');
+  e.state.settings.mode='auto';
+  const c=b.chapters[0];
+  c.segments=[{id:0,text:'X',speaker:'未知角色',emotion:'平静',confidence:.2},{id:1,text:'Y',speaker:'旁白',emotion:'平静',confidence:1}];
+  e.synthesize=async()=>({id:'o.wav',duration:1});
+  await e.enqueue(b.id,[c.id]);
+  assert.equal(e.state.tasks[0].status,'done');
+  assert.equal(c.segments[0].speaker,'旁白');
+  assert(c.segments[0].audio);
+});

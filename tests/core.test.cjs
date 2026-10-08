@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf}=require('../app/src/main/assets/core.js');
+const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
 test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
@@ -330,4 +330,18 @@ test('whole-segment success discards stale split drafts without duplication',asy
   const out=await e.synthesize('甲。乙。','v1','平静',{files:[{id:'stale.wav'}]});
   assert.equal(out.id,'one.wav');
   assert.equal(merges,0);
+});
+
+test('organized group names file as one collective role',async()=>{
+  assert.equal(isBitPart('黑莲十一人'),true);
+  assert.equal(isBitPart('青城七子'),true);
+  assert.equal(isBitPart('陆涯'),false);
+  const e=new Engine(io());
+  const b=await e.addBook('t','黑莲十一人起初觉得滑稽。\n黑莲十一人并不这么认为。');
+  e.llm=async()=>({characters:[{name:'黑莲十一人',description:'一群男子，声音粗犷齐整'}],lines:[{id:0,speaker:'黑莲十一人',emotion:'平静',confidence:.9},{id:1,speaker:'黑莲十一人',emotion:'平静',confidence:.9}]});
+  await e.analyze(b.id,b.chapters[0].id);
+  const role=b.characters.find(r=>r.name==='黑莲十一人');
+  assert(role&&role.bitPart===true);
+  assert.equal(b.chapters[0].segments[0].speaker,'黑莲十一人');
+  assert.equal(b.chapters[0].segments[0].confidence,1);
 });

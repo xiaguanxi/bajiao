@@ -319,3 +319,15 @@ test('whole-segment failure falls back to split synthesis',async()=>{
   assert(n>=3);
   assert(bodies.slice(1).every(b=>b.messages[1].content.startsWith('(Happy)')));
 });
+
+test('whole-segment success discards stale split drafts without duplication',async()=>{
+  const e=new Engine(io());
+  e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
+  let merges=0;
+  e.io.mergeAudio=async()=>{merges++;return {id:'m.wav'};};
+  e.request=async()=>({choices:[{message:{audio:{data:'AAA'}}}]});
+  e.io.saveAudio=async()=>({id:'one.wav'});
+  const out=await e.synthesize('甲。乙。','v1','平静',{files:[{id:'stale.wav'}]});
+  assert.equal(out.id,'one.wav');
+  assert.equal(merges,0);
+});

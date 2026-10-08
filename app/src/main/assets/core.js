@@ -376,7 +376,7 @@ class Engine{
    const r=await this.request('tts',{model,messages:[{role:'user',content:'用自然连贯的有声书语速朗读，约每分钟280字，句子之间按标点自然停顿，不要一字一顿。'+String(style||'')},{role:'assistant',content:tagTextOf(text,style)}],audio:{format:'wav',voice:ref}});
    const b64=r.choices?.[0]?.message?.audio?.data;if(!b64)throw Error('MiMo 没有返回音频');
    const one=await this.io.saveAudio(b64,'wav');
-   if(options.files?.length)return this.io.mergeAudio([...options.files.map(f=>f.id||f),one.id],pausesFor(speechParts(text)));
+   // 整段音频已覆盖全文，分段草稿是旧残留，直接丢弃，否则同一句会被读两遍
    return one;
   }catch(e){if(options.shouldPause?.())throw e;}
  }

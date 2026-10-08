@@ -1597,3 +1597,10 @@ body {
     margin-left: auto;
     margin-right: auto;
 }
+#app .vc-alias-block { margin: 8px 0 4px; padding: 8px 10px; border: 1px dashed #cbb; border-radius: 8px; background: #fffdf7; }
+#app .vc-alias-head { font-size: 12px; color: #8a6d3b; margin-bottom: 6px; }
+#app .vc-alias-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
+#app .vc-alias-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+#app .vc-alias-row > small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; text-align: right; color: #888; }
+#app .vc-alias-list summary { font-size: 12px; color: #4a7; cursor: pointer; white-space: nowrap; }
+#app .vc-alias-list p { font-size: 12px; line-height: 1.8; }

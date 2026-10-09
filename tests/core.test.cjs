@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs}=require('../app/src/main/assets/core.js');
+const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs,expectedSpeechSec,isAudioTooLong}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
 test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
@@ -390,4 +390,19 @@ test('punct-only line skips TTS and uses silence of reasonable length',async()=>
   assert.deepEqual(silenceCalls,[{ms:800,ref:null}]);
   assert.equal(c.segments[0].audio,'silence.wav');
   assert.equal(e.state.tasks[0].status,'done');
+});
+
+test('overlong single-sentence audio is retried then skipped, not merged',async()=>{
+  assert(isAudioTooLong('甲。',60));
+  assert(!isAudioTooLong('甲。',2));
+  assert(!isAudioTooLong('甲'.repeat(100),20));
+  const e=new Engine({...io(),silence:async()=>{throw Error('no silence');}});
+  const b=await e.addBook('t','甲。'),c=b.chapters[0];
+  c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null}];
+  let calls=0;
+  e.synthesize=async()=>{calls++;return {id:'bad.wav',duration:60};};
+  await e.enqueue(b.id,[c.id]);
+  assert(calls>=2,'坏音频应重试');
+  assert.equal(c.segments[0].audio,'skip','两次都坏应跳过该句');
+  assert.equal(e.state.tasks[0].status,'done','整章不应因一句坏音频失败');
 });

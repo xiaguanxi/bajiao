@@ -81,6 +81,8 @@ final class AudioFiles {
             Wave w=parse(data);
             // TTS 偶发超长首尾静音入库前先裁掉，单句试听和合并都受益
             trimEdgeSilence(w,1500);
+            // 中间大段静音/语音过少判坏音频，抛错走重试
+            rejectBadAudio(w);
             duration=w.duration();
             data=encode(w);
         }else if(data.length<3||!((data[0]=='I'&&data[1]=='D'&&data[2]=='3')||((data[0]&255)==255&&(data[1]&224)==224)))throw new Exception("MP3 文件头无效");
@@ -133,6 +135,30 @@ final class AudioFiles {
         Wave w=new Wave();ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         for(int i=12;i+8<=bytes.length;){String tag=new String(bytes,i,4,StandardCharsets.US_ASCII);int len=b.getInt(i+4);if(len<0||(long)i+8+len>bytes.length)throw new Exception("WAV 文件被截断");if(tag.equals("fmt "))w.fmt=Arrays.copyOfRange(bytes,i+8,i+8+len);if(tag.equals("data"))w.pcm=Arrays.copyOfRange(bytes,i+8,i+8+len);i+=8+len+(len%2);}
         if(w.fmt==null||w.fmt.length<16||w.pcm==null||w.pcm.length==0||ByteBuffer.wrap(w.fmt).order(ByteOrder.LITTLE_ENDIAN).getShort()!=1||ByteBuffer.wrap(w.fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(8)<=0)throw new Exception("仅支持非空 PCM WAV");return w;
+    }
+    // 入库质检：中间大段静音（>3秒连续）或语音占比过低（<15%）判坏音频，直接抛错走重试，不让坏音频污染整章
+    static void rejectBadAudio(Wave w) throws Exception{
+        ByteBuffer fmt=ByteBuffer.wrap(w.fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int rate=fmt.getInt(4),channels=fmt.getShort(2)&65535,bits=fmt.getShort(14)&65535,align=fmt.getShort(12)&65535;
+        int sampleBytes=bits/8;
+        if(rate<=0||channels<1||!(bits==8||bits==16)||align!=channels*sampleBytes||w.pcm.length%align!=0)return;
+        int frames=w.pcm.length/align;
+        if(frames<rate/2)return; // 太短不检
+        long threshold=(long)Math.floor(100.0/32768*(1L<<(bits-1)));
+        int voiced=0,maxGap=0,curGap=0;
+        for(int f=0;f<frames;f++){
+            boolean loud=false;
+            for(int ch=0;ch<channels;ch++){
+                int at=f*align+ch*sampleBytes;long value;
+                if(bits==8)value=(w.pcm[at]&255)-128;
+                else{value=(w.pcm[at]&255)|((w.pcm[at+1]&255)<<8);if((w.pcm[at+1]&128)!=0)value-=1L<<16;}
+                if(Math.abs(value)>threshold){loud=true;break;}
+            }
+            if(loud){voiced++;curGap=0;}else{curGap++;if(curGap>maxGap)maxGap=curGap;}
+        }
+        double voicedRatio=voiced/(double)frames;
+        if(maxGap>rate*3)throw new Exception("音频中间静音过长（疑似TTS坏音频），已重试");
+        if(voicedRatio<0.15&&frames>rate*2)throw new Exception("音频有效语音过少（疑似TTS坏音频），已重试");
     }
     JSONObject merge(List<String> ids) throws Exception {return merge(ids,null);}
     // Existing quiet samples count toward the requested gap; never trim speech.

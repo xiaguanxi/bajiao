@@ -76,12 +76,31 @@ final class AudioFiles {
         File get(String id) throws Exception {if(!id.matches("[a-f0-9]{64}\\.(wav|mp3)"))throw new Exception("无效音频引用");File f=new File(dir,id);if(!f.isFile())throw new Exception("参考音频已丢失，请重新导入");return f;}
     JSONObject save(byte[] data,String format) throws Exception {
         if(!format.equals("wav")&&!format.equals("mp3"))throw new Exception("不支持的音频格式");
-        double duration=0;if(format.equals("wav"))duration=parse(data).duration();else if(data.length<3||!((data[0]=='I'&&data[1]=='D'&&data[2]=='3')||((data[0]&255)==255&&(data[1]&224)==224)))throw new Exception("MP3 文件头无效");
+        double duration=0;
+        if(format.equals("wav")){
+            Wave w=parse(data);
+            // TTS 偶发超长首尾静音入库前先裁掉，单句试听和合并都受益
+            trimEdgeSilence(w,1500);
+            duration=w.duration();
+            data=encode(w);
+        }else if(data.length<3||!((data[0]=='I'&&data[1]=='D'&&data[2]=='3')||((data[0]&255)==255&&(data[1]&224)==224)))throw new Exception("MP3 文件头无效");
         StringBuilder id=new StringBuilder();for(byte b:MessageDigest.getInstance("SHA-256").digest(data))id.append(String.format(Locale.ROOT,"%02x",b));id.append('.').append(format);
         File target=new File(dir,id.toString());if(!target.exists()){File temp=new File(dir,id+".tmp");try(FileOutputStream out=new FileOutputStream(temp)){out.write(data);out.getFD().sync();}if(!temp.renameTo(target))throw new IOException("音频保存失败");}
         return new JSONObject().put("id",id.toString()).put("size",data.length).put("duration",duration).put("format",format);
     }
     static class Wave {byte[] fmt,pcm;double duration(){return pcm.length/(double)ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(8);}}
+    // Wave 回写标准 WAV（含 fmt 扩展段与奇长 data pad）
+    static byte[] encode(Wave w) throws Exception{
+        int pad=w.fmt.length%2;
+        int headLen=28+w.fmt.length+pad;
+        byte[] out=new byte[headLen+w.pcm.length+(w.pcm.length%2)];
+        ByteBuffer head=ByteBuffer.wrap(out,0,headLen).order(ByteOrder.LITTLE_ENDIAN);
+        head.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(out.length-8).put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII)).putInt(w.fmt.length).put(w.fmt);
+        if(pad!=0)head.put((byte)0);
+        head.put("data".getBytes(StandardCharsets.US_ASCII)).putInt(w.pcm.length);
+        System.arraycopy(w.pcm,0,out,headLen,w.pcm.length);
+        return out;
+    }
     static Wave parse(byte[] bytes) throws Exception {
         if(bytes.length<44||!new String(bytes,0,4,StandardCharsets.US_ASCII).equals("RIFF")||!new String(bytes,8,4,StandardCharsets.US_ASCII).equals("WAVE"))throw new Exception("返回的音频不是有效 WAV");
         Wave w=new Wave();ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -109,6 +128,26 @@ final class AudioFiles {
         }
         return count;
     }
+    // TTS 偶发超长首尾静音：每端最多保留 maxEdgeMs，超出裁掉；全静音文件只留中间一段
+    static void trimEdgeSilence(Wave w,int maxEdgeMs) throws Exception{
+        ByteBuffer fmt=ByteBuffer.wrap(w.fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int rate=fmt.getInt(4),align=fmt.getShort(12)&65535;
+        if(rate<=0||align<=0||w.pcm.length%align!=0)return;
+        int frames=w.pcm.length/align;
+        int maxEdge=(int)(maxEdgeMs*(long)rate/1000);
+        int lead=quietFrames(w,true,frames);
+        int trail=quietFrames(w,false,frames);
+        int cutLead=Math.max(0,lead-maxEdge),cutTrail=Math.max(0,trail-maxEdge);
+        if(cutLead<=0&&cutTrail<=0)return;
+        int keepFrames=frames-cutLead-cutTrail;
+        if(keepFrames<1){
+            int keep=Math.min(frames,Math.max(1,maxEdge));
+            int start=(frames-keep)/2;
+            w.pcm=Arrays.copyOfRange(w.pcm,start*align,(start+keep)*align);
+            return;
+        }
+        w.pcm=Arrays.copyOfRange(w.pcm,cutLead*align,(frames-cutTrail)*align);
+    }
     JSONObject merge(List<String> ids,int[] pauses) throws Exception {
         if(ids.isEmpty())throw new Exception("没有可合并音频");
         if(pauses!=null){if(pauses.length!=ids.size())throw new Exception("停顿参数数量不匹配");for(int p:pauses)if(p<0||p>2000)throw new Exception("停顿参数越界");}
@@ -117,6 +156,7 @@ final class AudioFiles {
             try(RandomAccessFile out=new RandomAccessFile(temp,"rw")){
                 for(int i=0;i<ids.size();i++){
                     Wave w=parse(read(get(ids.get(i)),64*1024*1024));
+                    trimEdgeSilence(w,1500);
                     if(fmt==null){
                         fmt=w.fmt;pad=fmt.length%2;
                         ByteBuffer head=ByteBuffer.allocate(28+fmt.length+pad).order(ByteOrder.LITTLE_ENDIAN);

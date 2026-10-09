@@ -101,6 +101,33 @@ final class AudioFiles {
         System.arraycopy(w.pcm,0,out,headLen,w.pcm.length);
         return out;
     }
+    // 生成指定时长的静音 WAV：格式尽量与 ref 一致（合并不断链），无参考时用 24k 单声道 16bit
+    JSONObject silence(int ms,String refId) throws Exception{
+        if(ms<100||ms>5000)throw new Exception("静音时长越界");
+        byte[] fmt=null;
+        if(refId!=null&&!refId.isEmpty()){
+            try{
+                File rf=get(refId);
+                Wave rw=parse(read(rf,64*1024*1024));
+                fmt=rw.fmt;
+            }catch(Exception ignored){}
+        }
+        if(fmt==null){
+            ByteBuffer f=ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
+            f.putShort((short)1).putShort((short)1).putInt(24000).putInt(24000*2).putShort((short)2).putShort((short)16);
+            fmt=f.array();
+        }
+        ByteBuffer fb=ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int rate=fb.getInt(4),align=fb.getShort(12)&65535,bits=fb.getShort(14)&65535;
+        if(rate<=0||rate>384000||align<=0)throw new Exception("参考音频格式无效");
+        int frames=(int)(ms*(long)rate/1000);
+        Wave w=new Wave();w.fmt=fmt;w.pcm=new byte[frames*align];
+        if(bits==8)Arrays.fill(w.pcm,(byte)128);
+        byte[] data=encode(w);
+        StringBuilder id=new StringBuilder();for(byte b:MessageDigest.getInstance("SHA-256").digest(data))id.append(String.format(Locale.ROOT,"%02x",b));id.append(".wav");
+        File target=new File(dir,id.toString());if(!target.exists()){File temp=new File(dir,id+".tmp");try(FileOutputStream out=new FileOutputStream(temp)){out.write(data);out.getFD().sync();}if(!temp.renameTo(target))throw new IOException("音频保存失败");}
+        return new JSONObject().put("id",id.toString()).put("size",data.length).put("duration",w.duration()).put("format","wav").put("silence",true);
+    }
     static Wave parse(byte[] bytes) throws Exception {
         if(bytes.length<44||!new String(bytes,0,4,StandardCharsets.US_ASCII).equals("RIFF")||!new String(bytes,8,4,StandardCharsets.US_ASCII).equals("WAVE"))throw new Exception("返回的音频不是有效 WAV");
         Wave w=new Wave();ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);

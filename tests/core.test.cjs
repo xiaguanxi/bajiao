@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart}=require('../app/src/main/assets/core.js');
+const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
 test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
@@ -368,4 +368,26 @@ test('auto mode never blocks on uncertain attribution',async()=>{
   assert.equal(e.state.tasks[0].status,'done');
   assert.equal(c.segments[0].speaker,'旁白');
   assert(c.segments[0].audio);
+});
+test('punct-only line skips TTS and uses silence of reasonable length',async()=>{
+  assert.equal(isPunctOnly('……'),true);
+  assert.equal(isPunctOnly('。。。'),true);
+  assert.equal(isPunctOnly('？'),true);
+  assert.equal(isPunctOnly('，，'),true);
+  assert.equal(isPunctOnly('你好。'),false);
+  assert.equal(isPunctOnly(''),false);
+  assert.equal(punctSilenceMs('……'),800);
+  assert.equal(punctSilenceMs('。。。'),800);
+  assert.equal(punctSilenceMs('？'),500);
+  assert.equal(punctSilenceMs('！！'),500);
+  assert.equal(punctSilenceMs('，'),300);
+  let ttsCalls=0;const silenceCalls=[];
+  const e=new Engine({...io(),request:async()=>{ttsCalls++;throw Error('must not call TTS');},silence:async(ms,ref)=>{silenceCalls.push({ms,ref});return {id:'silence.wav',duration:ms/1000,silence:true};}});
+  const b=await e.addBook('t','甲。'),c=b.chapters[0];
+  c.segments=[{id:0,text:'……',speaker:'旁白',emotion:'平静',confidence:1,audio:null}];
+  await e.enqueue(b.id,[c.id]);
+  assert.equal(ttsCalls,0);
+  assert.deepEqual(silenceCalls,[{ms:800,ref:null}]);
+  assert.equal(c.segments[0].audio,'silence.wav');
+  assert.equal(e.state.tasks[0].status,'done');
 });

@@ -4,6 +4,8 @@ const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({
 const B=(text,act,secondary=false,disabled=false)=>`<button class="vc-btn ${secondary?'secondary':''}" data-act="${E(act)}" ${disabled?'disabled':''}>${text}</button>`,L=(text,act)=>`<button class="vc-link" data-act="${E(act)}">${text}</button>`,T=(text,w=false)=>{const extraCls=w==='listened'?'vc-status-badge listened':w==='cleared'?'vc-status-badge cleared':'';const cls=w==='warn'||w===true?'warn':w==='running'?'running':'';return `<span class="vc-tag ${cls} ${extraCls}">${E(text)}</span>`;};
 const title=(k,t,right='')=>`<div class="vc-top"><div><div class="vc-kicker">${k}</div><h1>${t}</h1></div>${right}</div>`;
 const top=t=>`<div class="vc-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><h2 class="vc-marquee"><span>${E(t)}</span></h2><span style="width:44px"></span></div>`;
+// 阅读三页（原文/标注/听书）slim 头：sticky 置顶，向上滑展开（返回+书名/章名），向下滑收起只留细条
+const slimTop=(bname,ctitle)=>`<div class="vc-top vc-slim-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><div class="vc-slim-titles"><h2 class="vc-marquee"><span>${E(bname)}</span></h2><small class="vc-marquee"><span>${E(ctitle)}</span></small></div><span style="width:44px"></span></div>`;
 const menu=(icon,text,sub,act)=>`<button class="vc-menu" data-act="${act}">${I(icon)}<span>${text}<br><small>${sub}</small></span>${I('chevron-right')}</button>`;
 const field=(label,id,value,type='text')=>`<label class="vc-field">${label}<input id="${id}" type="${type}" value="${E(value)}" ${type==='password'?'autocomplete="off" placeholder="留空保留已保存密钥"':''}></label>`;
 const area=(label,id,value)=>`<label class="vc-field">${label}<textarea class="vc-form" id="${id}">${E(value)}</textarea></label>`;
@@ -22,7 +24,8 @@ function toast(message){const t=$('#toast');if(!t)return;clearTimeout(toast.time
 function hideToast(){const t=$('#toast');if(!t||!t.textContent)return;clearTimeout(toast.timer);t.classList.add('vc-toast-hide');clearTimeout(hideToast._t);hideToast._t=setTimeout(()=>{t.textContent='';t.classList.remove('vc-toast-hide');},380);}
 document.addEventListener('click',()=>{try{hideToast();}catch(e){}},true);
 async function busy(fn,label='正在处理…'){if(!$('#busy').hidden)return;$('#busy').hidden=false;$('#busy div').textContent=label;try{return await fn();}catch(e){toast(e.message||String(e));}finally{$('#busy').hidden=true;render();}}
-function go(p){const open=()=>{const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}page=p;render();window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task'].includes(p)&&chapter().unloaded){busy(async()=>{await engine.ensureChapter(bookId,chapterId);open();},'读取章节…');}else open();}
+function go(p){const open=()=>{const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}// 从听书切到原文/标注：跳到当前播放对应行（同书同章且有进度时）
+if(page==='listen'&&(p==='raw'||p==='annotated')){try{const bp=(typeof miniPlayingState!=='undefined'&&miniPlayingState?.position)||0;const __same=(playingBookId===bookId&&playingChapterId===chapterId)||(typeof miniPlayingState!=='undefined'&&miniPlayingState?.id&&chapter()?.audio===miniPlayingState.id);if(bp>0&&__same)window.__jumpToPos=bp;}catch(e){}}page=p;render();if(window.__jumpToPos==null)window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task'].includes(p)&&chapter().unloaded){busy(async()=>{await engine.ensureChapter(bookId,chapterId);open();},'读取章节…');}else open();}
 function getChapterTarget(c){if(!c)return 'raw';if(c.audio){return 'listen';}const hasAnnotation=c.unloaded?((c.segmentCount||0)>0):(c.segments&&c.segments.length>0);if(hasAnnotation||c.status==='annotated'||c.status==='waiting'){return 'annotated';}return 'raw';}
 window.appBack=()=>{if(['raw','annotated','listen','editseg'].includes(page)){while(history.length&&['raw','annotated','listen','editseg'].includes(history[history.length-1].page)){history.pop();}if(history.length&&history[history.length-1].page==='detail'&&history[history.length-1].bookId===bookId){const previous=history.pop();({page,bookId,chapterId,voiceId,roleName}=previous);}else{page='detail';}render();window.scrollTo(0,0);return;}const previous=history.pop();if(previous){({page,bookId,chapterId,voiceId,roleName}=previous);}else page='shelf';render();window.scrollTo(0,0);};
 let lastProdStatus = null;
@@ -190,8 +193,8 @@ case 'detail':{
   `;
   break;
 }
-case 'raw':case 'annotated':case 'listen':{const b=book(),c=chapter();h=top(b.name)+``+(page==='listen'?'':`<h3 class="vc-marquee"><span>${E(c.title)}</span></h3>`);
-if(page==='raw')h+=typeof c.text==='string'?`<article class="reader">${E(c.text)}</article>`:`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>请删除本书后重新导入。</small></div>`;
+case 'raw':case 'annotated':case 'listen':{const b=book(),c=chapter();h=slimTop(b.name,c.title);
+if(page==='raw')h+=typeof c.text==='string'?(()=>{let __units=[];try{__units=Vocast.units?Vocast.units(c.text):[{id:0,text:c.text}];}catch(e){__units=[{id:0,text:c.text}];}return `<article class="reader" id="rawArticle">${__units.map(u=>`<span class="vc-raw-seg" data-rawseg="${u.id}">${E(u.text)}</span>`).join('')}</article>`;})():`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>请删除本书后重新导入。</small></div>`;
 if(page==='annotated'){
   if((c.segments||[]).length){
     const probCount=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker))).length;
@@ -473,6 +476,11 @@ if (deleteConfirmBookId) {
 let __keepTop=null;try{const __p=document.getElementById('transcriptPanel');if(page==='listen'&&__p)__keepTop=__p.scrollTop;}catch(__e){}
 $('#screen').innerHTML=`<main class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${['raw','annotated','listen'].includes(page)?modebar():nav()}${modalHtml}`;lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
 try{if(pendingSeg!=null){const __el=document.querySelector('[data-seg="'+pendingSeg+'"]')||document.getElementById('confirm-seg-'+pendingSeg);if(__el){__el.scrollIntoView({block:'center'});__el.classList.add('vc-flash');setTimeout(()=>{try{__el.classList.remove('vc-flash');}catch(e){}},1800);}pendingSeg=null;}}catch(__e){}
+// 从听书切入原文/标注：按播放进度跳到对应行（等布局完再滚）
+try{if(window.__jumpToPos!=null&&(page==='raw'||page==='annotated')&&bookId&&chapterId){const __pos=window.__jumpToPos;window.__jumpToPos=null;requestAnimationFrame(()=>{try{const __c=chapter();let __el=null;
+if(page==='annotated'&&__c&&__c.segments&&__c.audio){try{const __segs=engine.computeSegmentTimestamps(__c.segments||[],__c.duration||0)||[];for(const s of __segs){if((s.startMs||0)<=__pos&&(s.endMs||0)>__pos){__el=document.querySelector('[data-seg="'+s.id+'"]');break;}}if(!__el&&__segs.length){let __best=__segs[0];for(const s of __segs){if((s.startMs||0)<=__pos)__best=s;else break;}__el=document.querySelector('[data-seg="'+__best.id+'"]');}}catch(e){}}
+if(page==='raw'&&__c&&typeof __c.text==='string'&&!__el){try{const __us=Vocast.units(__c.text);const __total=__us.map(u=>(u.text||'').length).reduce((a,b)=>a+b,0)||1;let __acc=0,__target=0;const __frac=__c.duration>0?(__pos/1000)/__c.duration:0;for(let i=0;i<__us.length;i++){__acc+=((__us[i].text||'').length)/__total;if(__acc>=__frac){__target=__us[i].id;break;}}__el=document.querySelector('[data-rawseg="'+__target+'"]');}catch(e){}}
+if(__el){__el.scrollIntoView({block:'center'});__el.classList.add('vc-flash');setTimeout(()=>{try{__el.classList.remove('vc-flash');}catch(e){}},1800);}}catch(e){}});}}catch(__e){window.__jumpToPos=null;}
 try{if(page==='listen'&&__keepTop!==null&&__keepTop!==undefined){const __n=document.getElementById('transcriptPanel');if(__n)__n.scrollTop=__keepTop;}}catch(__e){}
 try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(window.__calibKey!==__ck){window.__calibKey=__ck;engine.calibrateDurations(bookId,chapterId).then(n=>{if(n>0&&page==='listen')render();}).catch(()=>{});}}}catch(__e){}
 }
@@ -855,6 +863,7 @@ if(a==='addrole'){const name=value('newRole').trim(),description=value('newRoleD
 $('#screen').addEventListener('change',e=>{if(e.target.dataset.check){const id=e.target.dataset.check;selected=e.target.checked?[...new Set([...selected,id])]:selected.filter(x=>x!==id);render();}if(e.target.id==='speedRange'){applySpeed(parseFloat(e.target.value));return;}if(e.target.id==='seek')seekDisplayedChapter('seek',Number(e.target.value)).catch(e=>toast(e.message));});
 $('#screen').addEventListener('input',e=>{if(e.target.id==='speedRange'){const __sl3=$('#speedVal');if(__sl3)__sl3.textContent=parseFloat(e.target.value)+'x';}if(candidate&&['designDescription','designText'].includes(e.target.id)){designDirty=true;const button=$('[data-act="acceptsample"]');if(button){button.disabled=true;button.textContent='内容已修改，请重新生成样本';}}});
 if(document.getElementById('screen')){document.getElementById('screen').addEventListener('scroll',e=>{if(e&&e.target&&e.target.id==='transcriptPanel'){if(Date.now()<listenProgScrollUntil)return;listenUserHoldUntil=Date.now()+3000;}},true);}
+let __slimLastY=0;window.addEventListener('scroll',()=>{try{if(!['raw','annotated','listen'].includes(page))return;const __top=document.querySelector('.vc-slim-top');if(!__top)return;const __y=window.scrollY||document.documentElement.scrollTop||0;const __dy=__y-__slimLastY;__slimLastY=__y;if(__y<40){__top.classList.remove('vc-collapsed');return;}if(__dy>6)__top.classList.add('vc-collapsed');else if(__dy<-6)__top.classList.remove('vc-collapsed');}catch(e){}},true);
 setInterval(async()=>{
   try{
     const p=await device.call('playbackState');

@@ -1,5 +1,5 @@
 ﻿(()=>{'use strict';
-let engine,configured={},page='shelf',bookId=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,stopAfterChapter=false,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null,unmadeChoiceChapterId=null;
+let engine,configured={},page='shelf',bookId=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,stopAfterChapter=false,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null,unmadeChoiceChapterId=null,streamState=null;
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
 const B=(text,act,secondary=false,disabled=false)=>`<button class="vc-btn ${secondary?'secondary':''}" data-act="${E(act)}" ${disabled?'disabled':''}>${text}</button>`,L=(text,act)=>`<button class="vc-link" data-act="${E(act)}">${text}</button>`,T=(text,w=false)=>{const extraCls=w==='listened'?'vc-status-badge listened':w==='cleared'?'vc-status-badge cleared':'';const cls=w==='warn'||w===true?'warn':w==='running'?'running':'';return `<span class="vc-tag ${cls} ${extraCls}">${E(text)}</span>`;};
 const title=(k,t,right='')=>`<div class="vc-top"><div><div class="vc-kicker">${k}</div><h1>${t}</h1></div>${right}</div>`;
@@ -270,8 +270,9 @@ if(page==='listen'){
   }
   h += prodBanner;
   h += '<div class="vc-player"><div class="vc-player-head"><h3 class="vc-marquee"><span>' + E(c.title) + '</span></h3></div>';
-  h += c.audio?(()=>{ const segs = engine?.computeSegmentTimestamps ? engine.computeSegmentTimestamps(c.segments || [], c.duration || 0) : (c.segments || []); if (!segs || !segs.length) { return '<div class="vc-center"><small>时长 ' + fmt(c.duration || 0) + ' · 多角色演绎</small></div>'; } return '<div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="逐句字幕跟读">' + segs.map((s, idx) => { return '<div class="vc-transcript-line' + (s.speaker && s.speaker !== '旁白' ? ' is-dialogue' : '') + '" data-act="seekseg:' + Math.round(s.startMs || 0) + '" data-start="' + Math.round(s.startMs || 0) + '" data-end="' + Math.round(s.endMs || 0) + '">' + '<span class="vc-transcript-speaker">' + E(s.speaker || '旁白') + '</span>' + '<span class="vc-transcript-text">' + E(s.text || '') + '</span>' + '</div>'; }).join('') + '</div>'; })():'<div class="empty"><p>本章尚未生成完整音频。</p>' + B('制作本章','makeone') + '</div>';
-  if(c.audio){
+  h += c.audio?(()=>{ const segs = engine?.computeSegmentTimestamps ? engine.computeSegmentTimestamps(c.segments || [], c.duration || 0) : (c.segments || []); if (!segs || !segs.length) { return '<div class="vc-center"><small>时长 ' + fmt(c.duration || 0) + ' · 多角色演绎</small></div>'; } return '<div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="逐句字幕跟读">' + segs.map((s, idx) => { return '<div class="vc-transcript-line' + (s.speaker && s.speaker !== '旁白' ? ' is-dialogue' : '') + '" data-act="seekseg:' + Math.round(s.startMs || 0) + '" data-start="' + Math.round(s.startMs || 0) + '" data-end="' + Math.round(s.endMs || 0) + '">' + '<span class="vc-transcript-speaker">' + E(s.speaker || '旁白') + '</span>' + '<span class="vc-transcript-text">' + E(s.text || '') + '</span>' + '</div>'; }).join('') + '</div>'; })():streamHtml(b,c);
+  const streamReady=streamPrefix(c).length>0||engine?.state.tasks.some(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
+  if(c.audio||streamState||streamReady){
 h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-link-tag' + (engine?.state?.autoDeletePlayed ? ' active' : '') + '" data-act="toggleautodelete">完播自删 · ' + (engine?.state?.autoDeletePlayed ? '开' : '关') + '</button><button class="vc-link-tag' + (engine?.state?.settings?.autoProduceUpcoming !== false ? ' active' : '') + '" data-act="toggleautoproduce">边听边做 · ' + (engine?.state?.settings?.autoProduceUpcoming !== false ? '开' : '关') + '</button><button class="vc-link-tag" data-act="listensettings">' + I('sliders-horizontal') + ' 设置</button></div><div class="vc-player-progress"><small id="playtime">00:00</small><input type="range" id="seek" class="big-progress" min="0" max="' + ((c.duration||0)*1000) + '" value="0" aria-label="播放进度"><small>' + fmt(c.duration||0) + '</small></div>';
     h += '<div class="vc-ctlbar"><button class="vc-ctl vc-ctl-speed" data-act="speedmodal" title="倍速">' + I('gauge') + '<span class="vc-spd-val" id="speedBtnVal">' + curSpeed + 'x</span></button><button class="vc-ctl' + (hasPrev?'':' disabled') + '" data-act="prevchapter" title="上一集"' + (hasPrev?'':' disabled') + '>' + I('skip-back') + '</button><button class="vc-ctl primary" data-act="playchapter" id="playBtn">' + I('play') + '</button><button class="vc-ctl' + (hasNext?'':' disabled') + '" data-act="nextchapter" title="下一集"' + (hasNext?'':' disabled') + '>' + I('skip-forward') + '</button><button class="vc-ctl" data-act="back" title="回到本书目录">' + I('list') + '</button></div></div>';
 
@@ -532,6 +533,54 @@ try{if(page==='listen'&&__keepTop!==null&&__keepTop!==undefined){const __n=docum
 try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(window.__calibKey!==__ck){window.__calibKey=__ck;engine.calibrateDurations(bookId,chapterId).then(n=>{if(n>0&&page==='listen')render();}).catch(()=>{});}}}catch(__e){}
 }
 const value=id=>$('#'+id)?.value||'';
+// 边做边听：分句流播控制器。整章 c.audio 未合并前，把"从头连续已完成分句"逐句接起来播。
+// 规则：只认前缀连续可播分句（skip/待确认/未完成即断）；播完一句由 completion 事件推进；整章合并后切整章文件续播。
+function streamAudible(c){return (c.segments||[]).filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告');}
+function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告')out.push(s);else if((s.text||'').trim())break;}return out;}
+function streamHtml(b,c){
+  const task=engine?.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
+  const ready=streamPrefix(c);
+  if(!task&&!ready.length)return '<div class="empty"><p>本章尚未生成完整音频。</p>'+B('制作本章','makeone')+'</div>';
+  const total=(c.segments||[]).filter(s=>(s.text||'').trim()&&!s.skip&&!s.isAd&&s.speaker!=='广告').length;
+  const lines=(c.segments||[]).map(s=>{
+    const ok=!!(s.audio&&s.audio!=='skip'),skipped=!!(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip');
+    return '<div class="vc-transcript-line'+(s.speaker&&s.speaker!=='旁白'?' is-dialogue':'')+(skipped?' is-skip':'')+'" data-segstream="'+s.id+'"><span class="vc-transcript-speaker">'+E(s.speaker||'旁白')+'</span><span class="vc-transcript-text">'+E(s.text||'')+'</span><small>'+(ok?'可播':skipped?'跳过':'制作中')+'</small></div>';
+  }).join('');
+  return '<div class="vc-note">边做边听 · 已完成 '+ready.length+' / '+total+' 句'+(task?'（'+(status(task.status)||task.phase||'制作中')+'）':'')+'</div><div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="边做边听">'+lines+'</div>';
+}
+async function playStreamSeg(bid,cid,segIdx){
+  const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
+  if(!b||!c)throw Error('章节不存在');
+  if(c.audio){streamState=null;await playCurrentChapter(bid,cid);return;}
+  const prefix=streamPrefix(c);
+  if(!prefix.length)throw Error('还没有合成好的句子，稍等片刻');
+  const seg=prefix[Math.min(segIdx,prefix.length-1)];
+  const doneBefore=prefix.slice(0,prefix.indexOf(seg)).reduce((a,s)=>a+(s.durMs>0?s.durMs:0),0);
+  streamState={bid,cid,segId:seg.id,posBefore:doneBefore,audioId:seg.audio};
+  const idx=b.chapters.indexOf(c);
+  await device.call('play',{id:seg.audio,title:c.title+'（边做边听 · 第'+(prefix.indexOf(seg)+1)+'句）',bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · Vocast',duration:Math.round((seg.durMs||0)),position:0,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
+  playingId=seg.audio;playingBookId=bid;playingChapterId=cid;
+  if(page==='listen'&&bookId===bid&&chapterId===cid)render();
+  checkAutoProduceUpcoming(bid,cid).catch(()=>{});
+}
+async function advanceStream(){
+  if(!streamState)return false;
+  const {bid,cid}=streamState;
+  const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
+  if(!b||!c){streamState=null;return false;}
+  if(c.audio){ // 整章已合并：切整章文件，从已播时长处续播
+    const pos=streamState.posBefore+(streamAudible(c).find(s=>s.id===streamState.segId)?.durMs||0);
+    streamState=null;playingId=null;
+    await playCurrentChapter(bid,cid,pos);return true;
+  }
+  const prefix=streamPrefix(c);
+  const curIdx=prefix.findIndex(s=>s.id===streamState.segId);
+  if(curIdx<0){streamState=null;render();return false;} // 当前句被改/重制：停播等用户操作
+  if(curIdx+1<prefix.length){await playStreamSeg(bid,cid,curIdx+1);return true;}
+  const task=engine.state.tasks.find(t=>t.bookId===bid&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));
+  if(task&&['running','queued'].includes(task.status)){toast('已追上制作进度，稍等新句子…');streamState.waiting=true;render();return true;}
+  streamState=null;await engine.updatePlaybackProgress(bid,cid,0,0,true);toast('本章已播完');render();return true;
+}
 async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!c?.audio)return;
@@ -566,8 +615,9 @@ function syncDisplayedPlayback(p){
     pos = lastSeekPos;
   }
   const ch = chapter();
-  const active = !!ch?.audio && p.id === ch.audio;
-  const position = active ? pos : 0;
+  const streamActive = !!(streamState&&p.id===streamState.audioId&&streamState.bid===bookId&&streamState.cid===chapterId);
+  const active = (!!ch?.audio&&p.id===ch.audio)||streamActive;
+  const position = active?(streamActive?streamState.posBefore+pos:pos):0;
   if($('#playtime'))$('#playtime').textContent=fmt(position/1000);
   if($('#seek')&&(!active||document.activeElement!==$('#seek')))$('#seek').value=position;
   const btn=$('#playBtn'),isPlay=active&&!!p.playing;
@@ -579,7 +629,10 @@ function syncDisplayedPlayback(p){
     const lines = Array.from(panel.querySelectorAll('.vc-transcript-line'));
     for (const line of lines) line.classList.remove('active');
     let best = null;
-    if (active && lines.length) {
+    if (streamActive && lines.length) {
+      best = panel.querySelector('[data-segstream="'+streamState.segId+'"]');
+    }
+    if (active && lines.length && !best) {
       for (const line of lines) {
         const st = parseInt(line.dataset.start || '0', 10);
         const en = parseInt(line.dataset.end || '0', 10);
@@ -651,6 +704,14 @@ async function seekDisplayedChapter(op,value,delta=null){
   const bid=bookId,cid=chapterId;
   const p=await device.call('playbackState');
   if(page!=='listen'||bid!==bookId||cid!==chapterId)return;
+  if(streamState&&streamState.bid===bid&&streamState.cid===cid){
+    const c=chapter(),prefix=streamPrefix(c);
+    let acc=0,target=null;
+    for(const s of prefix){const d=s.durMs>0?s.durMs:0;if(delta===null?(value>=acc&&value<acc+d):false){target=s;break;}acc+=d;}
+    if(delta!==null){const cur=prefix.findIndex(s=>s.id===streamState.segId);const t=prefix[cur+(delta>0?1:-1)]||prefix[cur];await playStreamSeg(bid,cid,prefix.indexOf(t));return;}
+    if(target){await playStreamSeg(bid,cid,prefix.indexOf(target));return;}
+    toast('这句还没制作出来');return;
+  }
   if(p.id!==chapter()?.audio){syncDisplayedPlayback(p);toast('请先播放当前章节');return;}
   const target=delta===null?value:Math.max(0,p.position+delta);
   lastSeekPos=target;lastSeekTime=Date.now();
@@ -660,6 +721,7 @@ async function seekDisplayedChapter(op,value,delta=null){
 window.onNativePlaybackAction=async(act,val)=>{
   try{
     if(act==='completion'){
+      if(streamState){try{if(await advanceStream())return;}catch(e){toast(e.message||'流播失败');}}
       if(!playingBookId)await restorePlayingChapter();
       const b=engine?.state.books.find(b=>b.id===playingBookId);
       const c=b?.chapters.find(c=>c.id===playingChapterId);
@@ -873,7 +935,7 @@ if(a==='preset'){await busy(async()=>{const f=await engine.synthesize('山里的
 if(a==='trialvoice'){const v=engine.state.voices.find(v=>v.id===x);if(!v){toast('音色不存在');return;}if(v.sample){await device.call('play',{id:v.sample,title:'试听 · '+v.name});playingId=v.sample;playingBookId=null;playingChapterId=null;return;}await busy(async()=>{const f=await engine.synthesize('山里的风停了，故事才刚刚开始。',v.id);await device.call('play',{id:f.id,title:'试听 · '+v.name});},'正在合成试听…');return;}
 if(a==='play'){await device.call('play',{id:x,title:'Vocast 试听'});playingId=x;playingBookId=null;playingChapterId=null;return;}
 if(a==='repacecur'){const t=engine.state.tasks.find(t=>t.id===window.currentTask);if(!t){toast('任务不存在');return;}bookId=t.bookId;chapterId=t.chapterId;engine.optimizePauses(bookId,chapterId).catch(e=>toast(e.message));toast('已开始优化句末停顿');go('tasks');return;}
-if(a==='playchapter'){const p=await device.call('playbackState');if(p.id!==chapter().audio){await playCurrentChapter();}else await device.call('playback',{op:p.playing?'pause':'resume'});return;}
+if(a==='playchapter'){const ch=chapter();if(!ch?.audio){await playStreamSeg(bookId,chapterId,0);return;}const p=await device.call('playbackState');if(p.id!==ch.audio){await playCurrentChapter();}else await device.call('playback',{op:p.playing?'pause':'resume'});return;}
 if(a==='prevchapter'){
   const b=book();if(!b)return;const chapters=b.chapters||[];const idx=chapters.findIndex(ch=>ch.id===chapterId);
   if(idx>0&&chapters[idx-1].audio){
@@ -950,6 +1012,18 @@ setInterval(async()=>{
 },1000);
 device.call('load').then(result=>{configured=result;engine=new Vocast.Engine(device,result.state);window.vocastEngine=engine;window.renderApp=render;window.__applyInitialNav=(nav)=>{try{if(nav!=='tasks_attention'||!engine)return;const hasPend=engine.state.tasks.some(t=>t.status==='waiting'||t.status==='failed');taskTab=hasPend?'attention':'active';if(page==='tasks')render();else go('tasks');}catch(__e){}};if(result&&result.initialNav)window.__applyInitialNav(result.initialNav);const lastStatus=new Map(engine.state.tasks.map(t=>[t.id,t.status]));engine.onChange(()=>{
   syncProductionStatus().catch(()=>{});
+  // 边做边听：整章合并完成且正在流播本章 -> 切整章文件续播；新分句落定且在等 -> 自动续播
+  try{
+    if(streamState){
+      const sb=engine.state.books.find(b=>b.id===streamState.bid),sc=sb?.chapters.find(c=>c.id===streamState.cid);
+      if(sc?.audio){advanceStream().catch(()=>{});}
+      else if(streamState.waiting){
+        const pre=streamPrefix(sc||{segments:[]});
+        if(pre.findIndex(s=>s.id===streamState.segId)+1<pre.length){streamState.waiting=false;advanceStream().catch(()=>{});}
+        else if(page==='listen'&&bookId===streamState.bid&&chapterId===streamState.cid)render();
+      }
+    }
+  }catch(e){}
   if(waitingForNextChapterId){
     const targetTask = engine.state.tasks.find(t => t.chapterId === waitingForNextChapterId);
     if(targetTask && targetTask.status === "completed"){

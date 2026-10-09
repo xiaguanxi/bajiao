@@ -12,11 +12,7 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RectF;
-import android.graphics.Shader;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -28,8 +24,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.text.Layout;
-import android.text.StaticLayout;
 import android.text.TextPaint;
 import org.json.JSONObject;
 
@@ -585,86 +579,56 @@ public class PlaybackService extends Service {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
 
-        // 渐变质感背景（深蓝紫渐变，彰显听书高雅氛围）
-        Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bgPaint.setShader(new LinearGradient(
-                0, 0, width, height,
-                new int[]{0xFF1E1B4B, 0xFF172554, 0xFF0B0F19},
-                new float[]{0.0f, 0.5f, 1.0f},
-                Shader.TileMode.CLAMP
-        ));
-        canvas.drawRect(0, 0, width, height, bgPaint);
+        // 与书架/详情页 vc-cover 同款：墨绿底 + 米色字 + 圆圈纹 + 左侧书脊线
+        canvas.drawColor(0xFF324D43);
 
-        // 典雅书卷外框与金色内线
-        Paint framePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        framePaint.setStyle(Paint.Style.STROKE);
-        framePaint.setStrokeWidth(4.0f);
-        framePaint.setColor(0x44D97706);
-        RectF frameRect = new RectF(28, 28, width - 28, height - 28);
-        canvas.drawRoundRect(frameRect, 24, 24, framePaint);
+        // 左侧书脊线
+        Paint spinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        spinePaint.setColor(0x16FFFFFF);
+        canvas.drawRect(0, 0, 26, height, spinePaint);
 
-        // 顶部品牌标志 "VOCAST AUDIO"
+        // 右下圆圈纹（同 CSS :before 三层同心圆）
+        Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        ringPaint.setStyle(Paint.Style.STROKE);
+        ringPaint.setStrokeWidth(2.0f);
+        ringPaint.setColor(0x55E0D9AF);
+        float rcx = width + 100, rcy = height + 110;
+        canvas.drawCircle(rcx, rcy, 100, ringPaint);
+        ringPaint.setColor(0x0CD9DAB5);
+        canvas.drawCircle(rcx, rcy, 120, ringPaint);
+        canvas.drawCircle(rcx, rcy, 140, ringPaint);
+        canvas.drawCircle(rcx, rcy, 160, ringPaint);
+
+        // 顶部小字 VOCAST / AUDIOBOOK
         TextPaint topPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        topPaint.setColor(0xFFF59E0B);
-        topPaint.setTextSize(26);
-        topPaint.setFakeBoldText(true);
+        topPaint.setColor(0xFFF3EFDF);
+        topPaint.setTextSize(24);
         topPaint.setTextAlign(Paint.Align.CENTER);
-        topPaint.setLetterSpacing(0.15f);
-        canvas.drawText("VOCAST AUDIOBOOK", width / 2.0f, 80, topPaint);
+        topPaint.setLetterSpacing(0.2f);
+        canvas.drawText("VOCAST / AUDIOBOOK", width / 2.0f, 72, topPaint);
 
-        // 耳机/声音弧线装饰
-        Paint arcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        arcPaint.setStyle(Paint.Style.STROKE);
-        arcPaint.setStrokeWidth(3.0f);
-        arcPaint.setColor(0x66F59E0B);
-        canvas.drawArc(new RectF(width / 2.0f - 36, 105, width / 2.0f + 36, 177), 180, 180, false, arcPaint);
-
-        // 中心书名绘制（自动换行排版）
+        // 书名竖排（同 CSS：serif 大字 + 字间距，最多取 12 字）
+        String displayBook = (book != null && !book.isEmpty()) ? book : "有声小说";
+        if (displayBook.length() > 12) displayBook = displayBook.substring(0, 12);
         TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        titlePaint.setColor(Color.WHITE);
-        titlePaint.setTextSize(44);
+        titlePaint.setColor(0xFFF3EFDF);
+        titlePaint.setTextSize(64);
         titlePaint.setFakeBoldText(true);
         titlePaint.setTextAlign(Paint.Align.CENTER);
-
-        String displayBook = (book != null && !book.isEmpty()) ? book : "有声小说";
-        StaticLayout titleLayout = StaticLayout.Builder.obtain(
-                displayBook, 0, displayBook.length(), titlePaint, width - 100
-        ).setAlignment(Layout.Alignment.ALIGN_CENTER).setMaxLines(3).build();
-
-        canvas.save();
-        float titleY = 210 - (titleLayout.getHeight() / 2.0f);
-        canvas.translate(width / 2.0f, Math.max(160, titleY));
-        titleLayout.draw(canvas);
-        canvas.restore();
-
-        // 章节名
-        TextPaint chapterPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        chapterPaint.setColor(0xFF93C5FD);
-        chapterPaint.setTextSize(26);
-        chapterPaint.setTextAlign(Paint.Align.CENTER);
-        String displayChapter = (chapter != null && !chapter.isEmpty()) ? chapter : "精选章节";
-        if (displayChapter.length() > 16) {
-            displayChapter = displayChapter.substring(0, 15) + "…";
+        float cx = width / 2.0f;
+        float totalH = displayBook.length() * 72.0f;
+        float startY = (height - totalH) / 2.0f + 52;
+        for (int i = 0; i < displayBook.length(); i++) {
+            canvas.drawText(displayBook.substring(i, i + 1), cx, startY + i * 72.0f, titlePaint);
         }
-        canvas.drawText(displayChapter, width / 2.0f, 380, chapterPaint);
 
-        // 底部多角色演绎胶囊标签
-        Paint pillBg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        pillBg.setColor(0x22F59E0B);
-        RectF pillRect = new RectF(width / 2.0f - 110, 420, width / 2.0f + 110, 460);
-        canvas.drawRoundRect(pillRect, 20, 20, pillBg);
-
-        Paint pillBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
-        pillBorder.setStyle(Paint.Style.STROKE);
-        pillBorder.setColor(0x66F59E0B);
-        pillBorder.setStrokeWidth(1.5f);
-        canvas.drawRoundRect(pillRect, 20, 20, pillBorder);
-
-        TextPaint pillText = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        pillText.setColor(0xFFFDE68A);
-        pillText.setTextSize(20);
-        pillText.setTextAlign(Paint.Align.CENTER);
-        canvas.drawText("AI 多角色全景演绎", width / 2.0f, 447, pillText);
+        // 底部小字：让故事有声
+        TextPaint bottomPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        bottomPaint.setColor(0xFFF3EFDF);
+        bottomPaint.setTextSize(22);
+        bottomPaint.setTextAlign(Paint.Align.CENTER);
+        bottomPaint.setLetterSpacing(0.2f);
+        canvas.drawText("让故事有声", width / 2.0f, height - 48, bottomPaint);
 
         return bitmap;
     }

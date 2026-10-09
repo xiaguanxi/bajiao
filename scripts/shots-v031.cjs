@@ -192,8 +192,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     const tcard = page.locator('[data-act="task:t-run"]');
     if (await tcard.count() > 0) {
       await tcard.first().click();
-      await shot('13', '任务详情');
-      await scrollBottom('13b', '任务详情');
+      await shot('13', '任务标注页_含任务条');
+      await scrollBottom('13b', '任务标注页');
     }
     // 批量制作确认（回书架重进书籍详情）
     await click('go:shelf');

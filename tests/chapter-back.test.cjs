@@ -91,6 +91,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.evaluate(async()=>{
       const e=window.vocastEngine;
       const b=e.state.books[0];
+      b.chapters[0].segments=[{id:0,text:'第一句。',speaker:'旁白',emotion:'自然',confidence:1,audio:null}];
+      e.touch(b.chapters[0]);
       e.state.tasks.push({
         id:'test-task-1',
         bookId:b.id,
@@ -107,24 +109,22 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     // Go to tasks
     await click('go:tasks');
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
-    // Click into task detail
+    // Click into task: goes straight to annotated page with task strip (merged)
     const taskId = state.tasks[0].id;
     await click('task:'+taskId);
-    await page.getByRole('heading',{name:'制作详情'}).waitFor();
-    // From task detail, click '校对说话人' (go:annotated)
-    await click('go:annotated');
-    await page.locator('.vc-modebar').waitFor();
-    console.log('✓ 从制作详情跳转至章节标注页');
+    await page.locator('.vc-annotated-topbar').waitFor();
+    assert.ok(await page.locator('.vc-task-strip').count(),'任务条应显示在标注页');
+    console.log('✓ 任务卡片直接进入标注页（含任务状态条）');
 
     // Click back button: should go to detail (the chapter directory)
     await page.locator('.vc-top [data-act="back"]').click();
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
     console.log('✓ 验证 4 成功：从任务跳转进入章节后点击返回，依然统一导航至上一级章节目录！');
 
-    // Click back from detail: should return to task detail
+    // Click back from detail: should return to tasks list (task page merged into annotated)
     await page.locator('.vc-top [data-act="back"]').click();
-    await page.getByRole('heading',{name:'制作详情'}).waitFor();
-    console.log('✓ 验证 5 成功：从章节目录返回，恢复到先前的任务详情页！');
+    await page.getByRole('heading',{name:'制作任务'}).waitFor();
+    console.log('✓ 验证 5 成功：从章节目录返回，回到任务列表（任务详情已并入标注页）！');
 
     assert.equal(errors.length, 0, 'No errors during test: '+errors.join('; '));
     console.log('=== 所有章节返回导航测试用例全部通过！ ===');

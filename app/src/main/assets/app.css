@@ -45,24 +45,34 @@ body {
     padding: 0;
     max-width: 720px;
     margin: auto;
+    --vc-ink: var(--vc-text);
+    --vc-sub: var(--vc-muted);
+    --vc-card: var(--vc-paper);
+    --vc-paper-warm: var(--vc-soft);
+    --vc-accent-subtle: var(--vc-soft);
+    --vc-page-gutter: 20px;
+    --vc-nav-height: 74px;
+    --vc-dock-height: 188px;
+    --vc-mini-height: 64px;
     font-size: 1rem;
     line-height: 1.55;
     min-height: 100vh;
-    overflow-x: clip;
+    overflow-x: visible;
 }
 
 #screen {
-    overflow-x: clip;
+    overflow-x: visible;
 }
 
 #app .vc-main {
-    padding: 20px 20px 110px;
-    min-height: calc(100vh - 125px);
+    padding: max(20px, env(safe-area-inset-top)) var(--vc-page-gutter) calc(var(--vc-nav-height) + 24px);
+    min-height: 100vh;
+    min-height: 100dvh;
 }
 
 /* 标题比例统一 */
 #app h1 {
-    font-size: 1.85rem;
+    font-size: clamp(1.5rem, 6vw, 1.85rem);
     font-weight: 700;
     letter-spacing: -0.02em;
     margin: 0.35rem 0 0.6rem;
@@ -112,6 +122,8 @@ body {
     border-radius: 14px;
     transition: transform 0.1s ease, opacity 0.15s ease;
 }
+#app .vc-book-summary { flex-wrap: wrap; align-items: flex-start; }
+#app .vc-book-summary .vc-book-info { flex: 1 1 10rem !important; }
 
 #app .vc-btn svg {
     width: 1.2rem;
@@ -234,7 +246,7 @@ body {
     height: 3.2rem;
     margin-bottom: 18px; /* 空状态图标下边距加大，视觉层次更清晰 */
     color: var(--vc-muted);
-    opacity: 0.75;
+    opacity: 1;
 }
 
 #app .empty h3 {
@@ -871,7 +883,9 @@ body {
         font-size: 15px;
     }
     #app .vc-main {
-        padding: 16px 14px 95px;
+        --vc-page-gutter: 14px;
+        padding-left: var(--vc-page-gutter);
+        padding-right: var(--vc-page-gutter);
     }
     #app .vc-title {
         font-size: 1.45rem;
@@ -912,10 +926,10 @@ body {
   max-width: 100%;
   box-sizing: border-box;
   position: fixed;
-  bottom: 64px;
+  bottom: var(--vc-nav-height);
   left: 0;
   right: 0;
-  height: 54px;
+  min-height: 64px;
   background: var(--vc-paper);
   border-top: 1px solid var(--vc-line);
   box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
@@ -1072,9 +1086,7 @@ body {
 
 
 /* 适配常驻 mini 播放器的主界面留白 */
-#app main.vc-main.with-mini-player {
-  padding-bottom: 120px !important;
-}
+
 
 /* 听书界面额外操作栏与快捷药丸按钮 */
 #app .vc-player-extra-bar {
@@ -1335,13 +1347,13 @@ body {
   gap: 2px;
   border-left: 0;
   background: transparent;
-  opacity: 0.45;
+  opacity: 1;
   transform: none;
   transition: opacity 0.25s ease, background 0.25s ease;
 }
 #app .vc-transcript-line:hover {
   background: rgba(127, 127, 127, 0.08);
-  opacity: 0.75;
+  opacity: 1;
 }
 #app .vc-transcript-line.active {
   background: transparent;
@@ -1546,12 +1558,12 @@ body {
 #app .vc-player-head h3{margin:2px 0 4px;font-size:1.2rem}
 
 /* 听书五键固定控制栏 + 进度条连体底座 */
-#app .vc-preset-row:last-child{margin-bottom:90px;}
-#app main.vc-main-listen{padding-bottom:196px!important;display:flex;flex-direction:column;height:calc(100vh - 125px);min-height:0;}
+#app .vc-preset-row:last-child{margin-bottom:0;}
+#app main.vc-main-listen{padding-bottom:calc(var(--vc-nav-height) + var(--vc-dock-height) + 12px);display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:420px;}
 #app main.vc-main-listen .vc-player{flex:1;display:flex;flex-direction:column;min-height:0;}
 #app main.vc-main-listen .vc-lyric.vc-transcript-panel,
 #app main.vc-main-listen .vc-lyric{flex:1;max-height:none;min-height:0;height:0;margin:0;}
-#app .vc-dock{position:fixed;bottom:72px;left:0;right:0;max-width:720px;margin:0 auto;z-index:95;display:flex;flex-direction:column;gap:0;padding:10px 20px 8px;background:var(--vc-bg);border-top:1px solid var(--vc-line)}
+#app .vc-dock{position:fixed;bottom:var(--vc-nav-height);left:0;right:0;max-width:720px;margin:0 auto;z-index:95;display:flex;flex-direction:column;gap:0;padding:10px 20px 8px;background:var(--vc-bg);border-top:1px solid var(--vc-line)}
 #app .vc-dock .vc-player-progress{margin:0 0 4px}
 #app .vc-task-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px;}
 #app .vc-task-actions .vc-btn{flex:1;min-width:140px;}
@@ -1604,3 +1616,137 @@ body {
 #app .vc-alias-row > small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; text-align: right; color: #888; }
 #app .vc-alias-list summary { font-size: 12px; color: #4a7; cursor: pointer; white-space: nowrap; }
 #app .vc-alias-list p { font-size: 12px; line-height: 1.8; }
+
+/* Shared mobile layout: let content shrink, keep actions legible, reserve real footer height. */
+#app .vc-main.with-mini-player {
+    padding-bottom: calc(var(--vc-nav-height) + var(--vc-mini-height) + 24px);
+}
+#app .vc-top > div, #app .vc-menu > span, #app .vc-dropdown > span,
+#app .vc-opt > span, #app .vc-label > span, #app .vc-preset-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+#app .vc-top > .vc-icon, #app .vc-top > span:last-child { flex: 0 0 44px; }
+#app .vc-top > h2 { flex: 1; text-align: center; }
+#app .vc-top > .vc-btn { flex-shrink: 0; }
+#app .vc-kicker { overflow-wrap: anywhere; }
+#app .vc-slim-top {
+    margin-left: calc(-1 * var(--vc-page-gutter));
+    margin-right: calc(-1 * var(--vc-page-gutter));
+    padding-left: var(--vc-page-gutter);
+    padding-right: var(--vc-page-gutter);
+    flex-shrink: 0;
+}
+#app .vc-btn {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: normal;
+    word-break: normal;
+    line-height: 1.5;
+    text-align: center;
+}
+#app .vc-split { grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); }
+#app .vc-split > :only-child { grid-column: 1 / -1; }
+#app .vc-link, #app .vc-btn-sub, #app .vc-link-tag, #app .vc-preset-btn,
+#app .vc-btn-ignore, #app .vc-mini-btn, #app .vc-episode-btn {
+    min-height: 44px;
+}
+#app .vc-mini-btn { min-width: 44px; }
+#app .vc-mini-player { padding: 6px 12px; gap: 8px; }
+#app .vc-mini-ctrls { gap: 0; }
+#app .vc-link-tag, #app .vc-preset-btn { justify-content: center; white-space: nowrap; }
+#app .vc-nav button { min-width: 0; }
+#app .vc-tag, #app .vc-issue-badge { flex-shrink: 0; }
+#app .vc-tabs { gap: 4px; }
+#app .vc-tabs button { min-width: 0; padding: 10px 4px; font-size: .85rem; }
+#app .vc-batch-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+#app .vc-batch-left { justify-content: space-between; grid-column: 1 / -1; }
+#app .vc-batch-right { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); grid-column: 1 / -1; width: 100%; }
+#app .vc-batch-right .vc-btn { padding: 10px 6px; font-size: .85rem; min-height: 48px; }
+#app .vc-batch-toolbar, #app .vc-batch-tools, #app .vc-list-heading,
+#app .vc-heading-actions, #app .vc-annotated-topbar, #app .vc-annotated-actions,
+#app .vc-annotated-summary, #app .vc-card-actions { flex-wrap: wrap; }
+#app .vc-batch-tools { gap: 4px 12px; }
+#app .vc-chapter-title-wrap { flex-wrap: wrap; }
+#app .vc-list-heading { gap: 8px; }
+#app .vc-chapter > .vc-num { flex: 0 0 20px; }
+#app .vc-chapter > button { min-height: 44px; }
+#app .vc-chapter > .vc-tag { max-width: 34%; white-space: normal; overflow-wrap: anywhere; }
+#app .vc-issue-card .vc-row { flex-wrap: wrap; }
+#app .vc-issue-card .vc-btn { white-space: normal; }
+#app .vc-nowrap { white-space: normal; }
+#app .vc-issue-actions .vc-link { flex: 1 1 140px; }
+#app .vc-issue-actions .vc-btn { flex: 1 1 140px; }
+#app .vc-issue-actions .vc-btn-ignore { justify-content: center; }
+#app .vc-preset-row { gap: 12px; }
+#app .vc-preset-title { flex: 1; }
+#app .vc-preset-row > .vc-row { flex-shrink: 0; gap: 8px; }
+#app .vc-preset-row .vc-btn { padding: 10px 12px; }
+#app .vc-resume-banner { flex-wrap: wrap; }
+#app .vc-resume-info { flex: 1 1 150px; }
+#app .vc-resume-banner .vc-btn { flex-shrink: 0; padding: 10px 12px; }
+#app .vc-action-item { padding: 14px 0; }
+#app .vc-action-item + .vc-action-item { border-top: 1px solid var(--vc-line); }
+#app .vc-action-item .vc-action-info { min-width: 0; flex: 1 1 160px; overflow-wrap: anywhere; }
+#app .vc-action-item > .vc-btn { flex: 0 0 auto; }
+#app .vc-action-info small { font-size: .82rem; line-height: 1.6; }
+#app .vc-storage-ratio-header { flex-wrap: wrap; gap: 4px 12px; }
+#app .vc-storage-ratio-header > * { min-width: 0; overflow-wrap: anywhere; }
+#app .vc-storage-book-card { padding: 14px 0; border-top: 1px solid var(--vc-line); }
+#app .vc-storage-book-card > div:first-child { flex-direction: column; align-items: flex-start !important; gap: 6px; overflow-wrap: anywhere; }
+#app .vc-storage-book-card > .vc-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#app .vc-storage-book-card > .vc-row > .danger { grid-column: 1 / -1; }
+#app .vc-storage-book-card .vc-btn { font-size: .85rem !important; }
+#app .vc-switch { height: 44px; background: transparent; }
+#app .vc-switch::before { content: ''; position: absolute; inset: 9px 0; border-radius: 13px; background: var(--vc-line); }
+#app .vc-switch.on { background: transparent; }
+#app .vc-switch.on::before { background: var(--vc-accent); }
+#app .vc-switch .vc-switch-knob { top: 12px; }
+#app .vc-field { font-size: .85rem; }
+#app .vc-field-label { margin: 0; }
+#app .vc-field input, #app .vc-field textarea { min-width: 0; max-width: 100%; }
+#app textarea { resize: vertical; }
+#app .vc-dropdown { overflow-wrap: anywhere; }
+#app .vc-dialog, #app .vc-modal-content { overscroll-behavior: contain; overflow-wrap: anywhere; max-height: calc(100dvh - 48px); }
+#app .vc-modal-header { gap: 12px; }
+#app .vc-modal-header h3 { min-width: 0; }
+#app .vc-modal-header .vc-icon { flex-shrink: 0; }
+#app .vc-opt { min-height: 48px; }
+#app .vc-speed-ticks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+#app .vc-tick { min-height: 44px; }
+#app .vc-chip-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#app .vc-dialog-actions { flex-wrap: wrap; }
+#app .vc-dialog-actions .vc-btn { flex-basis: 120px; }
+#app .vc-player-head, #app .vc-listening-prod-banner, #app .vc-dock { flex-shrink: 0; }
+#app .vc-transcript-line { flex-shrink: 0; }
+#app .vc-transcript-text { color: var(--vc-muted); }
+#app .vc-transcript-line.active { background: var(--vc-soft); }
+#app .vc-dock .vc-player-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, .7fr); gap: 6px; }
+#app .vc-dock .vc-link-tag { padding: 6px 8px; font-size: .78rem; white-space: normal; min-width: 0; }
+#app input[type=range] { min-height: 32px; }
+#app #toast { bottom: calc(var(--vc-nav-height) + var(--vc-mini-height) + 16px); }
+#app button:focus-visible, #app input:focus-visible, #app textarea:focus-visible, #app [tabindex]:focus-visible {
+    outline: 2px solid var(--vc-accent); outline-offset: 3px;
+}
+@media (max-width: 360px) {
+    #app { --vc-page-gutter: 14px; }
+    #app .vc-panel, #app .vc-issue-card { padding: 14px; }
+    #app .vc-top { gap: 8px; }
+    #app .vc-action-item > .vc-btn { flex-basis: 100%; }
+    #app .vc-dock { padding-left: 12px; padding-right: 12px; }
+    #app .vc-mini-cover { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #app *, #app *::before, #app *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+#app .vc-ctl { flex-shrink: 0; padding: 6px; }
+#app .vc-ctl svg { width: 28px; height: 28px; }
+#app .vc-ctl.primary svg { width: 32px; height: 32px; }
+#app .vc-task-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 12px; margin-top: 8px; }
+/* In landscape / with the keyboard open, controls join the document so lyrics remain reachable. */
+@media (max-height: 500px) {
+    #app main.vc-main-listen { height: auto; min-height: 100vh; padding-bottom: calc(var(--vc-nav-height) + 12px); }
+    #app main.vc-main-listen .vc-player { flex: none; }
+    #app main.vc-main-listen .vc-lyric.vc-transcript-panel { flex: none; height: 40vh; min-height: 120px; }
+    #app .vc-dock { position: static; width: 100%; margin-top: 12px; padding-left: 0; padding-right: 0; }
+}

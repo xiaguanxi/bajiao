@@ -97,7 +97,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     assert.equal(await page.locator('#speedBtnVal').textContent(),'1.25x','所选倍速应显示');
     assert.equal(await page.locator('[data-act="sleep"]').count(),0,'旧定时按钮已删除');
     assert.equal(await page.locator('[data-act="speed"]').count(),0,'旧倍速按钮已删除');
-    await click('closespeed');
+    await page.locator('.vc-dialog button[data-act="closespeed"]').click();
     console.log('✓ 倍速滑块选择联动 toast 与显示,定时伪需求按钮已删除');
 
     // 4. 验证新 5 键控制栏（倍速、上一集、播放/暂停、下一集、回目录）

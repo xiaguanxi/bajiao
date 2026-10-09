@@ -110,7 +110,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     assert.equal(await page.evaluate(() => window.vocastEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
     assert.equal(playbackCalls.filter(c => c.op === 'speed').at(-1)?.value, 1, 'native 应收到 1');
     assert.equal(await page.locator('#speedBtnVal').textContent(), '1x', '控制栏倍速签应回到 1x');
-    await click('closespeed');
+    await page.locator('.vc-dialog button[data-act="closespeed"]').click();
     console.log('PASS speed switches back to 1x');
 
     // 6. 字幕跟随:播放第 0 句→高亮第1行;跳到第 3 句→高亮跟过去且滚动

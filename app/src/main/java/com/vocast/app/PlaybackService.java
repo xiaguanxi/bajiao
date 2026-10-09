@@ -258,6 +258,7 @@ public class PlaybackService extends Service {
         lastError = "";
 
         if (chapterTitle == null) chapterTitle = "";
+        chapterTitle = shortenNotifyTitle(chapterTitle);
         if (bookTitle == null) bookTitle = "Vocast";
         if (artist == null || artist.isEmpty()) artist = "多角色演绎 · Vocast";
 
@@ -563,6 +564,19 @@ public class PlaybackService extends Service {
         }
     }
 
+    // 系统通知/胶囊标题空间小：保留章节号前缀（如第83章），名字过长截断加…
+    static String shortenNotifyTitle(String title){
+        if(title==null)return "";
+        String t=title.trim();
+        if(t.length()<=11)return t;
+        java.util.regex.Matcher m=java.util.regex.Pattern.compile("^(第\\S{1,8}[章节回卷话节]|Chapter\\s*\\d{1,4}|\\d{1,4}[.、\\s])").matcher(t);
+        String head=m.find()?m.group(1):"";
+        if(head.length()>=10)return head.substring(0,10)+"…";
+        String rest=t.substring(head.length()).trim();
+        int keep=Math.max(0,9-head.length());
+        if(rest.length()>keep)rest=rest.substring(0,keep)+"…";
+        return (head+(head.isEmpty()?"":" ")+rest).trim();
+    }
     public static Bitmap generateCoverBitmap(String book, String chapter, String path) {
         if (path != null && !path.isEmpty()) {
             File f = new File(path);

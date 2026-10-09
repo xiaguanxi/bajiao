@@ -1,5 +1,5 @@
 ﻿(()=>{'use strict';
-let engine,configured={},page='shelf',bookId=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,stopAfterChapter=false,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null;
+let engine,configured={},page='shelf',bookId=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,stopAfterChapter=false,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null,unmadeChoiceChapterId=null;
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
 const B=(text,act,secondary=false,disabled=false)=>`<button class="vc-btn ${secondary?'secondary':''}" data-act="${E(act)}" ${disabled?'disabled':''}>${text}</button>`,L=(text,act)=>`<button class="vc-link" data-act="${E(act)}">${text}</button>`,T=(text,w=false)=>{const extraCls=w==='listened'?'vc-status-badge listened':w==='cleared'?'vc-status-badge cleared':'';const cls=w==='warn'||w===true?'warn':w==='running'?'running':'';return `<span class="vc-tag ${cls} ${extraCls}">${E(text)}</span>`;};
 const title=(k,t,right='')=>`<div class="vc-top"><div><div class="vc-kicker">${k}</div><h1>${t}</h1></div>${right}</div>`;
@@ -77,8 +77,8 @@ function nav(){const pend=pendingConfirm();const active=['shelf','detail','split
 function modebar(){return `<nav class="vc-nav vc-modebar" aria-label="阅读模式">${[['raw','原文'],['annotated','标注'],['listen','听书']].map(([p,n])=>`<button class="${page===p?'active':''}" data-act="go:${p}">${n}</button>`).join('')}</nav>`;}
 function fitMarquee(){try{document.querySelectorAll('.vc-marquee').forEach(el=>{const over=el.scrollWidth>el.clientWidth+4;el.classList.toggle('scroll',over);if(over)el.style.setProperty('--mq',(-(el.scrollWidth-el.clientWidth))+'px');});}catch(e){}}
 let footerObserver=null,lastRenderedContext='',modalSession=null;
-const hasModal=()=>!!(episodeModalOpen||deleteConfirmBookId||batchModalBookId||openDropdown||speedModalOpen||listenSettingsOpen);
-function resetModalFlags(){episodeModalOpen=false;deleteConfirmBookId=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;listenSettingsOpen=false;}
+const hasModal=()=>!!(episodeModalOpen||deleteConfirmBookId||batchModalBookId||openDropdown||speedModalOpen||listenSettingsOpen||unmadeChoiceChapterId);
+function resetModalFlags(){episodeModalOpen=false;deleteConfirmBookId=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;listenSettingsOpen=false;unmadeChoiceChapterId=null;}
 function closeActiveModal(){if(!hasModal())return false;resetModalFlags();render();return true;}
 function syncFooterLayout(){
   if(footerObserver)footerObserver.disconnect();
@@ -459,6 +459,9 @@ if (page !== 'listen' && playingBookId && playingChapterId) {
   }
 }
 let modalHtml = '';
+if(unmadeChoiceChapterId){const __uc=book()?.chapters?.find(ch=>ch.id===unmadeChoiceChapterId);
+  modalHtml+=`<div class="vc-modal-overlay" data-act="closeunmade"><div class="vc-dialog"><h3>${E(__uc?.title||'未制作章节')}</h3><p class="vc-sub">本章还没有音频，你想怎么开始？</p><div class="vc-stack" style="margin-top:12px">${B(I('book-open')+' 阅读原文','readraw')}${B(I('hammer')+' 制作有声书','makechapter')}${B(I('headphones')+' 边做边听','makeandlisten',true)}</div></div></div>`;
+}
 if(speedModalOpen){
   const spd=engine?.state?.playbackSpeed||1;
   const ticks=[0.5,0.75,1,1.25,1.5,1.75,2];
@@ -797,7 +800,11 @@ if(a==='miniseekback'){await device.call('playback',{op:'seek',value:Math.max(0,
 if(a==='miniplaypause'){const isPlay=!!miniPlayingState?.playing;await device.call('playback',{op:isPlay?'pause':'resume'});return;}
 if(a==='mininext'){await window.onNativePlaybackAction('next',0);return;}
 if(a==='book'){bookId=x;chapterId=book().chapters[0].id;multi=false;selected=[];chapterPage=0;episodeModalOpen=false;go('detail');return;}
-if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);go(getChapterTarget(c));return;}
+if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);if(c&&!c.audio&&!(c.unloaded?((c.segmentCount||0)>0):((c.segments||[]).length>0))){unmadeChoiceChapterId=x;render();return;}go(getChapterTarget(c));return;}
+if(a==='closeunmade'){unmadeChoiceChapterId=null;render();return;}
+if(a==='readraw'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;chapterId=cid;page='raw';render();window.scrollTo(0,0);return;}
+if(a==='makechapter'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;chapterId=cid;selected=[cid];go('make');return;}
+if(a==='makeandlisten'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}chapterId=cid;const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[cid]);job.catch(e=>toast(e.message));toast('已开始制作，边做边听');taskTab='active';page='listen';render();window.scrollTo(0,0);return;}
 if(a==='confirm'){chapterId=x;pendingSeg=null;const cc=book()?.chapters?.find(ch=>ch.id===x);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,x);},'读取章节…');}go('annotated');return;}
 if(a==='tasktab'){taskTab=x;render();return;}
 if(a==='gotasksactive'){taskTab='active';go('tasks');return;}

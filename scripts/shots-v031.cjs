@@ -43,8 +43,10 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     const click = async act => {
       const t = page.locator('[data-act="' + act + '"]').first();
       if (await t.count() > 0) { await t.click(); await page.waitForTimeout(300); return; }
-      // 当前页没有：沿返回链找
+      // 当前页没有：沿返回链找（先关可能盖住 back 的选项弹窗）
       for (let i = 0; i < 6; i++) {
+        await page.evaluate(() => { const ov = document.querySelector('.vc-modal-overlay'); if (ov) ov.click(); });
+        await page.waitForTimeout(200);
         const b = page.locator('[data-act="back"]').first();
         if (await b.count() === 0) break;
         await b.click(); await page.waitForTimeout(400);
@@ -92,6 +94,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 标注一章：进第一章原文 -> 标注
     const ch0 = state.books[0].chapters[0].id;
     await click('read:' + ch0);
+    await click('readraw');
     await click('go:annotated');
     await shot('14', '标注模式');
     await scrollBottom('14b', '标注模式');
@@ -234,7 +237,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await page.waitForTimeout(300);
     await click('deletebookconfirm:' + state.books[0].id);
     await shot('27', '删除整书确认弹窗');
-    await click('closedeleteconfirm');
+    await page.locator('button[data-act="closedeleteconfirm"]').first().click();
+    await page.waitForTimeout(300);
     // 切章预览（走真实导入流程：shelf -> 导入小说 -> splitpreview）
     await click('go:shelf');
     await click('importbook');

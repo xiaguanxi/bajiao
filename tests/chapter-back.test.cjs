@@ -42,8 +42,9 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     const ch0 = book.chapters[0];
     const ch1 = book.chapters[1];
 
-    // 2. Click chapter 0 to enter 'raw'
+    // 2. Click chapter 0 to enter 'raw' (unmade chapter shows choice dialog first)
     await click('read:'+ch0.id);
+    await click('readraw');
     await page.locator('.reader').waitFor();
     console.log('✓ 点击第 1 章进入原文视图 (raw)');
 
@@ -76,6 +77,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.locator('.vc-book').click();
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
     await click('read:'+ch1.id);
+    await click('readraw');
     await page.locator('.reader').waitFor();
     await click('go:annotated');
     assert.equal(await page.locator('.vc-modebar .active').textContent(), '标注');

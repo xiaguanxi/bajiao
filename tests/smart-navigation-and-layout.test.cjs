@@ -117,11 +117,12 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     const ch0 = book.chapters[0];
     const ch1 = book.chapters[1];
 
-    // Case 4.1: 未开始标注的章节 -> 点击跳转 原文 raw
+    // Case 4.1: 未开始标注的章节 -> 点击弹选项，选阅读原文进 raw
     await click('read:' + ch0.id);
+    await click('readraw');
     await page.locator('.reader').waitFor();
     const activeTabRaw = await page.locator('.vc-modebar .active').textContent();
-    assert.equal(activeTabRaw, '原文', '未标注章节应跳转至原文');
+    assert.equal(activeTabRaw, '原文', '未标注章节选阅读原文应进原文');
     console.log('✓ 验证 4.1 成功：未开始标注的章节智能跳转至【原文】(raw)');
 
     // 返回目录

@@ -621,7 +621,7 @@ public class PlaybackService extends Service {
         topPaint.setLetterSpacing(0.2f);
         canvas.drawText("VOCAST / AUDIOBOOK", width / 2.0f, 72, topPaint);
 
-        // 书名竖排（同 CSS：serif 大字 + 字间距，最多取 12 字）
+        // 书名横排（同书架 vc-cover：横排 serif 大字，最多取 12 字，超 6 字折两行）
         String displayBook = (book != null && !book.isEmpty()) ? book : "有声小说";
         if (displayBook.length() > 12) displayBook = displayBook.substring(0, 12);
         TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -629,11 +629,13 @@ public class PlaybackService extends Service {
         titlePaint.setTextSize(64);
         titlePaint.setFakeBoldText(true);
         titlePaint.setTextAlign(Paint.Align.CENTER);
-        float cx = width / 2.0f;
-        float totalH = displayBook.length() * 72.0f;
-        float startY = (height - totalH) / 2.0f + 52;
-        for (int i = 0; i < displayBook.length(); i++) {
-            canvas.drawText(displayBook.substring(i, i + 1), cx, startY + i * 72.0f, titlePaint);
+        java.util.ArrayList<String> __lines = new java.util.ArrayList<>();
+        if (displayBook.length() <= 6) { __lines.add(displayBook); }
+        else { int __per = (int) Math.ceil(displayBook.length() / 2.0); __lines.add(displayBook.substring(0, __per)); __lines.add(displayBook.substring(__per)); }
+        float __lineH = 84.0f;
+        float __startY = (height - __lines.size() * __lineH) / 2.0f + 62;
+        for (int i = 0; i < __lines.size(); i++) {
+            canvas.drawText(__lines.get(i), width / 2.0f, __startY + i * __lineH, titlePaint);
         }
 
         // 底部小字：让故事有声

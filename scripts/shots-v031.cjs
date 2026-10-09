@@ -216,7 +216,6 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 模型配置 / LLM / MiMo（settings 页菜单进）
     await click('go:settings');
     await shot('22', '我的');
-    await scrollBottom('26c', '存储_书卡区备用');
     await click('go:models');
     await shot('23', '模型配置');
     await click('go:llm');
@@ -230,14 +229,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await click('go:storage');
     await shot('26', '存储与资源');
     await scrollBottom('26b', '存储');
-    // 删除整书确认弹窗（存储页书卡区点删除整书）
-    await click('go:settings');
-    await click('go:storage');
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(300);
-    await click('deletebookconfirm:' + state.books[0].id);
+    // 删除整书确认弹窗（书架编辑模式多选删除）
+    await click('go:shelf');
+    await click('shelfmulti');
+    await click('shelfselectall');
+    await click('shelfdeletebooks');
     await shot('27', '删除整书确认弹窗');
-    await page.locator('button[data-act="closedeleteconfirm"]').first().click();
+    await page.locator('button[data-act="closeshelfdelete"]').first().click();
     await page.waitForTimeout(300);
     // 切章预览（走真实导入流程：shelf -> 导入小说 -> splitpreview）
     await click('go:shelf');
@@ -278,15 +276,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
       const ce = page.locator('[data-act="closeepisodes"]');
       if (await ce.count() > 0) await ce.first().click();
     }
-    // 顶部批量弹窗（detail页 openbatchmodal）
-    const bm = page.locator('[data-act^="openbatchmodal:"]');
-    if (await bm.count() > 0) {
-      await bm.first().click();
-      await page.waitForTimeout(300);
-      await shot('21c', '批量操作弹窗');
-      const cb = page.locator('[data-act="closebatchmodal"]');
-      if (await cb.count() > 0) await cb.first().click();
-    }
+    // 批量操作已并入详情页编辑模式，不再单独截图
     // 全宽检查
     for (const width of [320, 412, 768]) {
       await page.setViewportSize({ width, height: 915 });

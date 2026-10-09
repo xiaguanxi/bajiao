@@ -77,14 +77,14 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
       assert.ok(!(await page.locator('main').innerText()).includes('undefined'));
       await click('go:voices'); await page.locator('.voice-name').waitFor(); await checkBounds('voices-' + width);
       await click('go:shelf'); await click('book:' + bid); await click('go:roles'); await page.getByRole('heading', {name:'角色绑定，全书一致。'}).waitFor(); await checkBounds('roles-' + width);
-      await click('go:settings'); await click('go:storage'); await page.locator('.vc-storage-book-card').waitFor(); await checkBounds('storage-' + width);
-      await click('deletebookconfirm:' + bid);
+      await click('go:settings'); await click('go:storage'); await page.locator('.vc-storage-ratio-card').waitFor(); await checkBounds('storage-' + width);
+      await click('go:shelf'); await click('shelfmulti'); await click('shelfselectall'); await click('shelfdeletebooks');
       await checkBounds('dialog-' + width);
       await page.locator('.vc-dialog h3').click();
       assert.equal(await page.locator('[role=dialog]').count(), 1, 'clicking dialog content must not dismiss it');
       await page.keyboard.press('Escape');
       assert.equal(await page.locator('[role=dialog]').count(), 0);
-      assert.equal(await page.evaluate(() => document.activeElement.dataset.act), 'deletebookconfirm:' + bid);
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.act), 'shelfdeletebooks');
       await click('go:shelf'); await click('book:' + bid); await click('read:' + cid);
       await checkBounds('listen-' + width);
       const layout = await page.evaluate(() => {

@@ -457,3 +457,23 @@ test('llm-tts-pipeline-split: next task annotates while previous synthesizes', a
   assert.ok(secondAnnotated, 'A 合成时 B 应已开始标注, events=' + JSON.stringify(events));
   assert(e.state.tasks.every(t => t.status === 'done'), '两章都应完成: ' + JSON.stringify(e.state.tasks.map(t => t.status)));
 });
+
+test('pause-during-synth-resumable: pause in synthesis lands paused and resumes to done', async () => {
+  const {Engine} = require('../app/src/main/assets/core.js');
+  const adapter = {saveState: async () => {}, request: async () => { throw Error('Unexpected request'); }, mergeAudio: async ids => ({id: 'merged.wav', duration: ids.length}), saveAudio: async () => ({id: 'sample.wav'}), readAudio: async () => ({base64: 'AA=='})};
+  const e = new Engine(adapter);
+  const b = await e.addBook('t', '甲。乙。');
+  const c = b.chapters[0];
+  c.segments = [{id: 0, text: '甲。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null}, {id: 1, text: '乙。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null}];
+  let first = true;
+  e.synthesize = async text => {
+    if (first) { first = false; const t = e.state.tasks[0]; await e.pause(t.id); throw Error('任务已暂停'); }
+    return {id: 'ok-' + text, duration: 1};
+  };
+  await e.enqueue(b.id, [c.id]);
+  const t = e.state.tasks[0];
+  assert.equal(t.status, 'paused', '合成中暂停应落已暂停而非卡死, got=' + t.status);
+  await e.resume(t.id);
+  assert.equal(e.state.tasks[0].status, 'done', '继续后应完成');
+  assert.ok(c.segments.every(x => x.audio), '每句都应有音频');
+});

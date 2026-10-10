@@ -106,8 +106,11 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     console.log('✓ 验证 2 成功：待确认任务卡片点击直接进入标注页处理！');
 
     // --- 测试 3：章节目录待确认状态点击直接进入标注页 ---
-    // 测试 2 结束停在标注页，点返回回到章节目录
+    // 测试 2 从任务进标注，按返回先回任务页，再经书架回目录（任务入口返回任务页）
     await page.locator('.vc-top [data-act="back"]').click();
+    await page.getByRole('heading',{name:'制作任务'}).waitFor();
+    await click('go:shelf');
+    await page.locator('.vc-book').first().click();
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
 
     // 待确认章节高亮显示并可点击

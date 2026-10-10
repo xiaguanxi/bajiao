@@ -116,15 +116,10 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     assert.ok(await page.locator('.vc-task-strip').count(),'任务条应显示在标注页');
     console.log('✓ 任务卡片直接进入标注页（含任务状态条）');
 
-    // Click back button: should go to detail (the chapter directory)
-    await page.locator('.vc-top [data-act="back"]').click();
-    await page.getByRole('heading',{name:'章节目录'}).waitFor();
-    console.log('✓ 验证 4 成功：从任务跳转进入章节后点击返回，依然统一导航至上一级章节目录！');
-
-    // Click back from detail: should return to tasks list (task page merged into annotated)
+    // Click back button: from task entry returns straight to tasks list
     await page.locator('.vc-top [data-act="back"]').click();
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
-    console.log('✓ 验证 5 成功：从章节目录返回，回到任务列表（任务详情已并入标注页）！');
+    console.log('✓ 验证 4 成功：从任务进入标注页，点击返回直接回到任务列表！');
 
     assert.equal(errors.length, 0, 'No errors during test: '+errors.join('; '));
     console.log('=== 所有章节返回导航测试用例全部通过！ ===');

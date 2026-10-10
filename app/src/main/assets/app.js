@@ -258,8 +258,8 @@ if(page==='listen'){
   const chIdx=chapters.findIndex(ch=>ch.id===c.id);
   const prevCh=chIdx>0?chapters[chIdx-1]:null;
   const nextCh=chIdx>=0&&chIdx<chapters.length-1?chapters[chIdx+1]:null;
-  const hasPrev=!!(prevCh&&prevCh.audio);
-  const hasNext=!!(nextCh&&nextCh.audio);
+  const hasPrev=!!(prevCh&&playablePrefix(prevCh).length);
+  const hasNext=!!(nextCh&&playablePrefix(nextCh).length);
   const curSpeed=engine?.state?.playbackSpeed||1;
 
   const activeProdTask = engine?.state.tasks.find(t => t.status === "running");
@@ -527,6 +527,7 @@ try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(wi
 const value=id=>$('#'+id)?.value||'';
 // 边做边听：分句流播控制器。整章 c.audio 未合并前，把"从头连续已完成分句"逐句接起来播。
 // 规则：只认前缀连续可播分句（skip/待确认/未完成即断）；播完一句由 completion 事件推进；整章合并后切整章文件续播。
+function playablePrefix(c){return c.audio?[{audio:c.audio,whole:true}]:streamPrefix(c);}
 function streamAudible(c){return (c.segments||[]).filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告');}
 function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告')out.push(s);else if((s.text||'').trim())break;}return out;}
 function streamHtml(b,c){
@@ -573,10 +574,10 @@ async function advanceStream(){
   if(task&&['running','queued'].includes(task.status)){toast('已追上制作进度，稍等新句子…');streamState.waiting=true;render();return true;}
   streamState=null;await engine.updatePlaybackProgress(bid,cid,0,0,true);toast('本章已播完');render();return true;
 }
-async function refreshListenNav(){if(page!=="listen")return;try{var b=book(),c=chapter(),chs=b.chapters||[],i=chs.findIndex(function(x){return x.id===c.id;});var hasPrev=!!(i>0&&chs[i-1]&&chs[i-1].audio),hasNext=!!(i>=0&&i<chs.length-1&&chs[i+1]&&chs[i+1].audio);var prev=document.querySelector('[data-act="prevchapter"]'),next=document.querySelector('[data-act="nextchapter"]');if(prev){prev.classList.toggle("disabled",!hasPrev);if(hasPrev)prev.removeAttribute("disabled");else prev.setAttribute("disabled","");}if(next){next.classList.toggle("disabled",!hasNext);if(hasNext)next.removeAttribute("disabled");else next.setAttribute("disabled","");}}catch(e){}}
+async function refreshListenNav(){if(page!=="listen")return;try{var b=book(),c=chapter(),chs=b.chapters||[],i=chs.findIndex(function(x){return x.id===c.id;});var hasPrev=!!(i>0&&chs[i-1]&&playablePrefix(chs[i-1]).length),hasNext=!!(i>=0&&i<chs.length-1&&chs[i+1]&&playablePrefix(chs[i+1]).length);var prev=document.querySelector('[data-act="prevchapter"]'),next=document.querySelector('[data-act="nextchapter"]');if(prev){prev.classList.toggle("disabled",!hasPrev);if(hasPrev)prev.removeAttribute("disabled");else prev.setAttribute("disabled","");}if(next){next.classList.toggle("disabled",!hasNext);if(hasNext)next.removeAttribute("disabled");else next.setAttribute("disabled","");}}catch(e){}}
 async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
-  if(!c?.audio)return;
+  if(!c?.audio){if(streamPrefix(c).length){chapterId=cid;page='listen';render();await playStreamSeg(bid,cid,0);return;}return;}
   const idx=b.chapters.indexOf(c),roleCount=b.characters.length;
   const pos = resumePos !== null ? resumePos : ((c.lastPlayedPosition||0) && !c.listened ? c.lastPlayedPosition : 0);
   await device.call('play',{
@@ -587,8 +588,8 @@ async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
     duration: Math.round((c.duration||0)*1000),
     position: pos,
     speed: engine?.state?.playbackSpeed || 1.0,
-    hasPrev: !!b.chapters[idx-1]?.audio,
-    hasNext: !!b.chapters[idx+1]?.audio,
+    hasPrev: !!(b.chapters[idx-1]&&playablePrefix(b.chapters[idx-1]).length),
+    hasNext: !!(b.chapters[idx+1]&&playablePrefix(b.chapters[idx+1]).length),
     coverPath: b.cover||''
   });
   playingId=c.audio;playingBookId=bid;playingChapterId=cid;
@@ -733,7 +734,7 @@ window.onNativePlaybackAction=async(act,val)=>{
       const chIdx = b?.chapters.findIndex(ch => ch.id === playingChapterId) ?? -1;
       const nextCh = (chIdx >= 0 && chIdx + 1 < (b?.chapters.length || 0)) ? b.chapters[chIdx + 1] : null;
       if(nextCh){
-        if(nextCh.audio){
+        if(playablePrefix(nextCh).length){
           if(page === "listen" && bookId === playingBookId){
             await engine.ensureChapter(b.id, nextCh.id);
             chapterId = nextCh.id;
@@ -763,7 +764,7 @@ window.onNativePlaybackAction=async(act,val)=>{
       const b=engine?.state.books.find(b=>b.id===playingBookId);
       const idx=b?.chapters.findIndex(c=>c.id===playingChapterId)??-1;
       const target=idx<0?null:b.chapters[idx+(act==='next'?1:-1)];
-      if(!target?.audio)return;
+      if(!target||!playablePrefix(target).length)return;
       const cleanRes=await engine.performAutoCleanup(b.id,target.id);
       if(page==='listen'&&bookId===playingBookId){
         await engine.ensureChapter(b.id,target.id);chapterId=target.id;render();
@@ -940,7 +941,7 @@ if(a==='repacecur'){engine.optimizePauses(bookId,chapterId).catch(e=>toast(e.mes
 if(a==='playchapter'){const ch=chapter();if(!ch?.audio){await playStreamSeg(bookId,chapterId,0);return;}const p=await device.call('playbackState');if(p.id!==ch.audio){await playCurrentChapter();}else await device.call('playback',{op:p.playing?'pause':'resume'});return;}
 if(a==='prevchapter'){
   const b=book();if(!b)return;const chapters=b.chapters||[];const idx=chapters.findIndex(ch=>ch.id===chapterId);
-  if(idx>0&&chapters[idx-1].audio){
+  if(idx>0&&playablePrefix(chapters[idx-1]).length){
     const prevTarget=chapters[idx-1];
     const cleanRes=await engine.performAutoCleanup(b.id,prevTarget.id);
     chapterId=prevTarget.id;page='listen';render();await playCurrentChapter();
@@ -953,7 +954,7 @@ if(a==='prevchapter'){
 }
 if(a==='nextchapter'){
   const b=book();if(!b)return;const chapters=b.chapters||[];const idx=chapters.findIndex(ch=>ch.id===chapterId);
-  if(idx>=0&&idx<chapters.length-1&&chapters[idx+1].audio){
+  if(idx>=0&&idx<chapters.length-1&&playablePrefix(chapters[idx+1]).length){
     const nextTarget=chapters[idx+1];
     const cleanRes=await engine.performAutoCleanup(b.id,nextTarget.id);
     chapterId=nextTarget.id;page='listen';render();await playCurrentChapter();

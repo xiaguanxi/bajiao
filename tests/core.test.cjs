@@ -425,3 +425,35 @@ test('param-incorrect-skipped: single TTS rejection skips sentence, chapter stil
   assert.match(t.message || '', /跳过/, '应告知用户有跳过');
   assert.equal(c.audio, 'merged.wav', '整章应合并');
 });
+
+test('llm-tts-pipeline-split: next task annotates while previous synthesizes', async () => {
+  const {Engine} = require('../app/src/main/assets/core.js');
+  const adapter = {saveState: async () => {}, request: async () => { throw Error('Unexpected request'); }, mergeAudio: async ids => ({id: 'merged.wav', duration: ids.length}), saveAudio: async () => ({id: 'sample.wav'}), readAudio: async () => ({base64: 'AA=='})};
+  const e = new Engine(adapter);
+  e.state.settings.taskParallel = 2;
+  e.state.settings.ttsParallel = 2;
+  const b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。');
+  const events = [];
+  const llmGate = {};
+  for (const c of b.chapters) {
+    c.segments = [{id: 0, text: '甲。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null}];
+    llmGate[c.id] = null;
+  }
+  const origAnalyze = e.analyze.bind(e);
+  e.analyze = async (bid, cid, sp) => { events.push('annotate:' + cid); return origAnalyze(bid, cid, sp); };
+  let synthStarted = false, secondAnnotated = false;
+  e.synthesize = async text => {
+    if (!synthStarted) {
+      synthStarted = true;
+      events.push('synth-start');
+      // 合成中时第二个任务应已开始标注（LLM 不等 TTS）
+      await new Promise(r => setTimeout(r, 100));
+      secondAnnotated = events.filter(x => x.startsWith('annotate:')).length >= 2;
+      events.push('synth-end');
+    }
+    return {id: 'ok-' + text, duration: 1};
+  };
+  await e.enqueue(b.id, b.chapters.map(c => c.id));
+  assert.ok(secondAnnotated, 'A 合成时 B 应已开始标注, events=' + JSON.stringify(events));
+  assert(e.state.tasks.every(t => t.status === 'done'), '两章都应完成: ' + JSON.stringify(e.state.tasks.map(t => t.status)));
+});

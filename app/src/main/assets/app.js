@@ -240,7 +240,7 @@ case 'detail':{
   break;
 }
 case 'raw':case 'annotated':case 'listen':{const b=book(),c=chapter();h=slimTop(b.name,c.title);
-if(page==='raw')h+=typeof c.text==='string'?(()=>{let __units=[];try{__units=Vocast.units?Vocast.units(c.text):[{id:0,text:c.text}];}catch(e){__units=[{id:0,text:c.text}];}return `<article class="reader" id="rawArticle">${__units.map(u=>`<span class="vc-raw-seg" data-rawseg="${u.id}">${E(u.text)}</span>`).join('')}</article>`;})():`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>请删除本书后重新导入。</small></div>`;
+if(page==='raw')h+=typeof c.text==='string'?(()=>{let __units=[];try{__units=Vocast.units?Vocast.units(c.text):[{id:0,text:c.text}];}catch(e){__units=[{id:0,text:c.text}];}return `<article class="reader" id="rawArticle">${__units.map(u=>{const __t=String(u.text??'');const __paras=__t.split('\n');return `<p>${__paras.map(__p=>`<span class="vc-raw-seg" data-rawseg="${u.id}">${E(__p)}</span>`).join('<br>')}</p>`;}).join('')}</article>`;})():`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>请删除本书后重新导入。</small></div>`;
 if(page==='annotated'){
   if((c.segments||[]).length){
     const probCount=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker))).length;

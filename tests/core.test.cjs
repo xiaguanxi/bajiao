@@ -1,5 +1,5 @@
-const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs,expectedSpeechSec,isAudioTooLong}=require('../app/src/main/assets/core.js');
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
+const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs,expectedSpeechSec,isAudioTooLong,isAdvertisement,splitChapters}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
 test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
@@ -517,4 +517,22 @@ test('paused-task-policy: paused in active tab, crash-running recovers', async (
   e.kick = async () => {};
   await e.resume('t2');
   assert.equal(e.state.tasks.find(t => t.id === 't2').status, 'queued', 'paused 可直接续');
+});
+
+test('donation-list-ad: chapter-end donor roll is advertisement', async () => {
+  const C = require('../app/src/main/assets/core.js');
+  // 截图实证：第0020章章末打赏名单
+  for (const t of ['————————————','另外','诡天行-（舵主）','LDG花妖-5000','有熊氏家-1000','东辰轩丨星魂-1000','秋-100（阅读）','白潇潇潇和她的小姑-8000（累计舵主）'])
+    assert.ok(C.isAdvertisement(t), '应判广告: ' + t);
+  // 正文不得误伤
+  for (const t of ['本地的仙民依旧呆立不语。','混饭长老。','与贵宗宗主结为道侣，便可做执剑长老，位列仙班。'])
+    assert.ok(!C.isAdvertisement(t), '正文不应判广告: ' + t);
+  // 真实链路：20章分句后章末13行全标广告
+  const text = new TextDecoder('gb18030').decode(fs.readFileSync('books/女大三千位列仙班by打死不鸽.txt'));
+  const chs = C.splitChapters(text, {ruleId: 'auto'}).chapters;
+  const c20 = chs.find(c => c.title.includes('0020'));
+  const us = C.units(c20.text).map(u => typeof u === 'string' ? u : u.text);
+  const ads = us.filter(u => C.isAdvertisement(u));
+  assert.equal(ads.length, 13, '章末广告行应13行, got ' + ads.length);
+  assert.ok(!C.isAdvertisement(us.find(u => u.includes('竹台上'))), '正文尾句不应判广告');
 });

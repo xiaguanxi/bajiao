@@ -406,3 +406,22 @@ test('overlong single-sentence audio is retried then skipped, not merged',async(
   assert.equal(c.segments[0].audio,'skip','两次都坏应跳过该句');
   assert.equal(e.state.tasks[0].status,'done','整章不应因一句坏音频失败');
 });
+
+test('param-incorrect-skipped: single TTS rejection skips sentence, chapter still completes',async()=>{
+  const {Engine, ApiError} = require('../app/src/main/assets/core.js');
+  const adapter = {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};
+  const e = new Engine(adapter);
+  const b = await e.addBook('t','甲。乙。丙。'), c = b.chapters[0];
+  c.segments = [{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null},{id:1,text:'乙。',speaker:'旁白',emotion:'平静',confidence:1,audio:null},{id:2,text:'丙。',speaker:'旁白',emotion:'平静',confidence:1,audio:null}];
+  e.synthesize = async text => {
+    if (text === '乙。') throw new ApiError('合成参数被拒绝（Param Incorrect）：该句文本含特殊符号或过长，已跳过，其余句子继续制作', 400, false);
+    return {id:'ok-'+text, duration:1};
+  };
+  await e.enqueue(b.id,[c.id]);
+  const t = e.state.tasks[0];
+  assert.equal(t.status, 'done', '整章应完成而非失败, message=' + t.message);
+  assert.equal(c.segments[1].audio, 'skip', '坏句应跳过');
+  assert.ok(c.segments[0].audio && c.segments[2].audio, '好句应正常合成');
+  assert.match(t.message || '', /跳过/, '应告知用户有跳过');
+  assert.equal(c.audio, 'merged.wav', '整章应合并');
+});

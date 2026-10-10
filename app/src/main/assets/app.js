@@ -196,7 +196,7 @@ case 'detail':{
     </div>
   ` : '';
 
-  let resumeChapBanner='';if(b.chapters.some(c=>c.audio)){const lp=engine.state.lastPlayback?.bookId===b.id?engine.state.lastPlayback:null;const rc=lp?b.chapters.find(c=>c.id===lp.chapterId&&c.audio):b.chapters.find(c=>c.audio&&c.playbackProgress?.position>0);if(rc){const posSec=Math.round((rc.playbackProgress?.position||lp?.position||0)/1000);resumeChapBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次收听进度</small><strong>${E(rc.title)} · 已收听 ${posSec}秒</strong></div><button class="vc-btn primary" data-act="resumechapter:${rc.id}">${I('play')} 继续收听</button></div>`;}}
+  let resumeChapBanner='';if(b.chapters.some(c=>c.audio)){const lp=engine.state.lastPlayback?.bookId===b.id?engine.state.lastPlayback:null;const rc=lp?b.chapters.find(c=>c.id===lp.chapterId&&c.audio):b.chapters.find(c=>c.audio&&(c.lastPlayedPosition||0)>0);if(rc){const posSec=Math.round((rc.lastPlayedPosition||lp?.position||0)/1000);resumeChapBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次收听进度</small><strong>${E(rc.title)} · 已收听 ${posSec}秒</strong></div><button class="vc-btn primary" data-act="resumechapter:${rc.id}">${I('play')} 继续收听</button></div>`;}}
   h=top('书籍详情')+resumeChapBanner+`
     <div class="vc-row vc-book-summary">${cover(b.name,'vc-detail-cover')}<div class="vc-book-info" style="flex:1"><h3>${E(b.name)}</h3><p class="vc-sub">${totalChapters} 章${b.splitReport?' · 切章：'+E(({auto:'自动',chapter_cn:'第X章',volume_cn:'第X卷',special_cn:'特殊',chapter_en:'英文',number_dot:'数字点',paren_num:'括号',bare_num:'纯数字',bare_cn_num:'汉字数字',num_chapter:'第N标题',custom:'自定义'})[b.splitRule]||b.splitRule):''}</p>${T(b.chapters.filter(c=>c.audio).length+' 章已有声')}</div></div>
     <div class="vc-split vc-bottom">${B('继续阅读','read:'+b.chapters[0].id,true)}${(!autoMode&&pendingRoles)?`<button class="vc-btn vc-btn-attn" data-act="go:roles">${I('alert-circle')} 确认角色音色 · ${pendingRoles}待确认</button>`:B('角色与音色','go:roles')}</div>
@@ -223,7 +223,7 @@ case 'detail':{
           statusLabel='已暂停';
         }
       }else if(c.audio){
-        if(c.playbackProgress?.listened){statusLabel='已完播';statusKind='listened';}
+        if(c.listened){statusLabel='已完播';statusKind='listened';}
         else statusLabel='可听';
       }else if(c.status==='waiting'){
         statusLabel='待确认';
@@ -307,7 +307,7 @@ case 'llm':h=top('语言模型')+`<div class="vc-note">默认 MiniMax 中国区 
 case 'mimo':h=top('MiMo TTS')+field('API Key','ttsKey','','password')+`<div class="vc-panel"><h3>按任务自动使用</h3><p>预设音色</p><div class="vc-model-id">mimo-v2.5-tts</div><p>样本设计</p><div class="vc-model-id">mimo-v2.5-tts-voicedesign</div><p>样本克隆合成</p><div class="vc-model-id">mimo-v2.5-tts-voiceclone</div></div><div class="vc-split">${B('保存配置','savemimo')}${B('真实合成测试','testmimo',true)}</div><p class="footer-note">测试使用已保存的配置并生成可播放音频。统一输出 WAV，章节合并保留原音质。</p>`;break;
 case 'storage':{
   const totalAudioCount = engine.state.books.reduce((sum, b) => sum + b.chapters.filter(c => c.audio).length, 0);
-  const totalListenedCount = engine.state.books.reduce((sum, b) => sum + b.chapters.filter(c => c.audio && c.playbackProgress?.listened).length, 0);
+  const totalListenedCount = engine.state.books.reduce((sum, b) => sum + b.chapters.filter(c => c.audio && c.listened).length, 0);
   const totalUnlistenedCount = totalAudioCount - totalListenedCount;
   const totalBytes = storageStats ? storageStats.totalBytes : 0;
   const statsMb = storageStats ? (storageStats.totalBytes / (1024 * 1024)).toFixed(1) : '--';
@@ -317,7 +317,7 @@ case 'storage':{
     for (const c of b.chapters) {
       if (c.audio) {
         const sz = fileSizes[c.audio] || 0;
-        if (c.playbackProgress?.listened) listenedBytes += sz;
+        if (c.listened) listenedBytes += sz;
         else unlistenedBytes += sz;
       }
     }
@@ -578,7 +578,7 @@ async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!c?.audio)return;
   const idx=b.chapters.indexOf(c),roleCount=b.characters.length;
-  const pos = resumePos !== null ? resumePos : (c.playbackProgress?.position && !c.playbackProgress?.listened ? c.playbackProgress.position : 0);
+  const pos = resumePos !== null ? resumePos : ((c.lastPlayedPosition||0) && !c.listened ? c.lastPlayedPosition : 0);
   await device.call('play',{
     id: c.audio,
     title: c.title,
@@ -845,7 +845,7 @@ if(a==='executebatchmodal'){
   render();return;
 }
 if(a==='clearallaudio'){for(const b of engine.state.books){await engine.clearBookAudio(b.id);}storageStats=await device.call('audioStats');toast('已清空全部有声书音频');render();return;}
-if(a==='clearbooklistened'){const b=engine.state.books.find(bk=>bk.id===x);if(b){let cCount=0;for(const c of b.chapters){if(c.audio&&c.playbackProgress?.listened){await engine.clearChapterAudio(b.id,c.id);cCount++;}}storageStats=await device.call('audioStats');toast('已释放《'+b.name+'》'+cCount+' 个章节音频');render();}return;}
+if(a==='clearbooklistened'){const b=engine.state.books.find(bk=>bk.id===x);if(b){let cCount=0;for(const c of b.chapters){if(c.audio&&c.listened){await engine.clearChapterAudio(b.id,c.id);cCount++;}}storageStats=await device.call('audioStats');toast('已释放《'+b.name+'》'+cCount+' 个章节音频');render();}return;}
 if(a==='clearbookaudio'){const b=engine.state.books.find(bk=>bk.id===x);if(b){await engine.clearBookAudio(b.id);storageStats=await device.call('audioStats');toast('已释放《'+b.name+'》全部音频');render();}return;}
 if(a==='deletebookconfirm'){deleteConfirmBookId=x;render();return;}
 if(a==='closedeleteconfirm'){deleteConfirmBookId=null;render();return;}

@@ -492,3 +492,29 @@ test('last-playback-pointer: progress writes global pointer past completion', as
   assert.ok(b.chapters[0].listened && b.chapters[1].listened, '前两章应已完播');
   assert.equal(b.chapters.filter(c => c.listened).length, 2, '完播数2');
 });
+
+test('paused-task-policy: paused in active tab, crash-running recovers', async () => {
+  const {Engine} = require('../app/src/main/assets/core.js');
+  const io = {saveState: async () => {}};
+  // 模拟"关软件时留下 running + 用户暂停的 paused"
+  const e = new Engine(io, {books: [], voices: [], tasks: [
+    {id: 't1', bookId: 'b', chapterId: 'c1', status: 'running', prio: 0, created: 1},
+    {id: 't2', bookId: 'b', chapterId: 'c2', status: 'paused', prio: 0, created: 2},
+    {id: 't3', bookId: 'b', chapterId: 'c3', status: 'waiting', prio: 0, created: 3},
+    {id: 't4', bookId: 'b', chapterId: 'c4', status: 'failed', prio: 0, created: 4},
+  ], settings: {}});
+  // 1. 崩溃残留的 running 被收成 paused（可续，不丢）
+  const t1 = e.state.tasks.find(t => t.id === 't1');
+  assert.equal(t1.status, 'paused', 'running 应收成 paused');
+  // 2. paused 归执行中、待确认只剩 waiting+failed
+  const isActive = t => ['running','queued','paused'].includes(t.status);
+  const isAttention = t => ['waiting','failed'].includes(t.status);
+  assert.ok(isActive(e.state.tasks.find(t => t.id === 't2')), 'paused 应在执行中');
+  assert.equal(e.state.tasks.filter(isAttention).length, 2, '待确认只剩 waiting+failed');
+  // 3. resume 不需要确认直接回队列
+  e.chapter = () => { throw Error('no chapter'); };
+  e.book = () => { throw Error('no book'); };
+  e.kick = async () => {};
+  await e.resume('t2');
+  assert.equal(e.state.tasks.find(t => t.id === 't2').status, 'queued', 'paused 可直接续');
+});

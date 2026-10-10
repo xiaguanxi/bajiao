@@ -223,7 +223,8 @@ case 'detail':{
           statusLabel='已暂停';
         }
       }else if(c.audio){
-        statusLabel='可听';
+        if(c.playbackProgress?.listened){statusLabel='已完播';statusKind='listened';}
+        else statusLabel='可听';
       }else if(c.status==='waiting'){
         statusLabel='待确认';
         statusKind='warn';
@@ -231,7 +232,7 @@ case 'detail':{
         statusLabel='已标注';
       }
       const isWaiting=statusLabel==='待确认';
-      const badge=c.playbackProgress?.listened?T('已听完','listened'):(c.audioCleared?T('已释放','cleared'):'');
+      const badge=(c.audioCleared&&!c.audio)?T('已释放','cleared'):'';
       return `<div class="vc-chapter ${isWaiting?'vc-chapter-waiting':''}">${multi?`<input type="checkbox" data-check="${c.id}" ${selected.includes(c.id)?'checked':''} aria-label="选择${E(c.title)}">`:`<span class="vc-num">${globalIndex}</span>`}<button data-act="${isWaiting?'confirm:'+c.id:'read:'+c.id}">${E(c.title)}<br><small>${textLen(c)} 字</small></button>${badge}${isWaiting?`<button class="vc-tag warn clickable" data-act="confirm:${c.id}">待确认</button>`:T(statusLabel,statusKind)}</div>`;
     }).join('')}
     ${episodeModalHtml}

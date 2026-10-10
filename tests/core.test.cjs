@@ -477,3 +477,18 @@ test('pause-during-synth-resumable: pause in synthesis lands paused and resumes 
   assert.equal(e.state.tasks[0].status, 'done', '继续后应完成');
   assert.ok(c.segments.every(x => x.audio), '每句都应有音频');
 });
+
+test('last-playback-pointer: progress writes global pointer past completion', async () => {
+  const {Engine} = require('../app/src/main/assets/core.js');
+  const adapter = {saveState: async () => {}, request: async () => { throw Error('Unexpected request'); }, mergeAudio: async ids => ({id: 'merged.wav', duration: ids.length}), saveAudio: async () => ({id: 'sample.wav'}), readAudio: async () => ({base64: 'AA=='})};
+  const e = new Engine(adapter);
+  const b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。\n第三章\n丙。');
+  for (const c of b.chapters) { c.audio = 'a-' + c.id + '.wav'; c.duration = 60; }
+  await e.updatePlaybackProgress(b.id, b.chapters[0].id, 60000, 60000, true);
+  await e.updatePlaybackProgress(b.id, b.chapters[1].id, 60000, 60000, true);
+  await e.updatePlaybackProgress(b.id, b.chapters[2].id, 10000, 60000, false);
+  assert.equal(e.state.lastPlayback.chapterId, b.chapters[2].id, '上次指针应跟到最后播放章');
+  assert.equal(b.lastPlayedChapterId, b.chapters[2].id, '书级指针应一致');
+  assert.ok(b.chapters[0].listened && b.chapters[1].listened, '前两章应已完播');
+  assert.equal(b.chapters.filter(c => c.listened).length, 2, '完播数2');
+});

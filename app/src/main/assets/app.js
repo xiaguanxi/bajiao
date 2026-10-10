@@ -196,7 +196,7 @@ case 'detail':{
     </div>
   ` : '';
 
-  let resumeChapBanner='';if(b.chapters.some(c=>c.audio)){const lp=engine.state.lastPlayback?.bookId===b.id?engine.state.lastPlayback:null;const rc=lp?b.chapters.find(c=>c.id===lp.chapterId&&c.audio):b.chapters.find(c=>c.audio&&(c.lastPlayedPosition||0)>0);if(rc){const posSec=Math.round((rc.lastPlayedPosition||lp?.position||0)/1000);resumeChapBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次收听进度</small><strong>${E(rc.title)} · 已收听 ${posSec}秒</strong></div><button class="vc-btn primary" data-act="resumechapter:${rc.id}">${I('play')} 继续收听</button></div>`;}}
+  let resumeChapBanner='';if(b.chapters.some(c=>c.audio)){const lp=engine.state.lastPlayback?.bookId===b.id?engine.state.lastPlayback:null;const rcPtr=lp?b.chapters.find(c=>c.id===lp.chapterId):(b.lastPlayedChapterId?b.chapters.find(c=>c.id===b.lastPlayedChapterId):null);const rc=(rcPtr&&(rcPtr.audio||streamPrefix(rcPtr).length))?rcPtr:(lp?b.chapters.find(c=>c.id===lp.chapterId&&c.audio):b.chapters.find(c=>c.audio&&(c.lastPlayedPosition||0)>0));if(rc){const posSec=Math.round(((rc.id===(lp?.chapterId)?(lp?.position||0):0)||rc.lastPlayedPosition||0)/1000);resumeChapBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次收听进度</small><strong>${E(rc.title)} · 已收听 ${posSec}秒</strong></div><button class="vc-btn primary" data-act="resumechapter:${rc.id}">${I('play')} 继续收听</button></div>`;}}
   h=top('书籍详情')+resumeChapBanner+`
     <div class="vc-row vc-book-summary">${cover(b.name,'vc-detail-cover')}<div class="vc-book-info" style="flex:1"><h3>${E(b.name)}</h3><p class="vc-sub">${totalChapters} 章${b.splitReport?' · 切章：'+E(({auto:'自动',chapter_cn:'第X章',volume_cn:'第X卷',special_cn:'特殊',chapter_en:'英文',number_dot:'数字点',paren_num:'括号',bare_num:'纯数字',bare_cn_num:'汉字数字',num_chapter:'第N标题',custom:'自定义'})[b.splitRule]||b.splitRule):''}</p>${T(b.chapters.filter(c=>c.audio).length+' 章已有声')}</div></div>
     <div class="vc-split vc-bottom">${B('继续阅读','read:'+b.chapters[0].id,true)}${(!autoMode&&pendingRoles)?`<button class="vc-btn vc-btn-attn" data-act="go:roles">${I('alert-circle')} 确认角色音色 · ${pendingRoles}待确认</button>`:B('角色与音色','go:roles')}</div>
@@ -553,6 +553,7 @@ async function playStreamSeg(bid,cid,segIdx){
   const idx=b.chapters.indexOf(c);
   await device.call('play',{id:seg.audio,title:c.title+'（边做边听 · 第'+(prefix.indexOf(seg)+1)+'句）',bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · Vocast',duration:Math.round((seg.durMs||0)),position:0,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
   playingId=seg.audio;playingBookId=bid;playingChapterId=cid;
+  engine?.updatePlaybackProgress(bid,cid,doneBefore,0,false).catch(()=>{});
   if(page==='listen'&&bookId===bid&&chapterId===cid)render();
   checkAutoProduceUpcoming(bid,cid).catch(()=>{});
 }

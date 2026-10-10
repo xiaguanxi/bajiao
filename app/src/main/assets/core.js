@@ -259,6 +259,7 @@ class Engine{
   const c=b.chapters.find(x=>x.id===cid);if(!c)return {listened:false};
   if(c.unloaded){try{await this.ensureChapter(bid,cid);}catch(e){}}
   b.lastPlayedChapterId=cid;b.lastPlayedPosition=posMs;b.lastPlayedAt=Date.now();
+  this.state.lastPlayback={bookId:bid,chapterId:cid,position:posMs,at:Date.now()};
   c.lastPlayedPosition=posMs;
   let newlyFinished=false;
   let audioCleared=false;

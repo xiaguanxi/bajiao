@@ -130,6 +130,18 @@ test('corrupt chapter file fails loudly without mutating stub', async () => {
   assert.equal(typeof c.text, 'undefined');
 });
 
+test('legacy header without unloaded flag still lazy-loads body', async () => {
+  const adapter = io(), e = new Engine(adapter);
+  const b = await e.addBook('t', '甲。乙。');
+  const orig = b.chapters[0];
+  // 旧快照: header 章节既无 text 也无 unloaded 标记
+  b.chapters[0] = { id: orig.id, title: orig.title, status: 'raw', textLength: 3, segmentCount: 0 };
+  const lazy = new Engine({ ...io(), loadChapter: async () => orig }, e.state);
+  const c = await lazy.ensureChapter(b.id, orig.id);
+  assert.equal(c.text, '甲。乙。');
+  assert.equal(c.unloaded, undefined);
+});
+
 test('cancel sticks and pause/resume refuse terminal states', async () => {
   const e = new Engine(io()), b = await e.addBook('t', '甲。'), c = b.chapters[0];
   c.segments = [{ id: 0, text: '甲。', speaker: '旁白', emotion: '平静', confidence: 1, audio: null }];

@@ -519,6 +519,7 @@ try{if(pendingSeg!=null){const __el=document.querySelector('[data-seg="'+pending
 // 从听书切入原文/标注：按播放进度跳到对应行（等布局完再滚）
 try{if(window.__jumpToPos!=null&&(page==='raw'||page==='annotated')&&bookId&&chapterId){const __pos=window.__jumpToPos;window.__jumpToPos=null;
 requestAnimationFrame(()=>{try{const __c=chapter();let __el=null;let __segId=null;try{if(typeof streamState!=='undefined'&&streamState&&streamState.bid===bookId&&streamState.cid===chapterId&&streamState.segId!=null){__segId=streamState.segId;}}catch(__e2){}
+try{if(__segId==null&&typeof miniPlayingState!=='undefined'&&miniPlayingState&&miniPlayingState.id&&__c&&__c.segments&&__c.segments.length){const __m=__c.segments.find(s=>s.audio&&s.audio===miniPlayingState.id);if(__m)__segId=__m.id;}}catch(__e3){}
 if(__segId==null&&__c&&__c.segments&&__c.segments.length&&__c.audio){try{const __segs=engine.computeSegmentTimestamps(__c.segments||[],__c.duration||0)||[];for(const s of __segs){if((s.startMs||0)<=__pos&&(s.endMs||0)>__pos){__segId=s.id;break;}}if(__segId==null&&__segs.length){let __best=__segs[0];for(const s of __segs){if((s.startMs||0)<=__pos)__best=s;else break;}__segId=__best.id;}}catch(e){}}
 if(page==='annotated'&&__segId!=null){__el=document.querySelector('[data-seg="'+__segId+'"]');}
 if(page==='raw'&&__segId!=null){__el=document.querySelector('[data-rawseg="'+__segId+'"]');}

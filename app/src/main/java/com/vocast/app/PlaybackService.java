@@ -44,7 +44,7 @@ public class PlaybackService extends Service {
     public static final String ACTION_SLEEP = "sleep";
 
     public interface PlaybackEventListener {
-        void onPlaybackEvent(String action, long value);
+        void onPlaybackEvent(String action, long value, String audioId);
     }
 
     private static PlaybackEventListener eventListener;
@@ -166,10 +166,11 @@ public class PlaybackService extends Service {
     }
 
     private void notifyClientEvent(String action, long value) {
+        final String eventAudioId = currentAudioId;
         handler.post(() -> {
             if (eventListener != null) {
                 try {
-                    eventListener.onPlaybackEvent(action, value);
+                    eventListener.onPlaybackEvent(action, value, eventAudioId);
                 } catch (Exception ignored) {}
             }
         });
@@ -284,7 +285,9 @@ public class PlaybackService extends Service {
                 if (mp != player) return;
                 prepared = true;
                 durationMs = mp.getDuration();
-                if (startPosition > 0 && startPosition < durationMs) mp.seekTo(startPosition);
+                if (startPosition > 0 && durationMs > 0) {
+                    mp.seekTo(Math.min(startPosition, durationMs - 1), MediaPlayer.SEEK_CLOSEST);
+                }
                 if (playWhenPrepared && requestAudioFocus()) {
                     mp.start();
                     applyPlaybackSpeed();
@@ -296,10 +299,10 @@ public class PlaybackService extends Service {
                 }
             });
             player.setOnCompletionListener(mp -> {
-                notifyClientEvent("completion", durationMs);
+                if (mp != player) return;
                 updatePlaybackState();
                 updateNotification();
-                notifyClientEvent("next", 0);
+                notifyClientEvent("completion", durationMs);
             });
             player.setOnErrorListener((mp, what, extra) -> {
                 if (mp != player) return true;

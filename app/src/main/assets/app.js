@@ -531,10 +531,10 @@ try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(wi
 }
 const value=id=>$('#'+id)?.value||'';
 // 边做边听：分句流播控制器。整章 c.audio 未合并前，把"从头连续已完成分句"逐句接起来播。
-// 规则：只认前缀连续可播分句（skip/待确认/未完成即断）；播完一句由 completion 事件推进；整章合并后切整章文件续播。
+// 播放中的分句始终逐句播完；整章合并不打断当前句，也不重新启动本章。
 function playablePrefix(c){return c.audio?[{audio:c.audio,whole:true}]:streamPrefix(c);}
 function streamAudible(c){return (c.segments||[]).filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告');}
-function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告')out.push(s);else if((s.text||'').trim())break;}return out;}
+function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip')continue;if(s.audio)out.push(s);else if((s.text||'').trim())break;}return out;}
 function streamHtml(b,c){
   const task=engine?.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
   const ready=streamPrefix(c);
@@ -549,7 +549,6 @@ function streamHtml(b,c){
 async function playStreamSeg(bid,cid,segIdx){
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!b||!c)throw Error('章节不存在');
-  if(c.audio){streamState=null;await playCurrentChapter(bid,cid);return;}
   const prefix=streamPrefix(c);
   if(!prefix.length)throw Error('还没有合成好的句子，稍等片刻');
   const seg=prefix[Math.min(segIdx,prefix.length-1)];
@@ -567,21 +566,23 @@ async function advanceStream(){
   const {bid,cid}=streamState;
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!b||!c){streamState=null;return false;}
-  if(c.audio){ // 整章已合并：切整章文件，从已播时长处续播
-    const pos=streamState.posBefore+(streamAudible(c).find(s=>s.id===streamState.segId)?.durMs||0);
-    streamState=null;playingId=null;
-    await playCurrentChapter(bid,cid,pos);return true;
-  }
   const prefix=streamPrefix(c);
   const curIdx=prefix.findIndex(s=>s.id===streamState.segId);
   if(curIdx<0){streamState=null;render();return false;} // 当前句被改/重制：停播等用户操作
   if(curIdx+1<prefix.length){await playStreamSeg(bid,cid,curIdx+1);return true;}
   const task=engine.state.tasks.find(t=>t.bookId===bid&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));
   if(task&&['running','queued'].includes(task.status)){toast('已追上制作进度，稍等新句子…');streamState.waiting=true;render();return true;}
-  streamState=null;await engine.updatePlaybackProgress(bid,cid,0,0,true);toast('本章已播完');render();return true;
+  streamState=null;return false; // 交给唯一的 completion 处理器完成本章并推进下一章
 }
 async function refreshListenNav(){if(page!=="listen")return;try{var b=book(),c=chapter(),chs=b.chapters||[],i=chs.findIndex(function(x){return x.id===c.id;});var hasPrev=!!(i>0&&chs[i-1]&&playablePrefix(chs[i-1]).length),hasNext=!!(i>=0&&i<chs.length-1&&chs[i+1]&&playablePrefix(chs[i+1]).length);var prev=document.querySelector('[data-act="prevchapter"]'),next=document.querySelector('[data-act="nextchapter"]');if(prev){prev.classList.toggle("disabled",!hasPrev);if(hasPrev)prev.removeAttribute("disabled");else prev.setAttribute("disabled","");}if(next){next.classList.toggle("disabled",!hasNext);if(hasNext)next.removeAttribute("disabled");else next.setAttribute("disabled","");}}catch(e){}}
+let chapterPlayRequest=0;
 async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
+  const request=++chapterPlayRequest;
+  await engine.ensureChapter(bid,cid);
+  const repaired=await engine.repairChapterAudio(bid,cid);
+  if(request!==chapterPlayRequest)return;
+  if(repaired)toast('已修复 '+repaired+' 句重复朗读');
+  streamState=null;
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!c?.audio){if(streamPrefix(c).length){chapterId=cid;page='listen';render();await playStreamSeg(bid,cid,0);return;}return;}
   const idx=b.chapters.indexOf(c),roleCount=b.characters.length;
@@ -718,10 +719,15 @@ async function seekDisplayedChapter(op,value,delta=null){
   syncDisplayedPlayback({...p,position:target});
   await device.call('playback',{op,value:target});
 }
-window.onNativePlaybackAction=async(act,val)=>{
+let playbackNavigationBusy=false;
+window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
+  if(act==='completion'&&sourceAudioId&&playingId&&sourceAudioId!==playingId)return;
+  const navigation=['completion','next','prev'].includes(act);
+  if(navigation&&playbackNavigationBusy)return;
+  if(navigation)playbackNavigationBusy=true;
   try{
     if(act==='completion'){
-      if(streamState){try{if(await advanceStream())return;}catch(e){toast(e.message||'流播失败');}}
+      if(streamState){const wasStream=streamState;try{if(await advanceStream())return;}catch(e){toast(e.message||'流播失败');return;}const completed=engine?.state.books.find(b=>b.id===wasStream.bid)?.chapters.find(c=>c.id===wasStream.cid);val=(completed?.duration||0)*1000;}
       if(!playingBookId)await restorePlayingChapter();
       const b=engine?.state.books.find(b=>b.id===playingBookId);
       const c=b?.chapters.find(c=>c.id===playingChapterId);
@@ -785,7 +791,7 @@ window.onNativePlaybackAction=async(act,val)=>{
       const base = await device.call('playbackState');
       syncDisplayedPlayback({...base, position: val || 0});
     }
-  }catch(e){toast(e.message||'播放控制失败');}
+  }catch(e){toast(e.message||'播放控制失败');}finally{if(navigation)playbackNavigationBusy=false;}
 };
 $('#screen').addEventListener('click',async e=>{const el=e.target.closest('[data-act]');if(!el||el.disabled)return;if(el.classList.contains('vc-modal-overlay')&&e.target!==el)return;const [a,...rest]=el.dataset.act.split(':'),x=rest.join(':');
 try{
@@ -1024,21 +1030,20 @@ device.call('load').then(result=>{configured=result;engine=new Vocast.Engine(dev
 try{const interrupted=engine.state.tasks.filter(t=>t.status==='paused');if(interrupted.length){const mx=Math.max(0,...engine.state.tasks.map(x=>x.prio||0));interrupted.sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0))).forEach((t,i)=>{t.pauseRequested=false;t.status='queued';t.phase='排队等待';t.prio=mx+interrupted.length-i;});engine.persist().then(()=>engine.kick()).catch(()=>{});}}catch(e){}
 engine.onChange(()=>{
   syncProductionStatus().catch(()=>{});
-  // 边做边听：整章合并完成且正在流播本章 -> 切整章文件续播；新分句落定且在等 -> 自动续播
+  // 只在当前句已播完且等待新内容时续播；合并完成不能抢占正在播放的句子。
   try{
     if(streamState){
       const sb=engine.state.books.find(b=>b.id===streamState.bid),sc=sb?.chapters.find(c=>c.id===streamState.cid);
-      if(sc?.audio){advanceStream().catch(()=>{});}
-      else if(streamState.waiting){
+      if(streamState.waiting){
         const pre=streamPrefix(sc||{segments:[]});
-        if(pre.findIndex(s=>s.id===streamState.segId)+1<pre.length){streamState.waiting=false;advanceStream().catch(()=>{});}
+        if(sc?.audio||pre.findIndex(s=>s.id===streamState.segId)+1<pre.length){window.onNativePlaybackAction('completion',0).catch(()=>{});}
         else if(page==='listen'&&bookId===streamState.bid&&chapterId===streamState.cid)render();
       }
     }
   }catch(e){}
   if(waitingForNextChapterId){
     const targetTask = engine.state.tasks.find(t => t.chapterId === waitingForNextChapterId);
-    if(targetTask && targetTask.status === "completed"){
+    if(targetTask && targetTask.status === "done"){
       const tBookId = targetTask.bookId;
       const tChapId = targetTask.chapterId;
       waitingForNextChapterId = null;

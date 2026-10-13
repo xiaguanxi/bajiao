@@ -28,11 +28,11 @@ public class MainActivity extends Activity {
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
         web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.vocast.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
         web.addJavascriptInterface(new Bridge(),"Native");web.loadUrl("https://app.vocast.local/index.html");
-        PlaybackService.setEventListener((act, val) -> {
+        PlaybackService.setEventListener((act, val, audioId) -> {
             if (web != null) {
                 web.post(() -> {
                     if (web != null) {
-                        web.evaluateJavascript("window.onNativePlaybackAction&&window.onNativePlaybackAction('" + act + "'," + val + ")", null);
+                        web.evaluateJavascript("window.onNativePlaybackAction&&window.onNativePlaybackAction('" + act + "'," + val + "," + JSONObject.quote(audioId) + ")", null);
                     }
                 });
             }

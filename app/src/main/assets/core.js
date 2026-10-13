@@ -1,5 +1,6 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.Vocast=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
+const AudioQuality=typeof module==='object'&&module.exports?require('./audio-quality.js'):globalThis.VocastAudioQuality;
 const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
 const DEFAULTS={llmBase:'https://api.minimax.cn/v1',llmModel:'MiniMax-M3',llmProtocol:'openai',mode:'manual',usePresets:false,retries:2,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:''};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
@@ -160,14 +161,14 @@ class Engine{
  this.state.settings={...DEFAULTS,...this.state.settings};if(this.state.settings.keepRecentCount==null)this.state.settings.keepRecentCount=2;delete this.state.settings.keepRecentTwoChapters;if(!(this.state.settings.autoProduceCount>=1))this.state.settings.autoProduceCount=2;if(!(this.state.settings.speakerThreshold>=0&&this.state.settings.speakerThreshold<=1))this.state.settings.speakerThreshold=0.5;if(![1,2,3].includes(Number(this.state.settings.taskParallel)))this.state.settings.taskParallel=1;if(![1,2,3,4].includes(Number(this.state.settings.ttsParallel)))this.state.settings.ttsParallel=2;for(const t of this.state.tasks)if(t.prio==null)t.prio=0;this.running=false;this.listeners=[];this._ttsActive=0;this._ttsQueue=[];this._synthRunning=0;this._frontActive=new Set();this.saveChain=Promise.resolve();for(const b of this.state.books){for(const r of b.characters){r.description=cleanVoiceDescription(r.description);if(r.candidate)normalizeVoice(r.candidate);r.aliases=safeAliases(r.aliases);if(r.aliasSpans==null)r.aliasSpans={};}if(!Array.isArray(b.mergeSuggestions))b.mergeSuggestions=[];}for(const v of this.state.voices)normalizeVoice(v);for(const t of this.state.tasks){t.synthQueued=false;t.synthActive=false;t.resumeRequested=false;if(t.status==='running'){t.status='paused';t.message='上次制作中断，点击继续可从已保存片段恢复';}}}
  onChange(fn){this.listeners.push(fn);}
  touch(chapter){if(!chapter||typeof chapter.id!=='string')return;if(chapter.unloaded)return;if(typeof chapter.text!=='string'||!Array.isArray(chapter.segments))return;if(!this.dirtyChapters)this.dirtyChapters=new Set();this.dirtyChapters.add(chapter);}
- async persist(){let write;if(this.io.saveSnapshot){if(!this.snapshotStarted){this.snapshotStarted=true;for(const b of this.state.books)for(const c of b.chapters)if(!c.unloaded)this.touch(c);}const dirty=[...(this.dirtyChapters||[])];const header=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return {...rest,chapters:b.chapters.map(c=>({id:c.id,title:c.title,status:c.status,audio:c.audio||null,duration:c.duration||0,pacingVersion:c.pacingVersion||0,summary:c.summary||'',textLength:c.unloaded?(c.textLength||0):(typeof c.text==='string'?c.text.length:(c.textLength||0)),segmentCount:c.unloaded?(c.segmentCount||0):(Array.isArray(c.segments)?c.segments.length:(c.segmentCount||0)),listened:!!c.listened,audioCleared:!!c.audioCleared,lastPlayedPosition:c.lastPlayedPosition||0}))};})});const chapters=JSON.stringify(dirty);this.dirtyChapters=new Set();write=()=>this.io.saveSnapshot(header,chapters).catch(e=>{for(const c of dirty)this.touch(c);throw e;});}else{const snapshot=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return rest;})});write=()=>this.io.saveState(snapshot);}this.saveChain=this.saveChain.catch(()=>{}).then(write);await this.saveChain;this.listeners.forEach(fn=>fn());}
+ async persist(){let write;if(this.io.saveSnapshot){if(!this.snapshotStarted){this.snapshotStarted=true;for(const b of this.state.books)for(const c of b.chapters)if(!c.unloaded)this.touch(c);}const dirty=[...(this.dirtyChapters||[])];const header=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return {...rest,chapters:b.chapters.map(c=>({id:c.id,title:c.title,status:c.status,audio:c.audio||null,originalAudio:c.originalAudio||null,duration:c.duration||0,pacingVersion:c.pacingVersion||0,summary:c.summary||'',textLength:c.unloaded?(c.textLength||0):(typeof c.text==='string'?c.text.length:(c.textLength||0)),segmentCount:c.unloaded?(c.segmentCount||0):(Array.isArray(c.segments)?c.segments.length:(c.segmentCount||0)),listened:!!c.listened,audioCleared:!!c.audioCleared,lastPlayedPosition:c.lastPlayedPosition||0}))};})});const chapters=JSON.stringify(dirty);this.dirtyChapters=new Set();write=()=>this.io.saveSnapshot(header,chapters).catch(e=>{for(const c of dirty)this.touch(c);throw e;});}else{const snapshot=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return rest;})});write=()=>this.io.saveState(snapshot);}this.saveChain=this.saveChain.catch(()=>{}).then(write);await this.saveChain;this.listeners.forEach(fn=>fn());}
  book(id){const b=this.state.books.find(b=>b.id===id);if(!b)throw Error('书籍不存在');return b;}
  chapter(bid,cid){const c=this.book(bid).chapters.find(c=>c.id===cid);if(!c)throw Error('章节不存在');return c;}
  async ensureChapter(bid,cid){const c=this.chapter(bid,cid);if(c.unloaded||typeof c.text!=='string'||!Array.isArray(c.segments)){if(!this.io.loadChapter)throw Error('章节读取接口不可用');if(!this.loadingChapters)this.loadingChapters=new Map();if(!this.loadingChapters.has(cid))this.loadingChapters.set(cid,this.io.loadChapter(cid).then(full=>{if(full.id!==cid)throw Error('章节索引不匹配');if(typeof full.text!=='string'||!Array.isArray(full.segments))throw Error('章节文本缺失，请重新导入书籍');Object.assign(c,full);delete c.unloaded;delete c.textLength;delete c.segmentCount;return c;}).finally(()=>this.loadingChapters.delete(cid)));return this.loadingChapters.get(cid);}return c;}
   async deleteBook(id){
   const idx=this.state.books.findIndex(b=>b.id===id);if(idx<0)throw Error('书籍不存在');
   const b=this.state.books[idx];const audioIds=[];
-  for(const c of b.chapters){if(c.audio)audioIds.push(c.audio);for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);}}
+  for(const c of b.chapters){if(c.audio)audioIds.push(c.audio);if(c.originalAudio)audioIds.push(c.originalAudio);for(const s of (c.segments||[])){if(s.originalAudio)audioIds.push(s.originalAudio);if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);}}
   this.state.tasks=this.state.tasks.filter(t=>t.bookId!==id);
   this.state.books.splice(idx,1);
   if(audioIds.length&&this.io.deleteAudio){try{await this.io.deleteAudio([...new Set(audioIds)]);}catch(ignored){}}
@@ -178,8 +179,8 @@ class Engine{
   for(const c of b.chapters){
     if(c.unloaded){try{await this.ensureChapter(bid,c.id);}catch(e){continue;}}
     if(options.onlyListened&&!c.listened)continue;
-    if(c.audio){audioIds.push(c.audio);c.audio=null;c.audioCleared=true;clearedCount++;}
-    if(!options.onlyListened){for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);s.audio=null;}if(c.status==='ready')c.status=(c.segments&&c.segments.length?'annotated':'raw');}
+    if(c.originalAudio){audioIds.push(c.originalAudio);delete c.originalAudio;}if(c.audio){audioIds.push(c.audio);c.audio=null;c.audioCleared=true;clearedCount++;}
+    if(!options.onlyListened){for(const s of (c.segments||[])){if(s.originalAudio){audioIds.push(s.originalAudio);delete s.originalAudio;}if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);s.audio=null;}if(c.status==='ready')c.status=(c.segments&&c.segments.length?'annotated':'raw');}
     this.touch(c);
   }
   let freedRes={count:0,freedBytes:0,freedMb:0};
@@ -195,8 +196,8 @@ class Engine{
  async clearChapterAudio(bid,cid){
   const c=this.chapter(bid,cid);const audioIds=[];
   if(c.unloaded){try{await this.ensureChapter(bid,cid);}catch(e){return {count:0,freedBytes:0,freedMb:0};}}
-  if(c.audio){audioIds.push(c.audio);c.audio=null;c.audioCleared=true;}
-  for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);s.audio=null;}
+  if(c.originalAudio){audioIds.push(c.originalAudio);delete c.originalAudio;}if(c.audio){audioIds.push(c.audio);c.audio=null;c.audioCleared=true;}
+  for(const s of (c.segments||[])){if(s.originalAudio){audioIds.push(s.originalAudio);delete s.originalAudio;}if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);s.audio=null;}
   if(c.status==='ready')c.status=(c.segments&&c.segments.length?'annotated':'raw');
   this.touch(c);
   let freedRes={count:0,freedBytes:0,freedMb:0};
@@ -214,8 +215,9 @@ class Engine{
   const b=this.book(bid);const set=new Set(Array.isArray(cids)?cids:[cids]);const audioIds=[];let n=0;
   for(const c of b.chapters.filter(c=>set.has(c.id))){
     if(c.unloaded){try{await this.ensureChapter(bid,c.id);}catch(e){continue;}}
+    if(c.originalAudio){audioIds.push(c.originalAudio);delete c.originalAudio;}
     if(c.audio)audioIds.push(c.audio);
-    for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);}
+    for(const s of (c.segments||[])){if(s.originalAudio)audioIds.push(s.originalAudio);if(s.audio&&s.audio!=='skip')audioIds.push(s.audio);}
     c.segments=[];c.audio=null;c.duration=0;c.pacingVersion=0;c.status='raw';c.audioCleared=false;delete c.analysisDraft;n++;
     this.touch(c);
   }
@@ -226,7 +228,7 @@ class Engine{
  }
  collectReferencedAudio(){
   const set=new Set();
-  for(const b of this.state.books){for(const c of b.chapters){if(c.audio)set.add(c.audio);for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')set.add(s.audio);}}}
+  for(const b of this.state.books){for(const c of b.chapters){if(c.audio)set.add(c.audio);if(c.originalAudio)set.add(c.originalAudio);for(const s of (c.segments||[])){if(s.audio&&s.audio!=='skip')set.add(s.audio);if(s.originalAudio)set.add(s.originalAudio);}}}
   for(const v of this.state.voices){if(v.sample)set.add(v.sample);}
   return [...set];
  }
@@ -400,6 +402,46 @@ class Engine{
   if(r.choices?.[0]?.finish_reason==='length')throw Error('语言模型输出被截断，请减少章节长度或更换模型');
   return parseJson(r.choices?.[0]?.message?.content);
 }
+ async saveSpeechAudio(base64,text){
+  const checked=AudioQuality.cleanRepeatedSpeech(base64,text);
+  const file=await this.io.saveAudio(checked.base64,'wav');
+  return {...file,speechChecked:true,repetitionRemoved:checked.removed};
+ }
+ async repairChapterAudio(bid,cid){
+  if(!this.io.readAudio||!this.io.saveAudio)return 0;
+  if(!this.audioRepairJobs)this.audioRepairJobs=new Map();
+  const key=bid+':'+cid;if(this.audioRepairJobs.has(key))return this.audioRepairJobs.get(key);
+  const job=this._repairChapterAudio(bid,cid).finally(()=>this.audioRepairJobs.delete(key));this.audioRepairJobs.set(key,job);return job;
+ }
+ async _repairChapterAudio(bid,cid){
+  const c=await this.ensureChapter(bid,cid);
+  if(!c.audio||this.state.tasks.some(t=>t.bookId===bid&&t.chapterId===cid&&['running','queued'].includes(t.status)))return 0;
+  const before=JSON.stringify(c.segments),oldAudio=c.audio,updates=[];
+  for(const s of c.segments){
+   if(!s.audio||s.audio==='skip'||s.skip||s.isAd||s.speechCheckedAudio===s.audio&&s.speechCheckedText===s.text)continue;
+   if(s.durMs>90000)continue;
+   const sample=await this.io.readAudio(s.audio),checked=AudioQuality.cleanRepeatedSpeech(sample.base64,s.text);
+   const file=checked.removed?await this.io.saveAudio(checked.base64,'wav'):null;
+   updates.push({s,file});
+   if(updates.length%8===0)await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  if(!updates.length||c.audio!==oldAudio||JSON.stringify(c.segments)!==before||!this.state.books.some(b=>b.id===bid&&b.chapters.includes(c)))return 0;
+  const replacements=new Map(updates.filter(x=>x.file).map(x=>[x.s.id,x.file]));
+  let merged=null;
+  if(replacements.size){const audible=c.segments.filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd);merged=await this.io.mergeAudio(audible.map(s=>replacements.get(s.id)?.id||s.audio),pausesFor(audible.map(s=>s.text)));}
+  // Nothing in the chapter changes until every check and the new merge have succeeded.
+  if(c.audio!==oldAudio||JSON.stringify(c.segments)!==before||!this.state.books.some(b=>b.id===bid&&b.chapters.includes(c)))return 0;
+  if(merged){
+   let oldOffset=0,newOffset=0,mapped=null;const position=c.lastPlayedPosition||0;
+   for(const s of c.segments.filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd)){
+    const oldMs=s.durMs||0,newMs=replacements.has(s.id)?Math.round(replacements.get(s.id).duration*1000):oldMs;
+    if(mapped===null&&position<=oldOffset+oldMs)mapped=newOffset+Math.min(newMs,Math.max(0,position-oldOffset));oldOffset+=oldMs;newOffset+=newMs;
+   }
+   c.originalAudio=c.originalAudio||oldAudio;c.audio=merged.id;c.duration=merged.duration;c.lastPlayedPosition=Math.min(Math.round(c.duration*1000),mapped===null?position-(oldOffset-newOffset):mapped);
+  }
+  for(const {s,file} of updates){if(file){s.originalAudio=s.originalAudio||s.audio;s.audio=file.id;s.durMs=Math.round(file.duration*1000);}s.speechCheckedAudio=s.audio;s.speechCheckedText=s.text;}
+  this.touch(c);await this.persist();return replacements.size;
+ }
  async synthesize(text,voice,style='自然流畅，忠实朗读原文',options={}){if(!text.trim())throw Error('朗读文本为空');
  // 纯标点句不调 TTS：生成对应时长静音（ref 尽量与本章已有音频同格式）
  if(isPunctOnly(text)){if(!this.io.silence)throw Error('当前版本不支持静音合成，请更新应用');const refId=options.silenceRef||null;const f=await this.io.silence(punctSilenceMs(text),refId);return f;}
@@ -409,12 +451,12 @@ class Engine{
   try{
    const r=await this.request('tts',{model,messages:[{role:'user',content:'用自然连贯的有声书语速朗读，约每分钟280字，句子之间按标点自然停顿，不要一字一顿。'+String(style||'')},{role:'assistant',content:tagTextOf(text,style)}],audio:{format:'wav',voice:ref}});
    const b64=r.choices?.[0]?.message?.audio?.data;if(!b64)throw Error('MiMo 没有返回音频');
-   const one=await this.io.saveAudio(b64,'wav');
+   const one=await this.saveSpeechAudio(b64,text);
    // 整段音频已覆盖全文，分段草稿是旧残留，直接丢弃，否则同一句会被读两遍
    return one;
   }catch(e){if(options.shouldPause?.())throw e;}
  }
- const parts=speechParts(text),files=[...(options.files||[])];for(let i=files.length;i<parts.length;i++){if(options.shouldPause?.())throw Error('任务已暂停');const part=parts[i];const r=await this.request('tts',{model,messages:[{role:'user',content:'用自然连贯的有声书语速朗读，约每分钟280字，句子之间按标点自然停顿，不要一字一顿。'+String(style||'')},{role:'assistant',content:tagTextOf(part,style)}],audio:{format:'wav',voice:ref}});const b64=r.choices?.[0]?.message?.audio?.data;if(!b64)throw Error('MiMo 没有返回音频');files.push(await this.io.saveAudio(b64,'wav'));if(parts.length>1)await options.onPart?.(files);}if(options.shouldPause?.())throw Error('任务已暂停');return files.length===1?files[0]:this.io.mergeAudio(files.map(f=>f.id),pausesFor(parts));}
+ const parts=speechParts(text),files=[...(options.files||[])];for(let i=files.length;i<parts.length;i++){if(options.shouldPause?.())throw Error('任务已暂停');const part=parts[i];const r=await this.request('tts',{model,messages:[{role:'user',content:'用自然连贯的有声书语速朗读，约每分钟280字，句子之间按标点自然停顿，不要一字一顿。'+String(style||'')},{role:'assistant',content:tagTextOf(part,style)}],audio:{format:'wav',voice:ref}});const b64=r.choices?.[0]?.message?.audio?.data;if(!b64)throw Error('MiMo 没有返回音频');files.push(await this.saveSpeechAudio(b64,part));if(parts.length>1)await options.onPart?.(files);}if(options.shouldPause?.())throw Error('任务已暂停');if(files.length===1)return files[0];const merged=await this.io.mergeAudio(files.map(f=>f.id),pausesFor(parts));return {...merged,speechChecked:files.every(f=>f.speechChecked)};}
  async design(description,text='清晨的风穿过树林，远方的故事刚刚开始。'){if(!description.trim())throw Error('请填写音色描述');description=cleanVoiceDescription(description);const r=await this.request('tts',{model:'mimo-v2.5-tts-voicedesign',messages:[{role:'user',content:description},{role:'assistant',content:text}],audio:{format:'wav',optimize_text_preview:false}});const data=r.choices?.[0]?.message?.audio?.data;if(!data)throw Error('音色设计没有返回样本');const file=await this.io.saveAudio(data,'wav');const voiceName=shortVoiceName(description);return {id:uid(),name:voiceName,description,sample:file.id,format:'wav',source:'design',enabled:true,tested:false};}
  async saveVoice(v){if(!v.sample)throw Error('请先生成样本');normalizeVoice(v);if(!this.state.voices.some(x=>x.id===v.id))this.state.voices.push(v);await this.persist();return v;}
  async deleteVoice(id){const i=this.state.voices.findIndex(x=>x.id===id);if(i<0)throw Error('音色不存在');const removed=this.state.voices.splice(i,1)[0];for(const b of this.state.books){for(const ch of b.characters){if(ch.voice===id)ch.voice=null;if(ch.candidate?.id===id)ch.candidate=null;if(ch.suggestedVoice===id)ch.suggestedVoice=null;}}await this.persist();return removed;}
@@ -486,7 +528,7 @@ try{
  if(!this.state.tasks.includes(t)||t.status==='cancelled'){await this.persist();return;}if(t.pauseRequested){t.status='paused';t.phase='已暂停';await this.persist();return;}t.synthQueued=true;t.status='running';t.phase='等待合成';await this.persist();this.runSynth().catch(()=>{});return;}
  async workSynth(t){const b=this.book(t.bookId),c=this.chapter(t.bookId,t.chapterId),policy=this.state.settings;const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];if(!this.state.tasks.includes(t)||t.status==='cancelled'){await this.persist();return;}if(t.pauseRequested){t.status='paused';t.phase='已暂停';await this.persist();return;}let blocked=false,offset=0,halt=false;const __aborted=()=>halt||t.pauseRequested||!this.state.tasks.includes(t);t.phase='合成对白';await this.persist();
  const worker=async index=>{while(!__aborted()){const segment=c.segments[offset++];if(!segment)break;if(segment.audio&&!(t.repace&&segment.audio!=='skip'&&speechParts(segment.text).length>1&&segment.pacingVersion!==1))continue;if(segment.skip||segment.isAd||segment.speaker==='广告'){segment.audio='skip';this.touch(c);continue;}const ch=b.characters.find(r=>r.name===segment.speaker);if(!ch?.voice||(policy.mode!=='auto'&&segment.confidence<this.spkThr())){blocked=true;continue;}if(__aborted())break;if(!(await this._acquireTtsSlot(__aborted)))break;if(__aborted()){this._releaseTtsSlot();break;}const original={text:segment.text,speaker:segment.speaker,emotion:segment.emotion,voice:ch.voice};try{const draftKey=JSON.stringify(original),__ref=(c.segments.find(s=>s.audio&&s.audio!=='skip')||{}).audio||null,file=await this.synthesize(original.text,original.voice,original.emotion+'；自然朗读，不能增删原文。',{files:segment.speechDraft?.key===draftKey?segment.speechDraft.files:[],silenceRef:__ref,shouldPause:()=>t.pauseRequested,onPart:async files=>{if(segment.text===original.text&&segment.speaker===original.speaker&&segment.emotion===original.emotion&&ch.voice===original.voice){segment.speechDraft={key:draftKey,files:[...files]};this.touch(c);await this.persist();}}});if(file&&Number(file.duration)>0&&isAudioTooLong(original.text,Number(file.duration))){try{const retry=await this.synthesize(original.text,original.voice,original.emotion+'；自然朗读，不能增删原文。',{files:[],silenceRef:__ref,forceSplit:true,shouldPause:()=>t.pauseRequested});if(retry&&Number(retry.duration)>0&&!isAudioTooLong(original.text,Number(retry.duration))){file.retryReplaced=true;Object.assign(file,{id:retry.id,duration:retry.duration});}else{segment.skip=true;segment.audio='skip';segment.speechDraft=null;this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();continue;}}catch(retryErr){if(t.pauseRequested)throw retryErr;segment.skip=true;segment.audio='skip';segment.speechDraft=null;this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();continue;}}
-if(file&&Number(file.duration)>0)segment.durMs=Math.round(Number(file.duration)*1000);if(segment.text!==original.text||segment.speaker!==original.speaker||segment.emotion!==original.emotion||ch.voice!==original.voice){blocked=true;continue;}segment.audio=file.id;delete segment.speechDraft;segment.pacingVersion=1;this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();}catch(e){if(e&&e.message==='任务已暂停'||t.pauseRequested||!this.state.tasks.includes(t)){halt=true;throw e;}const __msg=String((e&&e.message)||"");const __rejected=/Param Incorrect|参数被拒绝|超长被拒绝|音色参数不被支持/.test(__msg);if(__rejected){segment.skip=true;segment.audio='skip';segment.speechDraft=null;segment.failReason=String((e&&e.message)||"合成失败").slice(0,120);this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();}else{halt=true;throw e;}}finally{this._releaseTtsSlot();}}};
+if(file&&Number(file.duration)>0)segment.durMs=Math.round(Number(file.duration)*1000);if(segment.text!==original.text||segment.speaker!==original.speaker||segment.emotion!==original.emotion||ch.voice!==original.voice){blocked=true;continue;}segment.audio=file.id;if(file.speechChecked){segment.speechCheckedAudio=file.id;segment.speechCheckedText=original.text;}delete segment.speechDraft;segment.pacingVersion=1;this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();}catch(e){if(e&&e.message==='任务已暂停'||t.pauseRequested||!this.state.tasks.includes(t)){halt=true;throw e;}const __msg=String((e&&e.message)||"");const __rejected=/Param Incorrect|参数被拒绝|超长被拒绝|音色参数不被支持/.test(__msg);if(__rejected){segment.skip=true;segment.audio='skip';segment.speechDraft=null;segment.failReason=String((e&&e.message)||"合成失败").slice(0,120);this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();}else{halt=true;throw e;}}finally{this._releaseTtsSlot();}}};
  const __ttsn=Math.max(1,this.ttsLimit());const outcomes=await Promise.allSettled(Array.from({length:__ttsn},(_,__i)=>worker(__i)));
  if(!this.state.tasks.includes(t))return;
  if(t.status==='cancelled'){await this.persist();return;}

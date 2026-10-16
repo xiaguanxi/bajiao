@@ -5,6 +5,7 @@
 ## 已实现
 
 - TXT（UTF-8 / GB18030）及 EPUB 导入，章节目录、批量选章。
+- 书籍详情的章节区可随上滑整体展开，顶部横杠支持拖动或点击收回；目录滑到顶部后继续下拉可带下章节区，后台刷新保留展开状态与章节位置。触摸及布局回归：`node tests/catalog-sheet-ui.cjs`。
 - 原文、标注、听书三种阅读模式；人工修正说话人与情绪，保留其他已完成片段。
 - 换绑角色音色保留已有成品；标注页的段落操作面板可查看、编辑 TTS 提示词并单独重做，失败保留原音频。
 - 我的音色：导入 WAV / MP3 后填写声学描述，名称可独立编辑；或通过 MiMo 设计参考样本。两类样本统一参与 AI 匹配并直接用于克隆。
@@ -22,6 +23,28 @@
 ```
 
 APK 在 `app/build/outputs/apk/debug/app-debug.apk`。本工作区已准备本地工具链，也可以执行 `./scripts/build.ps1`，输出到 `artifacts/Vocast-debug.apk`。APK 不包含测试密钥，安装后在「我的 → 语言模型 / 语音引擎」填写。
+
+## 2026-10-16 新合成长空白自动处理（0.8.3）
+
+新合成、预设试听和手动重做的朗读音频先原样归档，再通过原生后台 `processSpeechAudio(id)` 检查并生成独立处理文件。以 20 毫秒窗口逐声道检测 RMS ≤ −80 dBFS、峰值 ≤ −72 dBFS 的近静音；累计至少 60 毫秒清晰声音（RMS ≥ −60 dBFS）才允许裁剪。首尾连续空白超过 1 秒分别保留 150 / 250 毫秒，内部超过 3 秒保留 450 毫秒。支持 8/16/24/32 位 PCM；低声、气声、渐弱尾音和正常短停顿保持原样，疑似重复仍只提示。
+
+处理成功保存 `corrected` 状态、原始时长、裁剪后时长及原始坐标下的移除区间，段落面板显示已裁剪的空白秒数。合并、播放和导出使用处理后的引用与时长。全静音、全近静音、损坏、明确截断及处理后仍异常过长的返回走原有质量重试流程，遵守自动重试 / 确认配置，每段最多追加一次；失败保留原始诊断并等待人工处理。新请求草稿独立记录静音处理版本，暂停恢复直接使用原生文件引用，避免超过 8 MB 的原始返回经桥重新读取。
+
+升级不扫描或修复任何已有音频；旧草稿及已完成片段保持原有流程。导入参考样本、音色设计参考样本和纯标点停顿不自动裁剪。保持生成版本 3，以独立静音处理版本区分新请求，避免升级改变旧待处理句子的收费重试规则。
+
+交付：`artifacts/Vocast-0.8.3-silence.apk`（版本号 73，debug 签名），已覆盖安装 USB 真机 RMX3800（Android 16 / API 36）。验证报告：`artifacts/silence-v083/report.html`；原有 634 个音频文件 SHA-256、298 章引用、角色绑定及第 37 章内容均未改变，安装包与已安装 APK 哈希一致。
+
+265 项 JavaScript / 界面回归、3030 项新增原生静音断言、47 项原始音频保护及 59 项停顿断言、构建和 lint 通过。第 37 章只读副本从 216.32 秒缩至 11.22 秒，移除 205.10 秒空白；剩余零散声音仍触发时长异常，验证一次重试后正常结果通过。真机用回放响应验证原生桥、归档、暂停恢复、处理、合并和实际播放，受控的 195.16 秒样本缩至 2.39 秒；没有新增真实收费模型调用，测试文件已清除。
+
+复测：`node --test --test-concurrency=4 tests/*.test.cjs`；编译运行 `tests/AudioSilenceTest.java`、`tests/AudioPreservationTest.java` 和 `tests/AudioPacingTest.java`。`node tests/silence-device.cjs` 需要同目录的只读异常样本与已打开的设备应用，默认 USB 序列号 `a1bb2037`，可用 `ANDROID_SERIAL` 覆盖；使用独立内存书籍，不写入用户书库或调用模型。
+
+## 2026-10-16 试听交互修正（0.8.2）
+
+移除试听时额外出现的顶部卡片，播放与暂停状态回到原试听按钮。音色库和角色音色选择共用白底滑动选中效果，并尊重系统减少动态效果设置。
+
+MiMo 预设首次试听生成后保存本地音频与缓存索引，重启及两处音色列表共享缓存；重复点击合并请求，清理未引用音频保留有效缓存，本地文件丢失后才重新生成。合成期间仅原按钮显示转圈与“合成中”，页面仍可切换；完成自动播放，较早请求的结果不会打断后来选择的试听，失败后恢复按钮供重试。
+
+交付：`artifacts/Vocast-0.8.2-new-ui.apk`（版本号 72，debug 签名）。验证报告：`artifacts/audition-v082/report.html`。缓存及成功合成流程使用模拟原生协议验证；Android 11 / WebView 83 在断网环境用实际触摸验证选中态、非阻塞操作及失败恢复，未新增收费接口调用，原有音频字节、角色绑定和章节引用均保留。
 
 ## 2026-10-16 原型更新（0.8.1）
 
@@ -138,3 +161,16 @@ node tests/device-finalize.cjs
 历史真实试听产物在 `artifacts/voice-quality/live-20261013/listening.html`，覆盖儿童、青年、老年、气声、粗粝和口音；产物独立于设备书库，主观听感仍需人工确认。当前真实测试脚本已移除识别调用，运行仍会产生 TTS / LLM 费用。
 
 复测：`node --test tests/*.test.cjs`；`node tests/ui-task-voice-fixes.cjs`；编译运行 `AudioPreservationTest.java` 和 `AudioPacingTest.java`。真实接口测试需配置 `MIMO_KEY` / `MINIMAX_KEY`，运行 `node tests/voice-quality-live.cjs <独立输出目录>`，可从报告检查点继续。设备回归使用 `tests/voice-quality-device.cjs`，运行前保存旧音频哈希和角色/章节引用基线。当前本地规则验证记录在 `artifacts/voice-quality/local-unit-tests.log`、`local-validation.json`。
+
+
+## 场景与导演指导（2026-10-16）
+
+新标注默认采用广播剧表现。LLM 在同一次标注中生成 `scene`（有原文依据的场景，可为空，最多60字）和 `delivery`（具体导演指导，最多120字）；对白与旁白均生成指导，广告和纯标点除外。正常批次最多24段，隔离重试携带目标前后各两段作为上下文，审核拒绝时退到目标片段。
+
+应用校验通过后写入 `directionVersion: 1`，合成提示词版本为3。正文请求仅在 user 消息发送“场景：…\n指导：…”，原文原样放在 assistant 消息。参考音频或预设继续决定声线，角色声音描述保留用于音色设计和匹配，不逐句附加。用户自定义提示词仍原样覆盖自动指导；没有有效导演指导时使用已有 emotion，两者皆空则省略 user 消息。
+
+缺失或超长的导演字段只对受影响 ID 补写一次（每批最多5段），不重新判定已确认的说话人；补写仍失败则记录 `directionError` 并使用情绪标注。补写队列可暂停恢复。旧标注、旧成品不会后台补写或自动重做；未完成的旧标注才使用新规则。不同提示词版本的未完成音频草稿不会混用，原参考音频和诊断文件继续保留。
+
+单句朗读设置显示下一次实际使用的指导，历史请求单独展示。“使用标注指导”在下次合成时清除自定义覆盖；手动换说话人清除原角色的自动导演信息，保留用户自定义提示词。
+
+针对性检查：`node --test tests/director.test.cjs tests/segment-prompts.test.cjs tests/model-prompts.test.cjs`、`node tests/segment-prompts-ui.cjs`、`node tests/annotation-recovery-ui.cjs`。真实接口对照：`./scripts/with-env.ps1 -Script tests/director-live.cjs`，使用同一参考音频生成挽留、压抑愤怒、反讽、惊恐、释然和悬念旁白六组对照，在独立产物目录保存原文、标注、实际请求和可试听页面。`VOCAST_DIRECTOR_OUT` 可指定恢复目录；`VOCAST_DIRECTOR_REFERENCE` 可指定 WAV 参考文件。默认参考文件为 `artifacts/probe-mimo.wav`。对照生成成功不等同于听感通过，主观评价需实际试听。

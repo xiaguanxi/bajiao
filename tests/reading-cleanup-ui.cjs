@@ -1,0 +1,61 @@
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const V=require('../app/src/main/assets/core.js');
+(async()=>{
+ const assets=path.resolve('app/src/main/assets'),out=path.resolve('artifacts/reading-cleanup');fs.mkdirSync(out,{recursive:true});
+ const seed=new V.Engine({saveState:async()=>{}}),book=await seed.addBook('山间来信','第一章 雨停以后\n'+Array.from({length:65},(_,i)=>`第${i+1}句，山间的雾慢慢散开。`).join('\n'));
+ seed.state.settings.mode='manual';seed.state.settings.readerTheme='dark';seed.state.settings.autoProduceUpcoming=false;
+ const chapter=book.chapters[0];book.characters[0].voice='preset:白桦';
+ chapter.segments=Array.from({length:65},(_,id)=>({id,text:`第${id+1}句，山间的雾慢慢散开。`,speaker:'旁白',confidence:1,emotion:'自然',audio:'line-'+id+'.wav',annotationStatus:'resolved'}));
+ chapter.audio='chapter.wav';chapter.audioStale=true;chapter.status='ready';
+ let state=JSON.parse(JSON.stringify(seed.state));const errors=[];
+ const server=http.createServer((req,res)=>{const file=path.resolve(assets,'.'+(req.url==='/'?'/index.html':req.url.split('?')[0]));if(!file.startsWith(assets+path.sep)||!fs.existsSync(file))return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:393,height:873}});page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
+  await page.exposeFunction('nativeCall',async(id,action,payload)=>{const p=JSON.parse(payload||'{}');let result=true;
+   if(action==='load')result={state,llmConfigured:true,ttsConfigured:true};
+   else if(action==='playbackState')result={playing:false,position:0};
+   else if(action==='loadChapter')result=state.books.flatMap(b=>b.chapters).find(c=>c.id===p.id);
+   else if(action==='saveSnapshot'){const full=new Map(state.books.flatMap(b=>b.chapters).map(c=>[c.id,c]));for(const c of JSON.parse(p.chapters))full.set(c.id,c);state=JSON.parse(p.header);for(const b of state.books)b.chapters=b.chapters.map(c=>({...full.get(c.id),...c}));}
+   await page.evaluate(v=>window.nativeResult(v),{id,result});
+  });
+  await page.addInitScript(()=>window.Native={call:(...args)=>window.nativeCall(...args)});
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  const click=act=>page.locator('button[data-act="'+act+'"]').first().click();
+  const open=async()=>{await click('book:'+book.id);await click('read:'+chapter.id);await click('go:annotated');};
+  await open();assert.equal(await page.locator('[data-act="nextissue"]').count(),0);
+  await page.locator('[data-act="dismissstalenotice"]').click();assert.equal(await page.locator('.vc-stale-notice').count(),0);
+  await page.evaluate(()=>{const e=vocastEngine,c=e.state.books[0].chapters[0];e.state.tasks=[{id:'running-fixture',bookId:e.state.books[0].id,chapterId:c.id,status:'running',done:10,total:65}];return e.persist();});
+  assert.equal(await page.locator('.vc-task-strip,.vc-annotated-topbar,.vc-job-banner').count(),0);
+  assert.equal(await page.locator('main .vc-panel,main .vc-note').count(),0);
+  assert.equal(await page.locator('[data-act="exportcur"],[data-act="repacecur"],main [data-act="go:listen"],main [data-act="go:roles"],main [data-act^="ignoreall:"]').count(),0);
+  await page.evaluate(()=>{const e=vocastEngine;e.state.tasks=[];const c=e.state.books[0].chapters[0];c.segments[40].confidence=0;e.touch(c);return e.persist();});
+  assert.equal(await page.locator('[data-act="nextissue"]').count(),1);await click('nextissue');assert.equal(await page.locator('[data-seg="40"]').evaluate(el=>el===document.activeElement),true);
+  const box=await page.locator('[data-seg="40"]').boundingBox();assert(box.y<873&&box.y+box.height>0);
+  await page.screenshot({path:path.join(out,'sentence-confirmation.png'),animations:'disabled'});
+  await page.evaluate(()=>{const e=vocastEngine,c=e.state.books[0].chapters[0];e.state.tasks=[{id:'waiting-fixture',bookId:e.state.books[0].id,chapterId:c.id,status:'waiting',done:64,total:65}];return e.persist();});
+  await page.evaluate(()=>scrollTo(0,0));await page.waitForFunction(()=>!document.querySelector('.vc-slim-top').inert);await click('back');await click('confirm:'+chapter.id);await page.waitForFunction(()=>document.activeElement?.dataset.seg==='40');assert(await page.evaluate(()=>scrollY)>1000,'confirmation opens at the sentence, not the top');
+  await click('editseg:40');await click('saveseg');assert.equal(await page.locator('[data-act="nextissue"]').count(),0);
+  await page.evaluate(()=>{const e=vocastEngine,c=e.state.books[0].chapters[0];e.state.settings.mode='auto';c.segments[40].confidence=0;return e.persist();});assert.equal(await page.locator('[data-act="nextissue"]').count(),0,'automatic low confidence is not a user confirmation');
+  await page.evaluate(()=>{const e=vocastEngine,c=e.state.books[0].chapters[0];c.segments[45].qualityStatus='pending';c.segments[45].audio=null;e.touch(c);return e.persist();});
+  await page.evaluate(()=>scrollTo(0,0));await page.waitForFunction(()=>scrollY===0&&document.querySelector('.vc-slim-top').inert===false);await click('nextissue');await page.waitForFunction(()=>document.activeElement?.dataset.seg==='45');assert.equal(await page.locator('[data-seg="45"]').evaluate(el=>el===document.activeElement),true);assert.equal(await page.locator('[data-seg="45"] [data-act="opensegment:45"]').count(),2);
+  await page.evaluate(()=>{const e=vocastEngine,c=e.state.books[0].chapters[0];e.state.tasks=[];delete c.segments[45].qualityStatus;c.segments[45].audio='line-45.wav';e.touch(c);return e.persist();});
+  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(out,'annotated-clean.png'),animations:'disabled'});
+  await click('go:raw');await page.evaluate(()=>scrollTo(0,600));const initialFont=await page.locator('#rawArticle').evaluate(el=>getComputedStyle(el).fontSize);
+  await click('readersettings');assert.equal(await page.locator('[data-act^="readertheme:"]').count(),0);
+  await page.locator('.vc-reading-settings').evaluate(async el=>{const overlay=el.closest('.vc-modal-overlay');overlay.getBoundingClientRect();await Promise.all(overlay.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});
+  await page.evaluate(()=>{window.originalMain=document.querySelector('main');window.originalDialog=document.querySelector('.vc-reading-settings').closest('.vc-dialog');window.originalPreview=document.querySelector('.vc-reading-preview');window.readingAnimations=0;originalDialog.parentElement.addEventListener('animationstart',()=>readingAnimations++);});
+  const geometry=await page.locator('.vc-reading-settings').boundingBox();
+  for(const size of [24,18,22,16,20]){await click('readerfont:'+size);await page.waitForFunction(size=>getComputedStyle(document.querySelector('.vc-reading-preview p')).fontSize===size+'px',size);assert.equal(await page.locator('#rawArticle').evaluate(el=>getComputedStyle(el).fontSize),initialFont);}
+  await click('readerline:2.2');await page.evaluate(()=>vocastEngine.persist());
+  assert(await page.evaluate(()=>originalMain===document.querySelector('main')&&originalDialog===document.querySelector('.vc-reading-settings').closest('.vc-dialog')&&originalPreview===document.querySelector('.vc-reading-preview')),'font changes retain all page and dialog nodes');
+  assert.equal(await page.evaluate(()=>readingAnimations),0);assert.equal(await page.locator('.vc-reading-settings').evaluate(el=>el.getBoundingClientRect().y),geometry.y);
+  const light=await page.locator('main').evaluate(el=>getComputedStyle(el).backgroundColor);await page.emulateMedia({colorScheme:'dark'});assert.equal(await page.locator('main').evaluate(el=>getComputedStyle(el).backgroundColor),light);assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).colorScheme),'light');
+  await page.screenshot({path:path.join(out,'reading-settings.png'),animations:'disabled'});
+  await click('uxcancel');assert.equal(await page.locator('#rawArticle').evaluate(el=>getComputedStyle(el).fontSize),'20px');assert.equal(await page.locator('#rawArticle').evaluate(el=>getComputedStyle(el).lineHeight),'44px');
+  await page.reload();await page.waitForFunction(()=>window.vocastEngine);await open();assert.equal(await page.locator('.vc-stale-notice').count(),0,'dismissal survives app reload');assert.equal(await page.evaluate(()=>vocastEngine.state.settings.readerFontSize),20);
+  await page.setViewportSize({width:320,height:740});await click('go:raw');await click('readersettings');await page.screenshot({path:path.join(out,'reading-settings-320.png'),animations:'disabled'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+  console.log('PASS conditional sentence confirmation, clean annotations, dismissible old audio, stable preview-only reading controls, persisted preferences and light-only styling');
+ }finally{await browser.close();server.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

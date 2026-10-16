@@ -9,7 +9,7 @@ for(const mode of ['manual','auto'])test(mode+': whole-context rejection isolate
  const {e,b,c}=await setup();e.state.settings.mode=mode;e.state.settings.ttsParallel=1;const calls=[],spoken=[];
  e.llm=async prompt=>{const lines=batch(prompt);calls.push(lines.map(s=>s.id));if(prompt.includes('本章完整上下文')||lines.some(s=>s.id===48))throw new V.ApiError('input new_sensitive (1026)',1026,false);return labels(lines);};
  e.synthesize=async text=>{spoken.push(text);return {id:'audio-'+text,duration:1};};await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
- assert.equal(c.segments.length,95);assert.equal(V.normalize(c.segments.map(s=>s.text).join('')),V.normalize(c.text));assert(calls.some(ids=>ids.length===45));assert(calls.some(ids=>ids.length===5));assert(calls.some(ids=>ids.length===1&&ids[0]===48));
+ assert.equal(c.segments.length,95);assert.equal(V.normalize(c.segments.map(s=>s.text).join('')),V.normalize(c.text));assert(calls.some(ids=>ids.length===90));assert(calls.some(ids=>ids.length===5));assert(calls.some(ids=>ids.length===1&&ids[0]===48));
  assert.equal(c.segments.filter(s=>s.annotationStatus===(mode==='auto'?'fallback':'failed')).length,1);assert.equal(c.segments[48].annotationStatus,mode==='auto'?'fallback':'failed');assert.equal(new Set(spoken).size,spoken.length);
  for(const s of c.segments.filter(s=>s.id!==48))assert.equal(s.annotationStatus,'complete');
  if(mode==='auto'){assert.equal(t.status,'done');assert.equal(spoken.length,95);assert.equal(c.segments[48].speaker,'旁白');assert.equal(c.segments[48].confidence,0);}
@@ -27,7 +27,7 @@ test('pause after a batch failure persists the split retry queue and reload does
  e.llm=async prompt=>{calls.push(batch(prompt).map(s=>s.id));pause=true;return {lines:[]};};
  await e.analyze(b.id,c.id,()=>pause);assert.equal(c.segments.length,50);assert.equal(c.analysisDraft.next,0);assert.equal(c.analysisDraft.pending[0].ids.length,5);
  const restored=new V.Engine(io(),JSON.parse(snapshot));restored.llm=async prompt=>{const lines=batch(prompt);calls.push(lines.map(s=>s.id));return labels(lines);};await restored.analyze(b.id,c.id);
- assert.equal(calls.filter(ids=>ids.length===45).length,1);assert.equal(calls[1].length,5);assert(restored.chapter(b.id,c.id).segments.every(s=>s.annotationStatus==='complete'));
+ assert.equal(calls.filter(ids=>ids.length===50).length,1);assert.equal(calls[1].length,5);assert(restored.chapter(b.id,c.id).segments.every(s=>s.annotationStatus==='complete'));
 });
 
 test('legacy failure exposes every sentence, keeps checkpoint audio, and starts retry with a small batch',async()=>{

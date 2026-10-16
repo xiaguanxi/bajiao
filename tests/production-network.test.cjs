@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function fixture(type='wifi'){
  const win=new EventTarget(),connection=new EventTarget();connection.type=type;
- const context=vm.createContext({module:{exports:{}},require:()=>require('../app/src/main/assets/audio-quality.js'),console,setTimeout,clearTimeout,Event,window:win,navigator:{onLine:true,connection}});
+ const context=vm.createContext({module:{exports:{}},require:p=>require('../app/src/main/assets/'+p.replace('./','')),console,setTimeout,clearTimeout,Event,window:win,navigator:{onLine:true,connection}});
  vm.runInContext(fs.readFileSync('app/src/main/assets/core.js','utf8'),context);context.Vocast=context.module.exports;
  vm.runInContext(fs.readFileSync('app/src/main/assets/production-network.js','utf8'),context);
  const V=context.Vocast,e=new V.Engine({saveState:async()=>{},mergeAudio:async()=>({id:'merged.wav',duration:2})});win.vocastEngine=e;

@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
                     case "saveCredentials":vault.save(p);result=true;break;
                     case "request":result=request(p);break;
                     case "saveRawAudio":result=audio.saveRaw(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
+                    case "processSpeechAudio":result=audio.processSpeechAudio(p.getString("id"));break;
                     case "saveAudio":result=audio.save(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
                     case "readAudio":result=new JSONObject().put("base64",Base64.encodeToString(AudioFiles.read(audio.getRaw(p.getString("id")),8*1024*1024),Base64.NO_WRAP));break;
                     case "mergeAudio":{List<String> ids=new ArrayList<>();JSONArray a=p.getJSONArray("ids");for(int i=0;i<a.length();i++)ids.add(a.getString(i));JSONArray pauses=p.optJSONArray("pauses");int[] gaps=null;if(pauses!=null&&pauses.length()>0){gaps=new int[pauses.length()];for(int i=0;i<gaps.length;i++)gaps[i]=pauses.getInt(i);}result=audio.merge(ids,gaps);break;}

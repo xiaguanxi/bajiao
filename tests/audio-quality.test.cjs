@@ -11,6 +11,8 @@ const crypto=require('node:crypto');
 const {repetitionCandidate,analyzeSpeech}=require('../app/src/main/assets/audio-quality.js');
 const text='前一秒，浮空山还是艳阳高照。',dup=wav([{seed:3},{silence:true,seconds:.6},{seed:3,gain:.8}]);
 function memoryEngine(handler){
+ // Deliberately retains the pre-0.8.3 IO contract for legacy draft compatibility.
+ // New native processing is exercised with production Java in silence-processing.test.cjs.
  const stored=new Map(),calls=[],snapshots=[];
  const e=new Engine({saveState:async value=>snapshots.push(JSON.parse(value)),
   request:async(provider,body)=>{calls.push({provider,body});return handler(provider,body,calls);},
@@ -75,7 +77,7 @@ test('a successful quality retry retains the first raw return',async()=>{
  assert.equal(f.rawAudioIds.length,2);assert(stored.get(f.rawAudioIds[0]).equals(silent));assert(stored.get(f.id).equals(normal));
 });
 test('pending sentence does not stop other sentences and ordinary resume never pays again',async()=>{
- const {e,calls}=memoryEngine((_,body)=>audioReply(body.messages[1].content===text?silent:normal));
+ const {e,calls}=memoryEngine((_,body)=>audioReply(body.messages.find(m=>m.role==='assistant').content===text?silent:normal));
  const {b,c}=await chapter(e);await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
  assert.equal(t.status,'waiting');assert(!c.segments[0].audio);assert(c.segments[1].audio);assert(!c.audio);
  const count=calls.length;await e.resume(t.id);await e.resumeWaiting(b.id);
@@ -93,7 +95,7 @@ test('manual retry affects exactly the selected sentence, leaving another pendin
  for(const s of c.segments){s.qualityStatus='pending';s.speechDraft={generationVersion:3,qualityAttempts:1};}
  await e.regenerateSegment(b.id,c.id,0);
  assert(c.segments[0].audio);assert(!c.segments[1].audio);assert(!c.audio);assert.equal(calls.length,1);
- assert.equal(calls[0].body.messages[1].content,text);
+ assert.equal(calls[0].body.messages.find(m=>m.role==='assistant').content,text);
 });
 test('manual retry never adds another quality retry',async()=>{
  const {e,calls}=memoryEngine(()=>audioReply(silent)),{b,c}=await chapter(e,[text]);
@@ -126,11 +128,11 @@ test('source edits during manual generation discard the stale result',async()=>{
  let c;const {e}=memoryEngine(()=>{c.segments[0].text='编辑后的原文。';return audioReply(normal);}),context=await chapter(e,[text]);c=context.c;
  assert.equal(await e.regenerateSegment(context.b.id,c.id,0),false);assert(!c.segments[0].audio);
 });
-test('legacy ASR pending draft reuses raw audio using local checks only',async()=>{
- const {e,calls}=memoryEngine(()=>{throw Error('unexpected model request');}),{b,c}=await chapter(e,[text]);
+test('unversioned ASR pending draft is not reused with a different prompt identity',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(normal)),{b,c}=await chapter(e,[text]);
  const raw=await e.io.saveAudio(dup.toString('base64')),s=c.segments[0],role=b.characters[0];
  s.qualityStatus='pending';s.speechDraft={key:JSON.stringify({text:s.text,speaker:s.speaker,emotion:s.emotion,voice:role.voice,description:role.description}),generationVersion:2,pendingRaw:{file:raw,text:s.text,finishReason:'stop'},rawAudioIds:[raw.id],qualityFailure:'unavailable'};
- await e.enqueue(b.id,[c.id]);assert.equal(calls.length,0);assert.equal(s.audio,raw.id);assert.equal(s.qualityStatus,'passed_with_warnings');
+ await e.enqueue(b.id,[c.id]);assert.equal(calls.length,1);assert.notEqual(s.audio,raw.id);assert.equal(s.qualityStatus,'passed');assert(s.rawAudioIds.includes(raw.id));
 });
 test('pause after archiving resumes without re-synthesis',async()=>{
  const {e,calls}=memoryEngine(()=>audioReply(normal));let pause=true,draft={};

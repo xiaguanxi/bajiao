@@ -1,5 +1,6 @@
 package com.vocast.app;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.io.*;
 import java.nio.*;
 import java.nio.charset.StandardCharsets;
@@ -94,10 +95,151 @@ final class AudioFiles {
     }
     private JSONObject write(byte[] data,String format,double duration) throws Exception {
         StringBuilder id=new StringBuilder();for(byte b:MessageDigest.getInstance("SHA-256").digest(data))id.append(String.format(Locale.ROOT,"%02x",b));id.append('.').append(format);
-        File target=new File(dir,id.toString());if(!target.exists()){File temp=new File(dir,id+".tmp");try(FileOutputStream out=new FileOutputStream(temp)){out.write(data);out.getFD().sync();}if(!temp.renameTo(target))throw new IOException("音频保存失败");}
+        File target=new File(dir,id.toString());
+        if(!target.exists()) {
+            File temp=File.createTempFile("audio-",".tmp",dir);
+            try {
+                try(FileOutputStream out=new FileOutputStream(temp)){out.write(data);out.getFD().sync();}
+                // Identical concurrent workers may have already published the same hash.
+                if(!temp.renameTo(target)&&!target.isFile())throw new IOException("音频保存失败");
+            } finally {if(temp.exists())temp.delete();}
+        }
         return new JSONObject().put("id",id.toString()).put("size",data.length).put("duration",duration).put("format",format);
     }
     static class Wave {byte[] fmt,pcm;double duration(){return pcm.length/(double)ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(8);}}
+    // Durations are seconds; removed intervals are [startMs,endMs) in the original PCM.
+    // The raw archive is immutable: only a corrected derivative gets a new ID.
+    JSONObject processSpeechAudio(String id) throws Exception {
+        File source=getRaw(id);
+        if(source.length()>64L*1024*1024)throw new IOException("文件超过允许大小");
+        byte[] bytes=read(source,64*1024*1024);
+        JSONObject result=new JSONObject().put("id",id).put("size",bytes.length)
+            .put("duration",0).put("format",id.substring(id.lastIndexOf('.')+1))
+            .put("supported",false).put("silenceProcessingVersion",1)
+            .put("originalDuration",0).put("removedMs",0).put("trimRanges",new JSONArray())
+            .put("allSilent",false).put("allNearSilent",false).put("longestSilenceMs",0)
+            .put("corrected",false);
+        Wave wave;
+        try {
+            validateSpeechContainer(bytes);
+            wave=parse(bytes);
+        } catch(Exception invalid) {
+            // Unrecognized/corrupt synthesis results are diagnostics, not I/O failures.
+            return result;
+        }
+        ByteBuffer fmt=ByteBuffer.wrap(wave.fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int rate=fmt.getInt(4),align=fmt.getShort(12)&65535;
+        SilenceScan scan=scanSilence(wave);
+        result.put("supported",true).put("duration",wave.duration())
+            .put("originalDuration",wave.duration()).put("allSilent",scan.allSilent)
+            .put("allNearSilent",scan.allNearSilent);
+        List<int[]> cuts=new ArrayList<>();
+        int frames=wave.pcm.length/align,removed=0,longest=0;
+        boolean clearContext=scan.clearFrames*1000L>=60L*rate;
+        for(int[] run:scan.quietRuns) {
+            int length=run[1]-run[0],start=run[0],end=run[1];
+            if(clearContext) {
+                if(start==0&&length*1000L>1000L*rate) {
+                    end-=framesForMs(rate,150);
+                } else if(end==frames&&length*1000L>1000L*rate) {
+                    start+=framesForMs(rate,250);
+                } else if(start>0&&end<frames&&length*1000L>3000L*rate) {
+                    start+=framesForMs(rate,225);
+                    end-=framesForMs(rate,225);
+                } else end=start;
+            } else end=start;
+            if(end>start) {
+                cuts.add(new int[]{start,end});
+                removed+=end-start;
+            }
+            // Keep the classified quiet frames in output coordinates, including
+            // partial windows retained at cuts (e.g. exactly 450 ms internally).
+            longest=Math.max(longest,length-Math.max(0,end-start));
+        }
+        result.put("longestSilenceMs",longest*1000.0/rate);
+        if(cuts.isEmpty())return result; // Preserve every container byte and its ID.
+        Wave corrected=new Wave();corrected.fmt=wave.fmt;
+        corrected.pcm=new byte[(frames-removed)*align];
+        JSONArray ranges=new JSONArray();int from=0,to=0;
+        for(int[] cut:cuts) {
+            int length=(cut[0]-from)*align;
+            System.arraycopy(wave.pcm,from*align,corrected.pcm,to,length);
+            to+=length;from=cut[1];
+            ranges.put(new JSONObject().put("startMs",cut[0]*1000.0/rate)
+                .put("endMs",cut[1]*1000.0/rate));
+        }
+        System.arraycopy(wave.pcm,from*align,corrected.pcm,to,wave.pcm.length-from*align);
+        JSONObject saved=write(encode(corrected),"wav",corrected.duration());
+        return result.put("id",saved.getString("id")).put("size",saved.getInt("size"))
+            .put("duration",saved.getDouble("duration")).put("format","wav")
+            .put("removedMs",removed*1000.0/rate).put("trimRanges",ranges).put("corrected",true);
+    }
+    private static int framesForMs(int rate,int ms) {
+        return (int)((rate*(long)ms+999)/1000); // Never retain less than the requested context.
+    }
+    private static void validateSpeechContainer(byte[] bytes) throws Exception {
+        if(bytes.length<44)throw new Exception("WAV 文件被截断");
+        ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        if((b.getInt(4)&0xffffffffL)!=bytes.length-8L)throw new Exception("RIFF 长度无效");
+        boolean fmt=false,data=false;
+        for(int at=12;at<bytes.length;) {
+            if(bytes.length-at<8)throw new Exception("WAV 块被截断");
+            long size=b.getInt(at+4)&0xffffffffL;
+            long next=at+8L+size+(size&1);
+            if(next>bytes.length)throw new Exception("WAV 块被截断");
+            String tag=new String(bytes,at,4,StandardCharsets.US_ASCII);
+            if(tag.equals("fmt ")){if(fmt)throw new Exception("重复 fmt 块");fmt=true;}
+            if(tag.equals("data")){if(data)throw new Exception("重复 data 块");data=true;}
+            at=(int)next;
+        }
+    }
+    private static class SilenceScan {
+        final List<int[]> quietRuns=new ArrayList<>();
+        boolean allSilent=true,allNearSilent=true;
+        long clearFrames;
+    }
+    private static SilenceScan scanSilence(Wave wave) {
+        ByteBuffer fmt=ByteBuffer.wrap(wave.fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int channels=fmt.getShort(2)&65535,bits=fmt.getShort(14)&65535;
+        int rate=fmt.getInt(4),align=fmt.getShort(12)&65535,sampleBytes=bits/8;
+        int frames=wave.pcm.length/align,runStart=-1;
+        double scale=1.0/(1L<<(bits-1)),peakLimit=Math.pow(10,-72.0/20);
+        double[] squares=new double[channels];
+        SilenceScan scan=new SilenceScan();
+        // Rational boundaries avoid drift at rates such as 11025 Hz. The last,
+        // partial window also participates in both quality flags and context.
+        for(int start=0,window=1;start<frames;window++) {
+            int end=(int)Math.min(frames,Math.max(start+1L,window*(long)rate/50));
+            Arrays.fill(squares,0);boolean quiet=true,clear=false;
+            for(int frame=start;frame<end;frame++)for(int ch=0;ch<channels;ch++) {
+                int at=frame*align+ch*sampleBytes;long value;
+                if(bits==8)value=(wave.pcm[at]&255)-128;
+                else {
+                    value=0;
+                    for(int k=0;k<sampleBytes;k++)value|=(long)(wave.pcm[at+k]&255)<<(8*k);
+                    if((wave.pcm[at+sampleBytes-1]&128)!=0)value-=1L<<bits;
+                }
+                if(value!=0)scan.allSilent=false;
+                double normalized=value*scale;
+                squares[ch]+=normalized*normalized;
+                if(Math.abs(normalized)>peakLimit)quiet=false;
+            }
+            for(int ch=0;ch<channels;ch++) {
+                double rms=Math.sqrt(squares[ch]/(end-start));
+                if(rms>1e-4)quiet=false;
+                if(rms>=1e-3)clear=true;
+            }
+            if(clear)scan.clearFrames+=end-start;
+            if(quiet){if(runStart<0)runStart=start;}
+            else {
+                scan.allNearSilent=false;
+                if(runStart>=0){scan.quietRuns.add(new int[]{runStart,start});runStart=-1;}
+            }
+            start=end;
+        }
+        if(runStart>=0)scan.quietRuns.add(new int[]{runStart,frames});
+        return scan;
+    }
     // Wave 回写标准 WAV（含 fmt 扩展段与奇长 data pad）
     static byte[] encode(Wave w) throws Exception{
         int pad=w.fmt.length%2;

@@ -71,7 +71,7 @@ function repetitionCandidate(base64,text){
 function normalizeTranscript(text){return String(text||'').normalize('NFKC').replace(/[\s\p{P}]/gu,'');}
 // Compatibility API: local evidence never authorizes a destructive crop.
 function cleanRepeatedSpeech(base64){return {base64,removed:false};}
-// Signal measurements are diagnostic only. Quiet speech is never silence to crop.
+// Legacy checks preserve previously archived audio. New requests use native measurements.
 function analyzeSpeech(base64,text,finishReason='stop'){
  let w=null;try{w=wave(decode(base64));}catch(_){}
  const issues=[],hardIssues=[];
@@ -92,5 +92,20 @@ function analyzeSpeech(base64,text,finishReason='stop'){
  if(candidate.removed||candidate.suspected)issues.push('疑似重复');
  return {issues:[...hardIssues,...issues],hardIssues,supported:true,duration:w.duration};
 }
-return {cleanRepeatedSpeech,repetitionCandidate,analyzeSpeech,normalizeTranscript,intentionalRepeat};
+function analyzeProcessedSpeech(file,text,finishReason='stop',suspectedRepeat=false){
+ const issues=[],hardIssues=[];
+ if(finishReason==='length')hardIssues.push('输出被截断');
+ if(!file.supported||!(file.duration>0))hardIssues.push('音频结构损坏、空音频或无法解码');
+ else{
+  if(file.allSilent)hardIssues.push('全静音');
+  else if(file.allNearSilent)hardIssues.push('全近静音');
+  const letters=normalizeTranscript(text).length,estimate=Math.max(1,letters/280*60);
+  if(file.duration>Math.max(8,estimate*3+5))hardIssues.push('处理后时长仍异常');
+  if(letters>=6&&file.duration<Math.max(.25,letters/900*60))issues.push('疑似漏读');
+  if(file.longestSilenceMs>3000)issues.push('长静音');
+  if(suspectedRepeat)issues.push('疑似重复');
+ }
+ return {issues:[...hardIssues,...issues],hardIssues,supported:!!file.supported,duration:file.duration||0};
+}
+return {cleanRepeatedSpeech,repetitionCandidate,analyzeSpeech,analyzeProcessedSpeech,normalizeTranscript,intentionalRepeat};
 });

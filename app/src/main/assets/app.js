@@ -1,33 +1,432 @@
-﻿(()=>{'use strict';
-let engine,configured={},page='shelf',bookId=null,shelfMulti=false,shelfSelected=[],deleteConfirmShelf=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,stopAfterChapter=false,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null,unmadeChoiceChapterId=null,streamState=null;
+(()=>{'use strict';
+let engine,configured={},page='shelf',bookId=null,shelfMulti=false,shelfSelected=[],deleteConfirmShelf=null,chapterId=null,voiceId=null,roleName=null,selected=[],multi=false,voiceTab='mine',taskTab='active',candidate=null,imports=[],editSegment=null,pendingSeg=null,history=[],playingId=null,playingBookId=null,playingChapterId=null,designDirty=false,chapterPage=0,episodeModalOpen=false,playerCatalogOpen=false,deleteConfirmBookId=null,batchModalBookId=null,openDropdown=null,dropdownSel={},speedModalOpen=false,listenSettingsOpen=false,bookInfoOpen=false,sleepModalOpen=false,sleepCustomOpen=false,sleepRemainingMs=0,storageStats=null,miniPlayingState=null,lastSeekTime=0,lastSeekPos=0,lastActiveStart='',listenUserHoldUntil=0,listenProgScrollUntil=0,importDraft=null,unmadeChoiceChapterId=null,streamState=null;
+let uxDialog=null,recoveryError=null,editorReturn=null,configDirty=false,connectionResult=null,ttsConnectionResult=null,confirmationResult=null,designJob=null,preview=null,storageLoadPending=false,storageError='',lastReadingSave=0,pendingCoverColor=null;
+
+// Each settings page edits an isolated draft; save is explicit.
+const productionPages=['voicepolicy','productionpolicy','importpolicy','quality'];
+let productionDraft=null,productionDraftPage=null,productionDirty=false,productionDialogClose=null;
+function productionDraftFor(p){if(productionDraftPage!==p||!productionDraft){productionDraft={...engine.state.settings};productionDraftPage=p;productionDirty=false;for(const k of ['policyMode','retries','speakerThreshold','taskParallel','ttsParallel','splitRule'])delete dropdownSel[k];}return productionDraft;}
+function networkLabel(){return {wifi:'已连接 Wi-Fi',other:'当前不是 Wi-Fi',offline:'当前无网络',unknown:'无法确认网络类型'}[engine.productionNetworkState()];}
+function settingSwitch(id,label,help,checked){return `<label class="production-setting od-row"><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span><input class="production-switch od-fixed" type="checkbox" id="${id}" ${checked?'checked':''}></label>`;}
+function productionSettingsHtml(p){const st=productionDraftFor(p);let h='';
+if(p==='voicepolicy'){h=top('音色分配')+`<section class="production-section od-stack"><h2>优先沿用已有声音</h2><ol class="production-flow"><li>保留角色已绑定的音色</li><li>按角色描述匹配我的音色</li><li>没有合适音色时设计新声音</li></ol><p class="vc-sub">更改设置不会替换已有角色绑定。</p>${settingSwitch('productionPresets','允许使用 MiMo 预设','我的音色不合适时，也可匹配预设声音。',st.usePresets)}</section><section class="production-section od-stack"><h2>新声音如何启用</h2><div class="production-options od-stack" role="radiogroup" aria-label="新设计音色确认方式">${[['auto','自动采用（默认）','自动选择新声音，仅异常时需要处理。'],['manual','先试听确认','新设计样本由你确认后使用。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${(st.mode||'auto')===v}" data-act="settingchoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div></section><details class="production-section"><summary>高级：说话人确认</summary><p class="vc-sub">自动采用时无需设置说话人确认阈值，阈值不参与拦截。仅在先试听确认模式下，置信度低于阈值的说话人才需要人工确认。</p>${(st.mode||'auto')==='auto'?'<p class="vc-sub">当前为自动采用，确认阈值不生效。</p>':dd('speakerThreshold','人工确认阈值',[['0.3','宽松 · 0.3'],['0.5','适中 · 0.5'],['0.65','严格 · 0.65'],['0.8','很严格 · 0.8']],String(st.speakerThreshold??0.5))}</details>`;}
+if(p==='productionpolicy'){h=top('网络与制作')+`<section class="production-section od-stack"><h2>制作网络</h2><p class="production-network-state" role="status">${E(networkLabel())}</p>${settingSwitch('productionWifiOnly','仅 Wi-Fi 下制作','限制章节制作及重新合成；已下载音频仍可播放。',st.wifiOnlyProduction)}<p class="vc-sub">离开 Wi-Fi 后，当前请求完成再等待，已完成进度会保留。无法确认网络时会先提醒。</p></section><section class="production-section od-stack"><h2>制作速度</h2>${dd('taskParallel','同时制作章节',[['1','1 章 · 稳定优先'],['2','2 章'],['3','3 章']],String(st.taskParallel??1))}<details><summary>高级：句子并发</summary><p class="vc-sub">并发越高，请求越密集，也更容易触发服务限流。</p>${dd('ttsParallel','同时合成句数',[['1','1 句 · 最稳'],['2','2 句 · 推荐'],['3','3 句'],['4','4 句 · 易限流']],String(st.ttsParallel??2))}</details></section>`;}
+if(p==='importpolicy'){h=top('新书导入')+`<section class="production-section od-stack"><h2>默认切章规则</h2><p class="vc-sub">只影响之后导入的新书。已有书的重新切章仍在书籍详情中操作。</p>${dd('splitRule','标题识别方式',[['auto','自动识别（推荐）'],['chapter_cn','第X章/节/回'],['volume_cn','第X卷'],['special_cn','楔子/番外/序章'],['chapter_en','Chapter N'],['number_dot','数字点标题'],['paren_num','括号序号'],['bare_num','纯数字行'],['bare_cn_num','纯汉字数字'],['num_chapter','第N+空格+标题'],['custom','自定义模板']],st.splitRule||'auto')}${st.splitRule==='custom'?field('自定义模板（* 代表章号）','productionSplitCustom',st.splitCustom||''):''}</section>`;}
+if(p==='quality'){const auto=st.qualityAutoRetry!==false&&st.qualityConfirmRetry!==true;h=top('合成异常处理')+`<p class="vc-sub">请求没成功，与音频生成后有问题，是两种不同的重试。</p><section class="production-section od-stack"><h2>请求失败重试</h2><p class="vc-sub">还没取得有效结果时，重新发送同一个请求。适用于文本分析、音色设计和语音合成。</p>${dd('retries','每个请求最多追加重试',[['0','不追加重试'],['1','追加 1 次'],['2','追加 2 次'],['3','追加 3 次']],String(st.retries??2))}<p class="vc-sub">首次请求不计入重试。当前最多尝试 ${1+Number(st.retries??2)} 次；成功即停止。</p><p class="vc-sub">仅处理可恢复的网络错误、超时或服务限流；鉴权失败、额度不足及内容审核拒绝不反复重试。达到上限后显示失败，保留已有进度。</p></section><section class="production-section od-stack"><h2>音频异常重合成</h2><p class="vc-sub">请求已经返回音频，但本地检查发现明确截断、损坏、空音频或全静音时，是否为该片段再合成一次。</p><div class="production-options od-stack" role="radiogroup" aria-label="音频异常处理方式">${[['auto','自动重合成一次','每个异常片段最多自动追加一次；仍有问题则提示手动处理。'],['manual','手动处理','不自动追加合成。试听后，由你对异常句子发起重新合成。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${auto===(v==='auto')}" data-act="qualitychoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div><p class="vc-sub">重合成会产生额外合成用量。手动重新合成失败时不会再自动追加一次。</p></section><section class="production-section od-stack"><h2>只提示试听的问题</h2><p class="vc-sub">长停顿、时长偏离、疑似重复只标记提醒，不触发自动重合成，也不自动裁剪。检查在本地完成，不能核实具体台词是否正确。</p></section><p class="footer-note">两种重试独立计数：音频重合成发出的请求，也遵守上方的请求失败重试上限。重发请求可能增加服务用量；保存设置不会立即开始重试。</p>`;}
+return h+`<footer class="production-save od-stack"><p id="production-setting-error" role="alert"></p><p class="vc-sub" role="status">${productionDirty?'有未保存的修改':'设置已保存；保存不会启动制作'}</p><button type="button" class="vc-btn full" data-act="saveproductionsettings">保存设置</button></footer>`;
+}
+function productionDialog(title,body,options){if(productionDialogClose)return Promise.resolve('cancel');const focus=document.activeElement;return new Promise(resolve=>{const overlay=document.createElement('div');overlay.className='vc-modal-overlay production-dialog-overlay';overlay.innerHTML=`<section class="vc-dialog production-dialog od-stack" role="dialog" aria-modal="true" aria-labelledby="production-dialog-title" data-theme="${E(engine.state.settings.readerTheme||'system')}"><header class="od-row"><h2 class="od-fill" id="production-dialog-title">${E(title)}</h2><button type="button" class="vc-icon od-touch" aria-label="关闭">×</button></header><div class="production-dialog-copy">${body}</div><div class="od-stack">${options.map(o=>`<button type="button" class="vc-btn ${o.primary?'':'secondary'}" data-result="${o.id}" ${o.disabled?'disabled':''}>${o.label}</button>`).join('')}</div></section>`;const close=value=>{document.removeEventListener('keydown',keys,true);overlay.remove();productionDialogClose=null;if(focus?.isConnected)focus.focus({preventScroll:true});resolve(value);};productionDialogClose=close;const keys=event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close('cancel');}if(event.key==='Tab'){const buttons=[...overlay.querySelectorAll('button:not(:disabled)')];if(event.shiftKey&&document.activeElement===buttons[0]){event.preventDefault();buttons.at(-1).focus();}else if(!event.shiftKey&&document.activeElement===buttons.at(-1)){event.preventDefault();buttons[0].focus();}}};document.addEventListener('keydown',keys,true);overlay.addEventListener('click',event=>{if(event.target===overlay||event.target.closest('[aria-label="关闭"]'))close('cancel');const b=event.target.closest('[data-result]');if(b&&!b.disabled)close(b.dataset.result);});document.getElementById('app').appendChild(overlay);overlay.querySelector('button').focus();});}
+function productionLeave(continuation){if(!productionPages.includes(page)||!productionDirty)return false;productionDialog('放弃未保存的修改？','<p>此页的修改尚未生效。</p>',[{id:'cancel',label:'继续编辑',primary:true},{id:'discard',label:'放弃修改'}]).then(result=>{if(result==='discard'){productionDirty=false;productionDraft=null;productionDraftPage=null;continuation();}});return true;}
+async function authorizeProduction(items){const n=engine.productionNetworkState();if(n!=='offline'&&(!engine.state.settings.wifiOnlyProduction||n==='wifi'))return true;const names=items.map(x=>{try{return engine.chapter(x.bookId,x.chapterId).title;}catch{return '';}});const body=`<p>${E(networkLabel())}。${n==='offline'?'请先连接网络，再重试制作。':'制作会上传文本并下载音频，可能消耗移动流量。'}</p><p>${items.length>1?'所选 '+items.length+' 章：':''}${E(names.slice(0,2).join('、'))}${names.length>2?' 等':''}</p><p>仅本次允许只适用于以上章节，不包括自动接续的新章节。</p>`;const result=await productionDialog('制作网络提醒',body,[{id:'cancel',label:'暂不制作',primary:true},{id:'once',label:'仅本次允许',disabled:n==='offline'},{id:'off',label:'关闭限制并继续',disabled:n==='offline'},{id:'retry',label:'重新检查网络'}]);if(result==='retry')return authorizeProduction(items);if(result==='cancel')return false;if(engine.productionNetworkState()==='offline'){toast('当前无网络，请连接后重试');return false;}if(result==='off'){engine.state.settings.wifiOnlyProduction=false;if(productionDraft)productionDraft.wifiOnlyProduction=false;await engine.persist();engine.refreshProductionNetwork().catch(()=>{});}else if(result==='once')engine.grantProductionScope(items);return true;}
+const productionReplay=new WeakSet();
+function productionActionScope(a,x){const tasks=engine.state.tasks,task=t=>({bookId:t.bookId,chapterId:t.chapterId});if(a==='enqueue')return selected.map(cid=>({bookId,chapterId:cid}));if(['producechapter','resumechapter'].includes(a)){const c=book()?.chapters.find(c=>c.id===x);if(c?.audio&&!c.audioStale)return [];return [{bookId,chapterId:x}];}if(a==='makeandlisten'){const cid=unmadeChoiceChapterId||x,t=chapterTask(bookId,cid);return isChapterProducing(t)?[]:[{bookId,chapterId:cid}];}if(['resume','remake'].includes(a)){const t=tasks.find(t=>t.id===x);return t?[task(t)]:[];}if(a==='resumeall')return tasks.filter(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested).map(task);if(a==='retryfailed')return tasks.filter(t=>t.status==='failed').map(task);if(['regenerateseg','regenerateprompt'].includes(a))return [{bookId,chapterId}];if(['ignorerole','ignorespeaker','ignoreall','acceptrole','acceptsuggested'].includes(a))return tasks.filter(t=>t.bookId===bookId&&t.status==='waiting').map(task);return [];}
+window.addEventListener('click',async event=>{if(!engine||productionReplay.has(event))return;const el=event.target.closest('[data-act]');if(!el||el.disabled)return;const act=el.dataset.act,i=act.indexOf(':'),a=i<0?act:act.slice(0,i),x=i<0?'':act.slice(i+1);
+if(a==='qualitychoice'&&page==='quality'){event.preventDefault();event.stopImmediatePropagation();const st=productionDraftFor(page);st.qualityAutoRetry=x==='auto';st.qualityConfirmRetry=x!=='auto';productionDirty=true;render();return;}
+if(a==='settingchoice'){event.preventDefault();event.stopImmediatePropagation();productionDraftFor(page).mode=x;productionDirty=true;render();return;}
+if(a==='pickopt'&&productionPages.includes(page)){const [id,v]=x.split('|'),map={policyMode:'mode',speakerThreshold:'speakerThreshold',taskParallel:'taskParallel',ttsParallel:'ttsParallel',retries:'retries',splitRule:'splitRule'};if(map[id]){productionDraftFor(page)[map[id]]=['speakerThreshold','taskParallel','ttsParallel','retries'].includes(id)?Number(v):v;productionDirty=true;}}
+if(a==='saveproductionsettings'){event.preventDefault();event.stopImmediatePropagation();const st=productionDraftFor(page),keys=page==='voicepolicy'?['mode','usePresets','speakerThreshold']:page==='productionpolicy'?['wifiOnlyProduction','taskParallel','ttsParallel']:page==='quality'?['retries','qualityAutoRetry','qualityConfirmRetry']:['splitRule','splitCustom'];if(st.splitRule==='custom'&&page==='importpolicy'&&!String(st.splitCustom||'').trim()){document.getElementById('production-setting-error').textContent='请填写自定义模板，或选择自动识别。';document.getElementById('productionSplitCustom')?.focus();return;}const before={...engine.state.settings};for(const k of keys)if(st[k]!==undefined)engine.state.settings[k]=st[k];try{await engine.persist();productionDirty=false;toast('设置已保存');engine.refreshProductionNetwork().catch(()=>{});render();}catch(error){Object.assign(engine.state.settings,before);document.getElementById('production-setting-error').textContent='保存失败，请重试。';}return;}
+if(a==='productionnetworksettings'){event.preventDefault();event.stopImmediatePropagation();go('productionpolicy');return;}
+const items=productionActionScope(a,x);if(!items.length)return;const n=engine.productionNetworkState();if(n!=='offline'&&(!engine.state.settings.wifiOnlyProduction||n==='wifi'))return;event.preventDefault();event.stopImmediatePropagation();try{if(await authorizeProduction(items)){const current=[...document.querySelectorAll('[data-act]')].find(b=>b.dataset.act===act&&!b.disabled);if(current){const replay=new MouseEvent('click',{bubbles:true,cancelable:true});productionReplay.add(replay);current.dispatchEvent(replay);}}}catch(error){toast('未能开始制作：'+cleanErr(error));}
+},true);
+document.addEventListener('change',event=>{if(!productionPages.includes(page))return;const map={productionPresets:'usePresets',productionWifiOnly:'wifiOnlyProduction'};if(map[event.target.id]){productionDraftFor(page)[map[event.target.id]]=event.target.checked;productionDirty=true;const note=document.querySelector('.production-save [role=status]');if(note)note.textContent='有未保存的修改';}});
+document.addEventListener('input',event=>{if(event.target.id==='productionSplitCustom'){productionDraftFor(page).splitCustom=event.target.value;productionDirty=true;const note=document.querySelector('.production-save [role=status]');if(note)note.textContent='有未保存的修改';}});
+window.addEventListener('productionnetworkchange',()=>{if(engine&&['productionpolicy','policy','tasks','task'].includes(page))render();});
+
+let playbackPrompts=null;
+const segmentAdvancedOpen=new Set();
+let segmentPanel=null;
+const segmentPromptDrafts=new Map();
+function panelSegment(){if(!segmentPanel||page!=='annotated'||segmentPanel.bookId!==bookId||segmentPanel.chapterId!==chapterId)return null;return chapter().segments?.find(s=>String(s.id)===segmentPanel.id)||null;}
+function segmentPanelHtml(){
+ const s=panelSegment();if(!s)return '';
+ const b=book(),c=chapter(),index=c.segments.indexOf(s)+1,busy=engine.segmentBusy(b.id,c.id,s.id),skipped=s.skip||s.isAd||s.audio==='skip',role=b.characters.find(r=>r.name===s.speaker),audio=s.audio&&s.audio!=='skip'?s.audio:null;
+ const state=busy?'正在合成':skipped?'已跳过':s.retryError?'重做失败':audio?'已合成':s.qualityStatus==='pending'?'待处理':'待合成';
+ const row=(icon,label,help,act,disabled=false)=>`<button type="button" class="vc-segment-action od-row" data-act="${E(act)}" ${disabled?'disabled':''}>${I(icon)}<span class="od-field od-fill"><strong>${E(label)}</strong><small>${E(help)}</small></span>${I('chevron-right')}</button>`;
+ return `<div class="vc-modal-overlay vc-segment-overlay" data-act="closesegment"><section class="vc-dialog vc-segment-sheet" data-theme="${E(engine.state.settings.readerTheme||'system')}"><header class="vc-segment-heading od-row"><div class="od-field od-fill"><small>第 ${index} 段 · ${E(s.speaker)}</small><h3>段落操作</h3></div><button type="button" class="vc-icon od-touch" data-act="closesegment" aria-label="关闭段落操作">${I('x')}</button></header><div class="vc-segment-body od-scroll" id="segment-panel-scroll"><section class="vc-segment-context od-stack"><div class="od-row"><strong class="od-fill">${E(s.speaker)}</strong><span class="vc-segment-state">${state}</span></div><p>${E(s.text)}</p>${s.emotion?`<small>演绎 · ${E(s.emotion)}</small>`:''}</section><section class="vc-segment-group"><h4>试听与编辑</h4>${row('play','试听本句',audio?'播放当前已合成音频':'合成音频后可试听','segmentpreview:'+s.id,!audio)}${segmentPanel.playError?`<p class="vc-segment-error" role="alert">${E(segmentPanel.playError)}</p>`:''}${row('pencil','编辑说话人','调整角色与本句演绎','editseg:'+s.id,busy)}${row('skip-forward',skipped?'取消跳过':'跳过本段',skipped?'恢复参与音频制作':'制作时不朗读这一段','toggleskip:'+s.id,busy)}</section><section class="vc-segment-group"><h4>音频合成</h4>${segmentQualityControls(b,c,s,false)}${s.failReason&&!s.retryError?`<p class="vc-segment-error" role="status">${E(s.failReason)}</p>`:''}${s.speechDraft?.pendingRaw?.file?.id&&s.speechDraft.pendingRaw.playable!==false?row('headphones','试听原始返回','检查服务返回的原始音频','play:'+s.speechDraft.pendingRaw.file.id):''}${s.annotationError?`<details class="vc-error-detail"><summary>标注失败详情</summary><p>${E(String(s.annotationError))}</p></details>`:''}${segmentAdvancedOptions(b,c,s)}<p class="vc-segment-notice" role="status">${busy?'正在合成此句，可以关闭面板；完成后会保留结果。':skipped?'此段已跳过，请先取消跳过。':!role?.voice?'请先在角色与音色中分配音色，再重新合成。':'重新合成会产生服务费用；失败时保留原音频。'}</p>${segmentPanel.result?`<p class="vc-segment-result" role="status">${E(segmentPanel.result)}</p>`:''}</section>${previewToolbar()}</div><footer class="vc-segment-footer"><button type="button" class="vc-btn full" data-act="regenerateprompt:${s.id}" ${busy||skipped||!role?.voice?'disabled':''}>${busy?'正在合成…':audio?'重新合成':'合成本句'}</button></footer></section></div>`;
+}
+document.addEventListener('input',event=>{const field=event.target;if(field.matches('[data-tts-prompt]')&&panelSegment())segmentPromptDrafts.set(segmentAdvancedKey(book(),chapter(),panelSegment()),field.value);});
+let renderedListenSignature='';
+function listenSignature(){if(page!=='listen')return '';const c=chapter(),t=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===chapterId&&!['done','cancelled'].includes(t.status));return chapterId+'|'+c.audio+'|'+(c.segments||[]).map(s=>s.audio+':'+s.qualityStatus+':'+s.skip).join(',')+'|'+t?.status+'|'+t?.done;}
+function roleVoiceStatus(b,r){if(r.voice)return '已绑定';if(r.candidate)return '候选待确认';if(designJob?.running&&designJob.bookId===b.id&&designJob.roleName===r.name||engine.roleDesignJobs?.has(b.id+':role:'+r.name))return '设计中';if(r.suggestedVoice)return '匹配待确认';if(engine.state.tasks.some(t=>t.bookId===b.id&&t.status==='running'&&/匹配/.test(t.phase||'')))return '匹配中';return '未分配';}
+let voiceSearch='',voiceGender='all',voiceAge='all',voiceSource='all',readerOptionsOpen=false;
+let chooseTab='mine';
+let catalogWindow=null,catalogKey='',catalogProgressId=null,catalogRequestId=null,catalogAlignId=null,catalogReady=false,catalogFrame=0,catalogLastScroll=0,catalogScrollDirection=0,catalogRenderToken=0;
+function catalogRow(id){return Array.from(document.querySelectorAll('#chapter-list [data-chapter-id]')).find(el=>el.dataset.chapterId===id);}
+function prepareCatalog(b,chapters,entering){
+ catalogProgressId=VocastCatalog.progressChapter(b,engine.state.lastPlayback,{bookId:playingBookId,chapterId:playingChapterId,playing:miniPlayingState?.playing});
+ const key=JSON.stringify([b.id,chapters.map(c=>c.id)]);
+ if(entering||catalogKey!==key||catalogRequestId||!catalogWindow){
+  const target=catalogRequestId||(entering?catalogProgressId:chapters[0]?.id);
+  catalogWindow=new VocastCatalog.ChapterWindow(chapters,target,innerHeight);catalogKey=key;
+  chapterPage=Math.floor(Math.max(0,chapters.findIndex(c=>c.id===target))/50);
+  catalogAlignId=catalogRequestId||(entering?catalogProgressId:null);catalogRequestId=null;
+ }else catalogWindow.chapters=chapters;
+}
+function captureCatalogAnchor(){
+ const top=Math.max(0,document.getElementById('catalog-heading')?.getBoundingClientRect().bottom||0);
+ const row=Array.from(document.querySelectorAll('#chapter-list [data-chapter-id]')).find(el=>{const r=el.getBoundingClientRect();return r.bottom>top+1&&r.top<innerHeight;});
+ return row?{id:row.dataset.chapterId,top:row.getBoundingClientRect().top}:null;
+}
+function sizeCatalogTail(){
+ const tail=document.getElementById('catalog-tail'),list=document.getElementById('chapter-list');if(!tail||!list)return;
+ const viewport=document.getElementById('catalog-scroll');
+ tail.style.height=catalogWindow.end===catalogWindow.chapters.length&&list.lastElementChild?Math.max(0,(viewport?.clientHeight||0)-list.lastElementChild.offsetHeight)+'px':'0px';
+}
+function syncCatalogViewport(anchor){
+ const token=++catalogRenderToken;catalogReady=false;if(page!=='detail')return;
+ sizeCatalogTail();
+ requestAnimationFrame(()=>{
+  if(page!=='detail'||token!==catalogRenderToken)return;
+  const target=catalogAlignId&&catalogRow(catalogAlignId);
+  const viewport=document.getElementById('catalog-scroll');if(!viewport)return;
+  if(target){window.scrollTo(0,0);viewport.scrollTop+=Math.ceil(target.getBoundingClientRect().top-viewport.getBoundingClientRect().top);}
+  else if(anchor){const row=catalogRow(anchor.id);if(row)viewport.scrollTop+=row.getBoundingClientRect().top-anchor.top;}
+  catalogAlignId=null;catalogLastScroll=viewport.scrollTop;catalogReady=true;
+ });
+}
+function extendCatalog(direction){
+ const list=document.getElementById('chapter-list');if(!list||!catalogWindow||!direction)return;
+ const anchor=captureCatalogAnchor(),rows=catalogWindow.grow(direction,innerHeight,list.firstElementChild?.offsetHeight||72);
+ if(!rows.length)return;
+ list.insertAdjacentHTML(direction<0?'afterbegin':'beforeend',rows.map(c=>catalogChapterRow(book(),c)).join(''));
+ lucide.createIcons({attrs:{width:20,height:20}});sizeCatalogTail();
+ const viewport=document.getElementById('catalog-scroll');
+ if(direction<0&&anchor){const row=catalogRow(anchor.id);if(row&&viewport)viewport.scrollTop+=row.getBoundingClientRect().top-anchor.top;}
+ catalogLastScroll=viewport?.scrollTop||0;
+}
+document.addEventListener('scroll',event=>{
+ if(event.target.id!=='catalog-scroll')return;
+ const direction=Math.sign(event.target.scrollTop-catalogLastScroll);catalogLastScroll=event.target.scrollTop;
+ if(page!=='detail'||!catalogReady||hasModal()||!direction)return;
+ catalogScrollDirection=direction;if(catalogFrame)return;
+ catalogFrame=requestAnimationFrame(()=>{
+  catalogFrame=0;if(page!=='detail'||!catalogReady||hasModal())return;
+  const list=document.getElementById('chapter-list');if(!list?.firstElementChild)return;
+  const row=captureCatalogAnchor();if(row)chapterPage=Math.floor(catalogWindow.chapters.findIndex(c=>c.id===row.id)/50);
+  if(catalogScrollDirection<0&&list.firstElementChild.getBoundingClientRect().top>-innerHeight)extendCatalog(-1);
+  if(catalogScrollDirection>0&&list.lastElementChild.getBoundingClientRect().bottom<innerHeight*2)extendCatalog(1);
+ });
+},{passive:true,capture:true});
+function chapterTask(bid,cid){return engine.state.tasks.find(t=>t.bookId===bid&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));}
+function isChapterProducing(task){return !!task&&['queued','running'].includes(task.status);}
+function catalogChapterRow(b,c,player=false){
+      const globalIndex=b.chapters.indexOf(c)+1,current=c.id===(player?chapterId:catalogProgressId);
+      const activeTask=chapterTask(b.id,c.id);
+      let statusLabel='未制作';
+      let statusKind='normal';
+      if(activeTask){
+        if(activeTask.status==='running'){
+          statusLabel=activeTask.phase||'制作中';
+          statusKind='running';
+        }else if(activeTask.status==='queued'){
+          statusLabel='排队中';
+          statusKind='running';
+        }else if(activeTask.status==='waiting'){
+          statusLabel='待确认';
+          statusKind='warn';
+        }else if(activeTask.status==='failed'){
+          statusLabel='失败';
+          statusKind='warn';
+        }else if(activeTask.status==='paused'){
+          statusLabel='已暂停';
+        }
+      }else if(c.status==='skipped'){statusLabel='全部跳过';statusKind='warn';}else if(c.audio){
+        if(c.listened){statusLabel='已完播';statusKind='listened';}
+        else statusLabel='可听';
+      }else if(c.status==='waiting'){
+        statusLabel='待确认';
+        statusKind='warn';
+      }else if(segCount(c)){
+        statusLabel='已标注';
+      }
+      const isWaiting=statusLabel==='待确认';
+      const badge=(c.audioCleared&&!c.audio)?T('已释放','cleared'):'';
+      const statusControl=statusLabel==='未制作'?`<button class="vc-icon vc-chapter-produce" data-act="producechapter:${c.id}" aria-label="制作${E(c.title)}" title="制作本章">${I('hammer')}</button>`:isWaiting?`<button class="vc-chapter-confirm" data-act="confirm:${c.id}" aria-label="待确认：${E(c.title)}"><span class="vc-tag vc-status-badge pending">待确认</span></button>`:statusLabel==='可听'?'':T(statusLabel,statusKind);
+      return `<div role="listitem" data-chapter-id="${E(c.id)}" aria-posinset="${globalIndex}" aria-setsize="${b.chapters.length}" ${current?'aria-current="location"':''} class="vc-chapter ${current?'vc-chapter-current':''} ${isWaiting?'vc-chapter-waiting':''}">${multi?`<input type="checkbox" data-check="${c.id}" ${selected.includes(c.id)?'checked':''} aria-label="选择${E(c.title)}">`:`<span class="vc-num">${globalIndex}</span>`}<button data-act="${multi&&!player?'togglechapter:'+c.id:player?'listenpick:'+c.id:isWaiting?'confirm:'+c.id:'read:'+c.id}">${E(c.title)}${current?'<span class="vc-current-marker">当前进度</span>':''}<br><small>${textLen(c)} 字</small></button>${badge}${multi&&!player?(statusLabel?T(statusLabel,statusKind):''):statusControl}${c.audio&&!(multi&&!player)?`<button class="vc-icon vc-chapter-play" data-act="resumechapter:${c.id}" aria-label="播放${E(c.title)}">${I('play')}</button>`:''}</div>`;
+
+}
+
+function errorMarkup(message){if(!message)return '';const original=String(message?.detail||message?.message||message),friendly=cleanErr(message);return `${E(friendly)}${friendly!==original?`<details class="vc-error-detail"><summary>诊断详情</summary><code>${E(original)}</code></details>`:''}`;}
+function readingIssues(){
+ const b=book();return (chapter().segments||[]).filter(s=>{
+  if(s.skip||s.isAd||s.speaker==='广告')return false;
+  const role=b.characters.find(r=>r.name===s.speaker);
+  return !!(s.retryError||s.qualityStatus==='pending'&&!s.audio||s.annotationError&&s.annotationStatus!=='fallback'||s.annotationStatus!=='pending'&&(s.confidence<engine.spkThr()||!role)||s.speaker!=='旁白'&&role&&!role.voice);
+ });
+}
+function readerSettingsHtml(){
+ const s=engine.state.settings,font=Number(s.readerFontSize)||16,line=Number(s.readerLineHeight)||1.6,theme=s.readerTheme||'system';
+ const option=(label,action,active)=>`<button type="button" class="vc-reading-option${active?' selected':''}" data-act="${action}" aria-pressed="${active}">${label}</button>`;
+ return `<div class="vc-reading-settings"><p class="vc-reading-intro">调整为你习惯的阅读方式，即时生效</p><section><h4>字号 <span>${font} px</span></h4><div class="vc-reading-options font-options">${[16,18,20,22,24].map(n=>option(n,'readerfont:'+n,font===n)).join('')}</div></section><section><h4>行距</h4><div class="vc-reading-options">${[[1.6,'紧凑'],[1.9,'适中'],[2.2,'宽松']].map(([n,label])=>option(label,'readerline:'+n,line===n)).join('')}</div></section><section><h4>主题</h4><div class="vc-reading-options">${[['system','跟随系统'],['light','日间'],['dark','夜间']].map(([id,label])=>option(label,'readertheme:'+id,theme===id)).join('')}</div></section><div class="vc-reading-preview" data-theme="${theme}" style="--sample-font:${font}px;--sample-line:${line}"><small>阅读示例</small><p>雨停了，山间的雾慢慢散开。<br>翻过这一页，故事仍在继续。</p></div></div>`;
+}
+function askLeave(next){uxDialog={title:'配置尚未保存',html:'<p>当前页面有未保存的配置。可以先取消并保存，或放弃这些修改。</p>',confirmLabel:'放弃修改并离开',confirm:async()=>{configDirty=false;next();}};render();}
+function rememberReading(){if(!engine||!['raw','annotated'].includes(page)||!bookId||!chapterId)return;const b=book();b.readProgress={chapterId,mode:page,scroll:window.scrollY,at:Date.now()};if(Date.now()-lastReadingSave>3000){lastReadingSave=Date.now();engine.persist().catch(()=>{});}}
+function restoreEditorPosition(){if(!editorReturn)return;requestAnimationFrame(()=>{const row=document.querySelector('[data-seg="'+editorReturn.segmentId+'"]');if(row){row.scrollIntoView({block:'center'});row.classList.add('vc-flash');}else window.scrollTo(0,editorReturn.scroll);});}
+async function refreshStorage(showToast=false){if(storageLoadPending)return;storageLoadPending=true;storageError='';try{storageStats=await device.call('audioStats');if(showToast)toast('已刷新存储统计');}catch(e){storageError=cleanErr(e);}finally{storageLoadPending=false;if(page==='storage')render();}}
+async function saveLLMForm(){const base=value('llmBase').trim().replace(/\/$/,''),model=value('llmModel').trim(),key=value('llmKey');if(!base||!model)throw Error('请填写 Base URL 和模型 ID');let parsed;try{parsed=new URL(base);}catch(e){throw Error('请填写完整服务地址');}if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.search||parsed.hash)throw Error('请填写不含账号、查询参数和片段的 HTTPS Base URL');await device.call('saveCredentials',{llmKey:key,llmBase:base});Object.assign(engine.state.settings,{llmBase:base,llmModel:model,llmUserConfigured:true,llmProtocol:dropdownSel.llmProtocol||engine.state.settings.llmProtocol});configDirty=false;await engine.persist();configured=await device.call('load');const input=$('#llmKey');if(input)input.value='';}
+async function saveTTSForm(){await device.call('saveCredentials',{ttsKey:value('ttsKey')});configDirty=false;configured=await device.call('load');const input=$('#ttsKey');if(input)input.value='';}
+function voiceFilters(){return `<div class="vc-voice-search">${field('搜索音色名称、描述或编号','voiceSearch',voiceSearch)}<div class="vc-filter-row">${[['voiceGender','性别',voiceGender,[['all','全部性别'],['f','女性'],['m','男性'],['unknown','未注明']]],['voiceAge','年龄',voiceAge,[['all','全部年龄'],['child','儿童'],['young','少年 / 青年'],['middle','中年'],['old','老年']]],['voiceSource','来源',voiceSource,[['all','全部来源'],['import','导入'],['design','设计'],...(page==='choose'?[['preset','MiMo 预设']]:[])]]].map(([id,label,current,opts])=>`<label>${label}<select id="${id}">${opts.map(([id,text])=>`<option value="${id}" ${current===id?'selected':''}>${text}</option>`).join('')}</select></label>`).join('')}</div></div>`;}
+function filteredVoices(includePresets=false){const bound=page==='choose'?book().characters.find(r=>r.name===roleName)?.voice:null;const voices=includePresets?engine.state.voices.concat(Vocast.PRESETS.map(name=>({id:'preset:'+name,name,description:Vocast.presetDesc(name),source:'preset'}))):engine.state.voices;return voices.filter(v=>{if(page==='voices')return true;const desc=v.description||'',gender=Vocast.genderOf(desc)||'unknown',n=Vocast.cnAgeNum(desc),age=n==null?(/儿童/.test(desc)?'child':/少年|青年/.test(desc)?'young':/中年/.test(desc)?'middle':/老年/.test(desc)?'old':'unknown'):n<13?'child':n<40?'young':n<60?'middle':'old';return (!voiceSearch||(v.name+' '+desc+' '+v.id).toLowerCase().includes(voiceSearch.toLowerCase()))&&(voiceGender==='all'||voiceGender===gender)&&(voiceAge==='all'||voiceAge===age)&&(voiceSource==='all'||voiceSource===v.source);}).sort((a,b)=>(b.id===bound)-(a.id===bound)||(b.lastUsedAt||0)-(a.lastUsedAt||0));}
+let voiceEditor=null,voiceLeaveNext=null;
+function voiceDraft(){const v=voice();if(!voiceEditor||voiceEditor.id!==v.id)voiceEditor={id:v.id,name:v.name,description:v.description||'',enabled:!!v.enabled,text:'山里的风停了，故事才刚刚开始。',trialOpen:false,infoOpen:false,status:'',error:'',working:false,candidate:null,candidateDescription:'',trial:null};return voiceEditor;}
+function captureVoiceDraft(){if(page!=='voicedetail'||!voiceEditor)return;for(const [id,key] of [['vname','name'],['vdescription','description'],['trialText','text']]){const el=document.getElementById(id);if(el)voiceEditor[key]=el.value;}const enabled=document.getElementById('venabled');if(enabled)voiceEditor.enabled=enabled.checked;for(const [id,key] of [['ved-trial','trialOpen'],['ved-info','infoOpen']]){const el=document.getElementById(id);if(el)voiceEditor[key]=el.open;}}
+function voiceDirty(){if(page!=='voicedetail'||!voiceEditor)return false;captureVoiceDraft();const v=voice();return !!voiceEditor.candidate||voiceEditor.name!==v.name||voiceEditor.description!==(v.description||'')||voiceEditor.enabled!==!!v.enabled;}
+function askVoiceLeave(next){voiceLeaveNext=next;uxDialog={voiceLeave:true,title:'保存音色修改？',html:'<p>离开前，可以保存或放弃本次修改。</p>',confirmLabel:'放弃修改',confirm:async()=>{voiceEditor=null;voiceLeaveNext=null;next();}};render();}
+async function saveVoiceEditor(next){
+ captureVoiceDraft();const d=voiceDraft();if(d.working)return;
+ if(!d.name.trim()||!d.description.trim()){d.error='请填写音色名称和声音描述。';render();return;}
+ const description=Vocast.cleanVoiceDescription(d.description.trim());
+ if(d.candidate&&description!==d.candidateDescription){d.error='描述已修改，请重新生成方案，或放弃新方案后保存资料。';render();return;}
+ const v=voice(),old={...v},replacing=!!d.candidate;d.working=true;d.error='';d.status='正在保存…';render();
+ try{
+  Object.assign(v,d.candidate?{...d.candidate,id:v.id,lastTrial:null,tested:false}:{},{id:old.id,name:d.name.trim(),description,enabled:d.enabled});
+  await engine.saveVoice(v);voiceEditor=null;voiceLeaveNext=null;uxDialog=null;toast(replacing?'已替换音色，角色绑定保持不变':'音色资料已保存');if(next)next();else go('voices',true);
+ }catch(err){for(const key of Object.keys(v))delete v[key];Object.assign(v,old);d.error='保存失败：'+cleanErr(err);d.status='';}
+ finally{d.working=false;render();}
+}
+function vedAudio(label,note,action,disabled){
+ return '<div class="ved-audio od-row"><div class="od-field od-fill"><strong>'+E(label)+'</strong>'+(note?'<small>'+E(note)+'</small>':'')+'</div><button class="vc-btn secondary od-fixed" data-act="'+action+'" '+(disabled?'disabled':'')+'>'+I('play')+' 试听</button></div>';
+}
+function voiceEditorHtml(){
+ captureVoiceDraft();const v=voice(),d=voiceDraft(),stale=d.candidate&&Vocast.cleanVoiceDescription(d.description.trim())!==d.candidateDescription,trial=d.trial&&d.trial.text===d.text?d.trial:null;
+ return top('编辑音色')+
+ '<section class="ved-intro"><small>当前音色</small><div class="ved-name-row"><h1>'+E(v.name)+'</h1><button class="vc-btn secondary" data-act="vedsample" '+(d.working?'disabled':'')+' aria-label="试听当前音色">'+I('play')+' 试听</button></div><small class="ved-demo">试听当前参考样本；生成试音或重新设计会调用 MiMo。</small></section>'+
+ '<section class="ved-edit"><label class="ved-match"><span><strong>自动推荐给角色</strong><small>根据声音描述推荐；关闭后仍可手动选择。</small></span><input type="checkbox" id="venabled" '+(d.enabled?'checked':'')+' '+(d.working?'disabled':'')+'></label><h3>编辑与重新设计</h3><fieldset class="ved-fields" '+(d.working?'disabled':'')+'>'+field('音色名称','vname',d.name)+area('声音描述','vdescription',d.description)+
+ '<p class="ved-help">描述想要的性别、年龄感、音质和口音，再生成新的声线方案。</p><button class="vc-btn secondary full" data-act="vedredesign">'+I('refresh-cw')+' '+(d.candidate?'重新生成方案':'根据描述重新设计')+'</button>'+
+ (d.candidate?'<section class="ved-candidate od-stack" aria-label="新音色方案"><h3>新方案 · 尚未保存</h3>'+(stale?'<p class="ved-error">描述已变化，请重新生成。</p>':'')+vedAudio('原音色','','vedcompareold',d.working)+vedAudio('新音色','','vedcomparenew',d.working)+'</section>':'')+
+ '</fieldset>'+
+ '<p class="ved-feedback" role="status" aria-live="polite">'+E(d.status)+'</p>'+(d.working?'<progress class="ved-progress" aria-label="正在处理"></progress>':'')+(d.error?'<p class="ved-error" role="alert">'+E(d.error)+'</p>':'')+
+ (d.candidate?'<div class="ved-choice-actions"><button class="vc-btn secondary" data-act="veddiscard" '+(d.working?'disabled':'')+'>保留原音色</button><button class="vc-btn primary" data-act="vedsave" '+(d.working||stale?'disabled':'')+'>使用新音色</button></div>':'<button class="vc-btn primary full" data-act="vedsave" '+(d.working?'disabled':'')+'>'+(d.working?'处理中…':'保存资料')+'</button>')+'</section>'+
+ '<details id="ved-trial" class="ved-disclosure" '+(d.trialOpen?'open':'')+'><summary>用一段文字试试</summary><p class="ved-help">使用当前已保存的音色朗读。新方案请在上方对比试听。</p><fieldset class="ved-fields" '+(d.working?'disabled':'')+'>'+area('试听文本','trialText',d.text)+
+ '<div class="ved-audio od-row"><div class="od-field od-fill"><strong>'+(trial?'试音已生成':'生成一段试音')+'</strong><small>'+(trial?'可重播或重新生成':'填写文本后生成并播放')+'</small></div><button class="vc-btn secondary od-fixed" data-act="'+(trial?'vedreplay':'vedtrial')+'">'+I('play')+' '+(trial?'重播':'生成试音')+'</button></div>'+(trial?'<button class="vc-link ved-regenerate" data-act="vedtrial">重新生成试音</button>':'')+'</fieldset></details>'+
+ '<details id="ved-info" class="ved-disclosure" '+(d.infoOpen?'open':'')+'><summary>音色资料</summary><dl class="ved-metadata"><div><dt>来源</dt><dd>'+(v.source==='import'?'用户导入':'AI 设计')+'</dd></div><div><dt>音频格式</dt><dd>'+E((v.format||'wav').toUpperCase())+'</dd></div><div><dt>音色编号</dt><dd>'+E(v.id)+'</dd></div><div><dt>试音状态</dt><dd>'+(v.tested?'已试音':'未试音')+'</dd></div>'+(v.previewText?'<div><dt>参考样本文本</dt><dd>'+E(v.previewText)+'</dd></div>':'')+'</dl></details>'+
+ '<section class="ved-delete"><button class="vc-link" data-act="deletevoice:'+E(v.id)+'">删除此音色</button><p>已完成的音频保留，绑定的角色需重新选择音色。</p></section>';
+}
+document.addEventListener('input',()=>{if(page==='voicedetail')captureVoiceDraft();});
+document.addEventListener('change',()=>{if(page==='voicedetail')captureVoiceDraft();});
+document.addEventListener('toggle',event=>{if(page==='voicedetail'&&['ved-trial','ved-info'].includes(event.target.id))captureVoiceDraft();},true);
+function compactVoiceRow(v,preset=false){return `<div class="vc-preset-row" ${preset?'':`data-act="voice:${E(v.id)}" role="button" tabindex="0" aria-label="编辑音色：${E(v.name)}"`}><div class="vc-preset-title">${I('volume-2')}<span class="od-fill">${E(v.name)}</span></div><button class="vc-preset-btn" data-act="${preset?'preset:'+E(v.name):'trialvoice:'+E(v.id)}" aria-label="试听音色：${E(v.name)}">${I('play')} 试听</button></div>`;}
+function voiceCards(choosing=false){
+ const voices=filteredVoices(choosing),bound=choosing?book().characters.find(r=>r.name===roleName)?.voice:null;
+ if(!choosing)return voices.length?voices.map(v=>compactVoiceRow(v)).join(''):'<div class="empty"><p>还没有自己的音色，可导入音频或设计新音色。</p></div>';
+ return voices.length?voices.map(v=>{const preset=v.source==='preset';return `<section class="vc-panel vc-voice-card ${choosing?'':'vc-card-clickable'}" ${choosing?'':'data-act="voice:'+v.id+'" aria-label="管理音色'+E(v.name)+'"'}><div class="vc-row"><div class="vc-avatar">${I(preset?'volume-2':v.source==='import'?'mic':'sparkles')}</div><div class="vc-grow"><h3 class="voice-name">${E(v.name)}</h3><small>${v.id===bound?'当前绑定 · ':''}${preset?'MiMo 预设':(v.source==='import'?'导入':'设计')+' · '+E((v.format||'wav').toUpperCase())+' · #'+E(v.id.slice(-6))}</small></div>${B('试听',preset?'preset:'+v.name:'play:'+v.sample,true)}</div><p class="vc-sub">${E(v.description)}</p><div class="vc-row">${choosing?B(v.id===bound?'已选用':'选用','bind:'+v.id,true,v.id===bound):L('管理音色','voice:'+v.id)}${!choosing?L('删除','deletevoice:'+v.id):''}</div></section>`;}).join(''):(choosing?'<div class="empty"><p>没有符合条件的音色</p>'+B('清空筛选','clearvoicefilters',true)+'</div>':'<div class="empty"><p>还没有自己的音色，可导入音频或设计新音色。</p></div>');
+}
+let voiceBatch=false,voiceBatchIds=[];
+function voiceLibraryHtml(state){
+ const mine=voiceTab==='mine',ids=state.voices.map(v=>v.id);
+ voiceBatchIds=voiceBatchIds.filter(id=>ids.includes(id));
+ const editing=mine&&voiceBatch;
+ const tabs='<div class="vc-tabs">'+B('我的音色 · '+ids.length,'voicetab:mine',true)+B('MiMo 预设','voicetab:preset',true)+'</div>';
+ let h=title('声音档案','音色库',mine?B(editing?'完成':'编辑','voicebatchedit',true,!ids.length):'')+tabs;
+ if(!mine)return h+Vocast.PRESETS.map(name=>compactVoiceRow({name},true)).join('');
+ if(!editing)return h+'<div class="vc-split">'+B('导入音频','importvoices')+B('设计新音色','newdesign',true)+'</div>'+voiceCards();
+ h+='<div class="voice-batch-tools od-row"><span class="od-fill" role="status">已选 '+voiceBatchIds.length+' 项</span>'+B(voiceBatchIds.length===ids.length?'取消全选':'全选','voicebatchall',true)+'</div><p class="ved-help">点击音色选择，再点击可取消。</p>';
+ h+=state.voices.map(v=>'<button class="vc-preset-row voice-batch-row" data-act="voicebatchtoggle:'+E(v.id)+'" aria-pressed="'+voiceBatchIds.includes(v.id)+'"><span class="voice-batch-check">'+I(voiceBatchIds.includes(v.id)?'circle-check':'circle')+'</span><span class="od-fill">'+E(v.name)+'</span></button>').join('');
+ return h+'<div class="voice-batch-footer">'+B('删除所选（'+voiceBatchIds.length+'）','voicebatchdelete',false,!voiceBatchIds.length)+'</div>';
+}
+const voiceLabel=id=>id?.startsWith('preset:')?id.slice(7):(engine.state.voices.find(v=>v.id===id)?.name||'该音色');
+const voiceTabBtn=(label,act,active,marked=false)=>`<button class="${active?'active':''}" aria-pressed="${active}" data-act="${act}">${E(label)}${marked?'<span class="voice-tab-mark" aria-hidden="true"></span>':''}</button>`;
+function chooseVoiceRow(id,name,selected){
+ const trial=id.startsWith('preset:')?'preset:'+E(id.slice(7)):'trialvoice:'+E(id);
+ return `<div class="vc-preset-row voice-choose-row" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${selected?'正在使用音色：':'改用音色：'}${E(name)}" data-act="choosevoice:${E(id)}"><div class="vc-preset-title">${I(selected?'circle-check':'volume-2')}<span class="od-fill">${E(name)}</span>${selected?'<span class="voice-choose-tag">使用中</span>':''}</div><button class="vc-preset-btn" data-act="${trial}" aria-label="试听音色：${E(name)}">${I('play')} 试听</button></div>`;
+}
+function chooseVoiceHtml(state){
+ const role=book().characters.find(r=>r.name===roleName),bound=role?.voice||null;
+ const sel=bound;
+ const mine=chooseTab==='mine',ids=state.voices.map(v=>v.id);
+ const inMine=!!bound&&!bound.startsWith('preset:');
+ const tabs='<div class="vc-tabs">'+voiceTabBtn('我的音色 · '+ids.length,'choosetab:mine',mine,inMine)+voiceTabBtn('MiMo 预设','choosetab:preset',!mine,!!bound&&!inMine)+'</div>';
+ const rows=mine?(ids.length?ids.map(id=>chooseVoiceRow(id,state.voices.find(v=>v.id===id).name,sel===id)).join(''):'<div class="empty"><p>还没有自己的音色。</p><small>可先在音色库导入音频或设计新音色。</small></div>'):Vocast.PRESETS.map(name=>chooseVoiceRow('preset:'+name,name,sel==='preset:'+name)).join('');
+ return top('为'+roleName+'选音色')+tabs+'<div class="voice-choose-list">'+rows+'</div><p class="voice-choose-note">点击任意音色即可改用。已有音频保留，后续合成使用新音色。</p>';
+}
+function previewToolbar(){return preview?`<div class="vc-preview-strip" role="region" aria-label="样本试听"><span>${E(preview.title)}</span><span data-preview-time>00:00</span>${B('暂停','previewpause',true)}${B('结束试听','previewstop',true)}</div>`:'';}
+function enhancePage(h,state){
+ if(page==='voices')h=voiceLibraryHtml(state);
+ if(page==='voicedetail')h=voiceEditorHtml();
+ if(page==='choose')h=chooseVoiceHtml(state);
+ if(page==='recovery'){const c=chapter();h=top('恢复本章')+`<div class="vc-panel"><h3>${E(c.title)}</h3><p>${errorMarkup(recoveryError||'本章数据暂时无法读取')}</p><p>其他章节、角色和已生成音频会保留。重新选择原文件后，仅替换本章文本。</p>${(!/^CHAPTER_/.test(recoveryError?.code||'')?B('重新读取本章','reloadchapter'):'')}${B('从原文件恢复本章','restorefromfile',true)}${c.audio?B('先听已生成音频','listenexisting',true):''}${B('返回目录','go:detail',true)}</div>`;}
+ if(page==='chapteredit'){const c=chapter();h=top('章节信息')+field('章节标题','chapterTitle',c.title)+B('保存标题','savechaptertitle')+'<hr>'+B('从文件追加章节','appendchapter',true)+B('删除这一章','deletechapter:'+c.id,true);}
+ if(page==='storage'){
+  if(!storageStats&&!storageLoadPending&&!storageError)queueMicrotask(()=>refreshStorage());
+  if(!storageStats){h=h.replace(/0\.0 MB/g,'正在读取…').replace(/\d+ 个音频文件/g,'正在读取文件数量…');h=top('存储与有声书管理')+`<div class="vc-panel" role="status" aria-busy="${storageLoadPending}">${storageError?errorMarkup(storageError):'正在读取设备真实存储数据…'}${storageError?B('重新读取','refreshstorage',true):''}</div>`+h.substring(h.indexOf('<div class="vc-panel">'));}
+  if(storageStats)h+='<p class="vc-sub">统计口径：章节数按目录中的成品计算；文件数包括成品、句子、原始返回和音色样本。</p>';
+ }
+ if(page==='llm'||page==='mimo'){const result=page==='llm'?connectionResult:ttsConnectionResult;h+='<p class="vc-config-status" role="status">'+(configDirty?'有未保存的修改':(page==='llm'?configured.llmConfigured:configured.ttsConfigured)?'已保存密钥；留空会保留':'尚未保存密钥')+'</p>';if(result)h+=`<div class="vc-panel" role="status"><strong>${result.ok?'测试成功':'测试失败'}</strong><p>${result.base?E(result.model+' · '+result.protocol)+'<br>'+E(result.base):'MiMo TTS'}</p>${result.error?errorMarkup(result.error):''}<small>${new Date(result.at).toLocaleString()}</small></div>`;}
+ if(page==='tasks'&&confirmationResult)h+=`<div class="vc-panel"><h3>自动确认结果</h3><p>${confirmationResult.resumed} 个任务已继续；${confirmationResult.blocked.length} 个任务仍需处理。</p>${confirmationResult.blocked.map(x=>`<p>${E(x.reason)} ${L('处理此任务','task:'+x.taskId)}</p>`).join('')}</div>`;
+ if(page==='splitpreview'&&importDraft?.probeCandidate){const c=importDraft.probeCandidate;h+=`<div class="vc-panel"><h3>新识别方案</h3><p>${E(c.template)} · ${c.result.chapters.length} 章；原方案 ${importDraft.result?.chapters.length||0} 章。</p>${B('采用新方案','acceptprobe',true)}${B('保留原方案','discardprobe',true)}</div>`;}
+ if(page==='design'&&designJob){h+=`<div class="vc-panel" role="status"><h3>${E(designJob.status)}</h3><p>${designJob.error?errorMarkup(designJob.error):'可以离开此页，任务会继续。返回后草稿仍在。'}</p>${designJob.running?B('取消接收本次结果','canceldesign',true):''}</div>`;}
+ else if(designJob?.running)h='<div class="vc-job-banner" role="status">音色设计进行中 '+L('查看','viewdesignjob')+'</div>'+h;
+ if(preview&&!segmentPanel)h=previewToolbar()+h;
+ if(['tasks','task','detail','listen'].includes(page)){const waiting=state.tasks.filter(t=>t.networkWaiting&&t.status==='waiting'&&!t.pauseRequested);if(waiting.length)h=`<aside class="production-wait od-stack" role="status"><strong>${waiting.length} 个任务等待制作网络</strong><p>${E(engine.productionNetworkMessage())}。已完成进度保留。</p><div class="od-cluster"><button class="vc-btn secondary" data-act="productionnetworksettings">网络设置</button><button class="vc-btn secondary" data-act="resume:${E(waiting[0].id)}">继续本章</button></div></aside>`+h;}
+ return h;
+}
+function enhanceRendered(){
+ document.body.classList.toggle('vc-catalog-open',page==='detail');
+ const main=$('.vc-main');if(main){main.dataset.page=page;main.dataset.theme=engine.state.settings.readerTheme||'system';main.style.setProperty('--reader-font',(Number(engine.state.settings.readerFontSize)||16)+'px');main.style.setProperty('--reader-leading',Number(engine.state.settings.readerLineHeight)||1.6);}
+ document.querySelectorAll('button').forEach(button=>{if(!button.getAttribute('aria-label')){const text=button.textContent.trim(),title=button.getAttribute('title'),act=button.dataset.act||'';button.setAttribute('aria-label',title||text||({importbook:'导入小说',importvoices:'导入音色',playchapter:'播放',miniplaypause:'播放或暂停'}[act])||'打开操作');}});
+ document.querySelectorAll('[data-act].vc-card-clickable,[data-act].vc-transcript-line').forEach(el=>{el.tabIndex=0;el.setAttribute('role','button');});
+
+ if(page==='design'&&designJob&&designJob.bookId===bookId&&designJob.roleName===roleName){if(!candidate){const desc=$('#designDescription'),text=$('#designText');if(desc&&!desc.value)desc.value=designJob.description;if(text&&!text.value)text.value=designJob.text;}const button=$('[data-act="designsample"]');if(button)button.disabled=!!designJob.running;}
+ updateSleep(miniPlayingState||{});if(speedModalOpen)syncSpeedUI(engine.state.playbackSpeed||1);if(preview)updatePreview(miniPlayingState||{});
+}
+async function startPreview(id,title){playbackPrompts?.cancel();waitingForNextChapterId=null;if(preview?.id===id){await device.call('playback',{op:miniPlayingState?.playing?'pause':'resume'});return;}const previous=[preview,playingId,playingBookId,playingChapterId,streamState];streamState=null;preview={id,title};playingId=id;playingBookId=null;playingChapterId=null;try{await device.call('play',{id,title,bookTitle:'样本试听',hasPrev:false,hasNext:false});}catch(error){[preview,playingId,playingBookId,playingChapterId,streamState]=previous;render();throw error;}miniPlayingState=await device.call('playbackState');render();}
+function updatePreview(p){if(!preview)return;document.querySelectorAll('[data-preview-time]').forEach(el=>el.textContent=fmt((p.id===preview.id?p.position||0:0)/1000)+' / '+fmt((p.duration||0)/1000));document.querySelectorAll('[data-act="previewpause"]').forEach(el=>{el.textContent=p.id===preview.id&&p.playing?'暂停':'继续';el.setAttribute('aria-label',el.textContent+'样本试听');});}
+function sleepStatus(){const plan=engine?.state.sleepChapterPlan;return plan?.remaining>0?(plan.remaining===1?'本章后停止':plan.remaining+'章后停止'):sleepRemainingMs>0?fmt(sleepRemainingMs/1000):'';}
+function updateSleep(p){if(Number.isFinite(Number(p?.sleepRemainingMs)))sleepRemainingMs=Math.max(0,Number(p.sleepRemainingMs));const label=sleepStatus();document.querySelectorAll('[data-sleep-status]').forEach(el=>el.textContent=label);document.querySelectorAll('[data-act="sleepmenu"]').forEach(el=>{el.classList.toggle('active',!!label);el.setAttribute('aria-label',label?'定时：'+label:'睡眠定时');});const toggle=$('[data-act="togglesleep"]');if(toggle){toggle.setAttribute('aria-checked',String(!!label));const heading=toggle.closest('.vc-dialog')?.querySelector('h3');if(heading)heading.textContent=label?'定时已开启':'定时关闭';}document.querySelectorAll('[data-sleep-choice]').forEach(el=>{const chosen=!!label&&el.dataset.sleepChoice===String(engine?.state.settings.sleepTimer);el.classList.toggle('active',chosen);el.setAttribute('aria-pressed',String(chosen));});}
+async function setSleep(choice){
+ const match=String(choice).match(/^chapters?:([123])$/),count=choice==='chapter'?1:match?Number(match[1]):0,minutes=count?0:Number(choice);
+ if(!count&&(!Number.isFinite(minutes)||minutes<0||minutes>720)){toast('请输入 1–720 分钟');return;}
+ if(miniPlayingState?.id)await restorePlayingChapter();
+ const targetBook=playingBookId||bookId;if(count&&!targetBook){toast('请先选择要收听的书籍');return;}
+ await device.call('playback',{op:'sleep',value:minutes});
+ engine.state.sleepChapterPlan=count?{bookId:targetBook,remaining:count,lastChapterId:null}:null;
+ const value=count?'chapters:'+count:minutes;engine.state.settings.sleepTimer=value;if(count||minutes>0)engine.state.settings.lastSleepChoice=value;
+ sleepRemainingMs=minutes*60000;miniPlayingState={...(miniPlayingState||{}),sleepRemainingMs};await engine.persist();render();updateSleep({sleepRemainingMs});
+}
+function syncSpeedUI(speed,previewOnly=false){
+ const value=Math.max(.5,Math.min(3,Number(speed)||1)),ratio=(value-.5)/2.5,label=String(Number(value.toFixed(2)))+'x';
+ if(!previewOnly){const button=$('#speedBtnVal');if(button)button.textContent=label;const range=$('#speedRange');if(range)range.value=value;}
+ for(const id of ['speedVal','speedBubble']){const el=$('#'+id);if(el)el.textContent=label;}
+ const rail=$('.vc-speed-slider');if(rail){rail.style.setProperty('--speed-percent',(ratio*100)+'%');rail.style.setProperty('--speed-position','calc('+(ratio*100)+'% + '+(24-48*ratio)+'px)');}
+ const range=$('#speedRange');if(range)range.setAttribute('aria-valuetext',label+' 倍速');
+ document.querySelectorAll('.vc-speed-ticks [data-act]').forEach(el=>{const active=Math.abs(Number(el.dataset.act.split(':')[1])-value)<.01;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});
+}
+
+function startDesignJob(){if(designJob?.running)return;const description=value('designDescription').trim(),text=value('designText');if(!description){toast('请填写完整声音描述');return;}const job={token:Date.now()+Math.random(),bookId,roleName,description,text,running:true,status:'正在请求 MiMo 生成试听样本'};designJob=job;render();engine.design(description,text).then(async result=>{if(designJob!==job||job.cancelled)return;job.running=false;job.status='样本已完成，等待确认';job.result=result;if(job.roleName){const b=engine.state.books.find(b=>b.id===job.bookId),r=b?.characters.find(r=>r.name===job.roleName);if(r){r.candidate=result;await engine.persist();}}if(page==='design'&&bookId===job.bookId&&roleName===job.roleName){candidate=result;designDirty=value('designDescription').trim()!==job.description||value('designText')!==job.text;}render();}).catch(e=>{if(designJob!==job||job.cancelled)return;job.running=false;job.status='设计失败，可保留草稿重试';job.error=cleanErr(e);render();});}
+const dangerousActions=new Set(['deletevoice','clearchapters','resetchapters','cleargc','clearalllistened','clearexpired','keeponlycurrent','clearallaudio','clearbooklistened','clearbookaudio','archivebook']);
+async function confirmDestructive(a,x,el,e){
+ if(a==='keeponlycurrent'&&!playingBookId){toast('当前没有正在收听的书籍，请先打开并播放一本书');return;}
+ resetModalFlags();uxDialog={title:'确认操作范围',html:'<p role="status">正在计算影响范围…</p>',loading:true};render();
+ let targets=[],extra='',title='释放音频';
+ if(a==='deletevoice'){title='删除音色';const v=engine.state.voices.find(v=>v.id===(x||voiceId));if(!v)throw Error('音色不存在');const bindings=engine.state.books.flatMap(b=>b.characters.filter(r=>r.voice===v.id).map(r=>'《'+b.name+'》的 '+r.name));extra=`<p>音色：${E(v.name)}</p><p>${bindings.length?'影响 '+bindings.length+' 个绑定：'+E(bindings.join('；')):'没有角色绑定此音色。'}</p><p>角色将变为未分配。已完成音频保留，新制作前需重新绑定。</p>`;}
+ else{
+  for(const b of engine.state.books)for(const c of b.chapters){let include=false;if(a==='clearchapters'||a==='resetchapters')include=b.id===bookId&&selected.includes(c.id);else if(a==='clearalllistened'||a==='clearbooklistened')include=c.listened&&(a==='clearalllistened'||b.id===x);else if(a==='clearexpired')include=!!c.audio&&!c.listened&&(c.generated||c.created||b.created||0)<Date.now()-7*86400000;else if(a==='keeponlycurrent')include=b.id!==playingBookId;else if(a==='clearbookaudio'||a==='archivebook')include=b.id===x;else if(a==='clearallaudio')include=true;if(include)targets.push({bookId:b.id,chapterId:c.id});}
+  const impact=await engine.audioImpact(targets);if(!uxDialog)return;
+  if(a==='resetchapters'){title='重置标注与配音';extra='<p>将清除这些章节的角色标注、音频和任务记录。原文保留，需要重新标注与合成。</p>';}
+  else extra='<p>原文与标注保留。重新生成音频会再次调用服务。</p>';
+  if(a==='cleargc'){title='清理未引用音频';for(const b of engine.state.books)for(const c of b.chapters)if(c.unloaded&&c.segmentCount)await engine.ensureChapter(b.id,c.id);const stats=await device.call('audioStats'),keep=new Set(engine.collectReferencedAudio()),files=Object.entries(stats.fileSizes||{}).filter(([id])=>!keep.has(id));extra=`<p>将释放 ${files.length} 个未引用文件，共 ${(files.reduce((n,[id,bytes])=>n+bytes,0)/1048576).toFixed(2)} MB。</p><p>当前书籍、音色、候选样本和可撤销章节所引用的文件保留。</p>`;}
+  else extra=`<p>${impact.books} 本书 · ${impact.chapters} 个章节，其中 ${impact.audioChapters} 章有音频。</p><p>${impact.files} 个音频文件 · ${(impact.bytes/1048576).toFixed(2)} MB</p>`+extra;
+  if(a==='keeponlycurrent')extra='<p>保留《'+E(engine.book(playingBookId).name)+'》。</p>'+extra;
+ }
+ if(!uxDialog)return;uxDialog={title,html:extra,confirmLabel:a==='resetchapters'?'确认重置':a==='deletevoice'?'确认删除':'确认释放',confirm:async()=>{await handleAction(el,e,true);}};render();
+}
+async function pickImport(mode){const files=await device.call('pick',{kind:'book'});if(!files?.length)return;const draft=VocastImport.createDraft(files[0],engine.state.settings);draft.mode=mode;draft.targetBookId=bookId;draft.targetChapterId=chapterId;if(draft.text.trim())VocastImport.splitDraft(draft,Vocast.splitChapters);if(mode==='restore')draft.restoreCandidates=Vocast.splitChapters(draft.text).chapters;enterImport(draft);}
+async function handleUXAction(a,x,el,e,approved){
+ if(!approved&&dangerousActions.has(a)){await confirmDestructive(a,x,el,e);return true;}
+ if(a==='uxcancel'){uxDialog=null;render();return true;}
+ if(a==='uxconfirm'){const dialog=uxDialog;if(!dialog?.confirm||dialog.loading)return true;dialog.loading=true;render();try{await dialog.confirm();}finally{if(uxDialog===dialog)uxDialog=null;render();}return true;}
+ if(a==='continuereading'){const progress=book().readProgress;chapterId=book().chapters.some(c=>c.id===progress?.chapterId)?progress.chapterId:book().chapters[0].id;try{await engine.ensureChapter(bookId,chapterId);}catch(e){recoveryError=e;page='recovery';render();return true;}page=progress?.mode==='annotated'?'annotated':'raw';render();requestAnimationFrame(()=>window.scrollTo(0,progress?.scroll||0));return true;}
+ 
+ if(a==='editchapter'){uxDialog=null;go('chapteredit');return true;}
+ if(a==='savechaptertitle'){const name=value('chapterTitle').trim();if(!name)throw Error('章节标题不能为空');const c=await engine.ensureChapter(bookId,chapterId);c.title=name;engine.touch(c);await engine.persist();toast('标题已保存');catalogRequestId=chapterId;go('detail');return true;}
+ if(a==='deletechapter'){const c=chapter();resetModalFlags();uxDialog={title:'删除本章？',html:'<p>'+E(c.title)+'</p><p>将从目录移除此章。其他章节保留；24 小时内可在书籍详情撤销，期间音频仍保留。</p>',confirmLabel:'删除本章',confirm:async()=>{await engine.deleteChapter(bookId,chapterId);selected=selected.filter(id=>id!==chapterId);chapterId=book().chapters[0].id;go('detail');}};render();return true;}
+ if(a==='undochapter'){await engine.undoChapter();render();toast('章节已恢复');return true;}
+ if(a==='appendchapter'||a==='restorefromfile'){resetModalFlags();render();await pickImport(a==='appendchapter'?'append':'restore');return true;}
+ if(a==='confirmsplit'&&importDraft?.mode){const d=importDraft;if(!VocastImport.canImport(d))return true;if(d.mode==='append'){const added=await engine.appendChapters(d.targetBookId,d.result);bookId=d.targetBookId;chapterId=added[0].id;catalogRequestId=added[0].id;leaveImport();go('detail');toast('已追加 '+added.length+' 章');}
+  else{bookId=d.targetBookId;chapterId=d.targetChapterId;const original=chapter(),index=book().chapters.indexOf(original),match=d.result.chapters.find(c=>c.title===original.title);const choices=d.result.chapters;uxDialog={title:'确认恢复本章',html:'<p>目标：'+E(original.title)+'</p><label class="vc-field">选择原文件中的对应章节<select id="restoreChapterChoice">'+choices.map((c,i)=>'<option value="'+i+'" '+(c===match||!match&&i===index?'selected':'')+'>'+E(c.title)+' · '+c.text.length+' 字</option>').join('')+'</select></label><p>仅恢复这一章的原文，其他章节与音频保留。</p>',confirm:async()=>{const source=choices[Number(value('restoreChapterChoice'))||0];await engine.restoreChapter(bookId,chapterId,source);importDraft=null;page='detail';render();toast('本章已恢复');}};render();}return true;}
+ if(a==='reloadchapter'){try{await engine.ensureChapter(bookId,chapterId);go('raw');}catch(e){recoveryError=e;render();}return true;}
+ if(a==='listenexisting'){page='listen';render();const c=chapter();await device.call('play',{id:c.audio,title:c.title,bookTitle:book().name,duration:Math.round((c.duration||0)*1000)});playingBookId=bookId;playingChapterId=chapterId;return true;}
+ if(a==='recovertask'){const t=engine.state.tasks.find(t=>t.id===x);bookId=t.bookId;chapterId=t.chapterId;recoveryError={message:t.message,code:t.error?.code};go('recovery');return true;}
+ if(a==='encoding'){const d=importDraft;if(!d?.token)return true;const result=await device.call('decodeBook',{token:d.token,encoding:x});Object.assign(d,result);VocastImport.splitDraft(d,Vocast.splitChapters);render();return true;}
+ if(a==='acceptprobe'){const d=importDraft,c=d.probeCandidate;if(c){d.ruleId='custom';d.customPattern=c.template;d.result=c.result;d.probeCandidate=null;delete dropdownSel.splitRule;render();}return true;}
+ if(a==='discardprobe'){importDraft.probeCandidate=null;render();return true;}
+ if(a==='clearvoicefilters'){voiceSearch='';voiceGender=voiceAge=voiceSource='all';render();return true;}
+ if(a==='retryfailed'){const ids=engine.state.tasks.filter(t=>t.status==='failed').map(t=>t.id);taskTab='active';go('tasks');engine.resumeTasks(ids).catch(e=>toast(cleanErr(e)));return true;}
+ if(a==='previewpause'){await device.call('playback',{op:miniPlayingState?.playing?'pause':'resume'});updatePreview(await device.call('playbackState'));return true;}
+ if(a==='previewstop'){await device.call('playback',{op:'stop'});preview=null;playingId=null;render();return true;}
+ if(a==='seekback'||a==='seekforward'){const p=await device.call('playbackState');await device.call('playback',{op:'seek',value:Math.max(0,(p.position||0)+(a==='seekback'?-15000:15000))});syncDisplayedPlayback(await device.call('playbackState'));return true;}
+ if(a==='sleepmenu'){const playback=await device.call('playbackState');miniPlayingState=playback;updateSleep(playback);resetModalFlags();sleepModalOpen=true;render();return true;}
+ if(a==='closesleep'){sleepModalOpen=false;sleepCustomOpen=false;render();return true;}
+ if(a==='togglesleep'){await setSleep(sleepStatus()?0:(engine.state.settings.lastSleepChoice||30));return true;}
+ if(a==='sleepcustom'){sleepCustomOpen=!sleepCustomOpen;render();if(sleepCustomOpen)$('#sleepMinutes')?.focus();return true;}
+ if(a==='setsleepcustom'){const minutes=Number(value('sleepMinutes'));if(!Number.isInteger(minutes)||minutes<1||minutes>720){toast('请输入 1–720 的整数分钟数');return true;}await setSleep(minutes);return true;}
+ if(a==='setsleep'){await setSleep(x);return true;}
+
+ if(a==='readersettings'){resetModalFlags();uxDialog={title:'阅读设置',html:readerSettingsHtml()};render();return true;}
+ if(a==='readerfont'||a==='readerline'||a==='readertheme'){const key={readerfont:'readerFontSize',readerline:'readerLineHeight',readertheme:'readerTheme'}[a];engine.state.settings[key]=a==='readertheme'?x:Number(x);if(uxDialog?.title==='阅读设置')uxDialog.html=readerSettingsHtml();await engine.persist();render();return true;}
+ if(a==='canceldesign'){designJob.cancelled=true;designJob.running=false;designJob.status='已取消接收结果；已发出的服务请求可能仍计费';render();return true;}
+ if(a==='viewdesignjob'){if(designJob){bookId=designJob.bookId;roleName=designJob.roleName;candidate=designJob.result||null;go('design');}return true;}
+ if(a==='nextchapter'||a==='prevchapter'){await window.onNativePlaybackAction(a==='nextchapter'?'next':'prev');return true;}
+ if(a==='streamsegment'){const c=chapter(),s=c.segments.find(s=>s.id===Number(x)),prefix=streamPrefix(c),index=prefix.indexOf(s);if(index<0){toast(s?.audio?'前面的句子尚未完成，暂不能连续播放到这里':'这一句尚未合成，请稍候');return true;}await playStreamSeg(bookId,chapterId,index);return true;}
+ if(a==='toggleskip'){const c=chapter(),s=c.segments.find(s=>s.id===Number(x));if(!s)throw Error('片段不存在');const skipping=!(s.skip||s.isAd);if(s.audio&&s.audio!=='skip')s.originalAudio=s.originalAudio||s.audio;s.skip=skipping;s.isAd=false;if(s.speaker==='广告'&&!skipping){s.speaker='旁白';s.confidence=1;}s.audio=skipping?'skip':null;if(c.audio)c.originalAudio=c.originalAudio||c.audio;c.audioStale=!!c.audio;c.status='annotated';engine.touch(c);await engine.persist();toast(skipping?'已跳过这段':'已取消跳过，可重新制作');render();return true;}
+ return false;
+}
+document.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)&&e.target.matches('[role="button"][data-act]:not(button)')){e.preventDefault();e.target.click();}});
+document.addEventListener('input',e=>{
+ const id=e.target.id;if(['llmBase','llmModel','llmKey','ttsKey'].includes(id)){configDirty=true;const status=$('.vc-config-status');if(status)status.textContent='有未保存的修改';}
+ if(id==='voiceSearch'){voiceSearch=e.target.value;clearTimeout(handleUXAction.searchTimer);handleUXAction.searchTimer=setTimeout(()=>render(),300);}
+ if(id==='biName'){document.querySelectorAll('#bookInfoDialog .vc-cover-mini b').forEach(el=>el.textContent=e.target.value||'书名');}
+ if(id==='biAuthor'){document.querySelectorAll('#bookInfoDialog .vc-cover-mini small').forEach(el=>el.textContent=e.target.value||'有声书');}
+});
+document.addEventListener('change',e=>{const id=e.target.id;if(['voiceGender','voiceAge','voiceSource'].includes(id)){if(id==='voiceGender')voiceGender=e.target.value;if(id==='voiceAge')voiceAge=e.target.value;if(id==='voiceSource')voiceSource=e.target.value;render();}});
+window.addEventListener('scroll',()=>{if(['raw','annotated'].includes(page)){clearTimeout(rememberReading.timer);rememberReading.timer=setTimeout(rememberReading,500);}});
+
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
 const B=(text,act,secondary=false,disabled=false)=>`<button class="vc-btn ${secondary?'secondary':''}" data-act="${E(act)}" ${disabled?'disabled':''}>${text}</button>`,L=(text,act)=>`<button class="vc-link" data-act="${E(act)}">${text}</button>`,T=(text,w=false)=>{const extraCls=w==='listened'?'vc-status-badge listened':w==='cleared'?'vc-status-badge cleared':'';const cls=w==='warn'||w===true?'warn':w==='running'?'running':'';return `<span class="vc-tag ${cls} ${extraCls}">${E(text)}</span>`;};
+function shelfHeader(state){
+ const count=state.books.length,selectedCount=shelfSelected.filter(id=>state.books.some(b=>b.id===id)).length,allSelected=count>0&&selectedCount===count;
+ return `<header class="vc-shelf-header${shelfMulti?' is-editing':''}"><div class="vc-shelf-titlebar"><div class="od-field vc-shelf-heading"><div class="vc-kicker">VOCAST · 让故事有声</div><h1>${shelfMulti?'管理书架':'我的书架'}</h1></div><div class="vc-shelf-actions od-row">${shelfMulti?`<button type="button" class="vc-shelf-control vc-shelf-done" data-act="shelfmulti">完成</button>`:`<button type="button" class="vc-shelf-control" data-act="shelfmulti" aria-label="编辑书架" ${count?'':'disabled'}>${I('list-checks')}<span>编辑</span></button><button type="button" class="vc-shelf-import od-touch" data-act="importbook" aria-label="导入小说">${I('plus')}</button>`}</div></div>${shelfMulti?`<div class="vc-shelf-selection od-row"><p class="od-fill" role="status" aria-live="polite">已选 <strong>${selectedCount}</strong> 本<span class="vc-shelf-total"> / 共 ${count} 本</span></p><button type="button" class="vc-shelf-selectall" data-act="${allSelected?'shelfselectnone':'shelfselectall'}" ${count?'':'disabled'}>${allSelected?'取消全选':'全选'}</button><button type="button" class="vc-shelf-delete-top" data-act="shelfdeletebooks" ${selectedCount?'':'disabled'} aria-label="删除所选的 ${selectedCount} 本书">删除所选</button></div>`:''}</header>`;
+}
 const title=(k,t,right='')=>`<div class="vc-top"><div><div class="vc-kicker">${k}</div><h1>${t}</h1></div>${right}</div>`;
-const top=t=>`<div class="vc-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><h2 class="vc-marquee"><span>${E(t)}</span></h2><span style="width:44px"></span></div>`;
+const top=t=>`<div class="vc-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><h2 class="vc-marquee"><span>${E(t)}</span></h2>${page==='raw'?`<button class="vc-icon vc-reader-settings-entry" data-act="readersettings" aria-label="阅读设置">${I('sliders-horizontal')}</button>`:page==='annotated'?`<button class="vc-next-issue-entry" data-act="nextissue">${I('scan-line')}<span>定位下一异常</span></button>`:page==='detail'?`<button class="vc-info-entry" data-act="editbookinfo" aria-label="编辑书籍信息">${I('square-pen')}<span>编辑信息</span></button>`:'<span class="od-spacer" style="display:block;width:44px"></span>'}</div>`;
 // 阅读三页（原文/标注/听书）slim 头：sticky 置顶，向上滑展开（返回+书名/章名），向下滑收起只留细条
-const slimTop=(bname,ctitle)=>`<div class="vc-top vc-slim-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><div class="vc-slim-titles"><h2 class="vc-marquee"><span>${E(bname)}</span></h2><small class="vc-marquee"><span>${E(ctitle)}</span></small></div><span style="width:44px"></span></div>`;
+const slimTop=(bname,ctitle)=>`<div class="vc-top vc-slim-top"><button class="vc-icon" data-act="back" aria-label="返回">${I('arrow-left')}</button><div class="vc-slim-titles"><h2 class="vc-marquee"><span>${E(bname)}</span></h2><small class="vc-marquee"><span>${E(ctitle)}</span></small></div>${page==='raw'?`<button class="vc-icon vc-reader-settings-entry" data-act="readersettings" aria-label="阅读设置">${I('sliders-horizontal')}</button>`:page==='annotated'?`<button class="vc-next-issue-entry" data-act="nextissue">${I('scan-line')}<span>定位下一异常</span></button>`:'<span class="od-spacer" style="display:block;width:44px"></span>'}</div>`;
 const menu=(icon,text,sub,act)=>`<button class="vc-menu" data-act="${act}">${I(icon)}<span>${text}<br><small>${sub}</small></span>${I('chevron-right')}</button>`;
 const field=(label,id,value,type='text')=>`<label class="vc-field">${label}<input id="${id}" type="${type}" value="${E(value)}" ${type==='password'?'autocomplete="off" placeholder="留空保留已保存密钥"':''}></label>`;
 const area=(label,id,value)=>`<label class="vc-field">${label}<textarea class="vc-form" id="${id}">${E(value)}</textarea></label>`;
-const cover=(name,cls='')=>`<div class="vc-cover ${cls}"><small>VOCAST / AUDIOBOOK</small><b>${E(name.slice(0,12))}</b><small>让故事有声</small></div>`;
+const COVER_STYLES=[{name:'松墨',color:'#284f3d'},{name:'黛青',color:'#2c4b5a'},{name:'绛朱',color:'#7a3b34'},{name:'陶土',color:'#96552a'},{name:'墨紫',color:'#4a3a56'},{name:'岩灰',color:'#5d615a'}];
+const coverEl=(b,cls='')=>{const color=/^#[a-f0-9]{6}$/i.test(b?.coverColor||'')?b.coverColor:null;return `<div class="vc-cover ${cls}" ${color?`style="background:${color}"`:''}><small>VOCAST</small><b>${E(b?.name||'')}</b><small>${E(b?.author||'有声书')}</small></div>`;};
+const cover=(name,cls='')=>coverEl(engine?.state.books.find(b=>b.name===name),cls);
 const dd=(id,label,options,current)=>{const cur=dropdownSel[id]!==undefined?dropdownSel[id]:current;dropdownSel[id]=cur;const txt=((options.find(o=>String(o[0])===String(cur)))||[null,cur])[1];return `<div class="vc-field"><span class="vc-field-label">${label}</span><button class="vc-dropdown" aria-label="${E(label)}" aria-haspopup="dialog" aria-expanded="${openDropdown===id}" data-act="dropdown:${id}"><span>${E(txt)}</span>${I('chevron-down')}</button></div>`;};
-const book=()=>engine.book(bookId),chapter=()=>engine.chapter(bookId,chapterId),voice=()=>engine.state.voices.find(v=>v.id===voiceId);
+const book=()=>engine.book(bookId),chapter=()=>engine.chapter(bookId,chapterId),voice=()=>engine.state.voices.find(v=>v.id===voiceId),bookInfoTarget=()=>engine?.state?.books?.find(b=>b.id===bookId)||null;
 const voiceName=id=>id?.startsWith('preset:')?'MiMo · '+id.slice(7):engine.state.voices.find(v=>v.id===id)?.name||'尚未分配';
 const textLen=c=>c.unloaded?(c.textLength||0):(typeof c.text==='string'?c.text.length:(c.textLength||0));
 const segCount=c=>c.unloaded?(c.segmentCount||0):(Array.isArray(c.segments)?c.segments.length:(c.segmentCount||0));
 const pendingConfirm=()=>{if(!engine)return 0;return engine.state.tasks.filter(t=>t.status==='waiting'||t.status==='failed').length;};
-const cleanErr=s=>String(s||'').replace(/\/data\/[^:\s]*/g,'[应用数据文件]').replace(/[\w.-]+\.json:\s*open failed:\s*/gi,'').replace(/open failed:\s*ENOENT\s*(\([^)]*\))?/gi,'文件缺失').replace(/ENOENT\s*(\([^)]*\))?/gi,'文件缺失').trim();
-const isMissingData=s=>/文本缺失|数据文件缺失|文件缺失|索引损坏|索引不匹配|重新导入|ENOENT|open failed|\/data\//i.test(String(s||''));
+const cleanErrRaw=s=>String(s||'').replace(/\/data\/[^:\s]*/g,'[应用数据文件]').replace(/[\w.-]+\.json:\s*open failed:\s*/gi,'').replace(/open failed:\s*ENOENT\s*(\([^)]*\))?/gi,'文件缺失').replace(/ENOENT\s*(\([^)]*\))?/gi,'文件缺失').trim();
+const cleanErr=s=>VocastUX.friendlyError(s);
+const isMissingData=s=>VocastUX.isStorageError(s);
 const fmt=seconds=>Math.floor(seconds/60).toString().padStart(2,'0')+':'+Math.floor(seconds%60).toString().padStart(2,'0');
 const status=t=>({queued:'排队中',running:'制作中',paused:'已暂停',waiting:'待确认',failed:'失败',done:'已完成',cancelled:'已取消'}[t]||t);
 function toast(message){const t=$('#toast');if(!t)return;clearTimeout(toast.timer);clearTimeout(hideToast._t);t.classList.remove('vc-toast-hide');t.textContent=message;toast.timer=setTimeout(()=>hideToast(),5000);}
 function hideToast(){const t=$('#toast');if(!t||!t.textContent)return;clearTimeout(toast.timer);t.classList.add('vc-toast-hide');clearTimeout(hideToast._t);hideToast._t=setTimeout(()=>{t.textContent='';t.classList.remove('vc-toast-hide');},380);}
 document.addEventListener('click',()=>{try{hideToast();}catch(e){}},true);
-async function busy(fn,label='正在处理…'){if(!$('#busy').hidden)return;$('#busy').hidden=false;$('#busy div').textContent=label;try{return await fn();}catch(e){toast(e.message||String(e));}finally{$('#busy').hidden=true;render();}}
-function go(p){const open=()=>{resetModalFlags();if(p!=='annotated')window.fromTasks=false;const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}// 从听书切到原文/标注：跳到当前播放对应行（同书同章且有进度时）
-if(page==='listen'&&(p==='raw'||p==='annotated')){try{const bp=(typeof miniPlayingState!=='undefined'&&miniPlayingState?.position)||0;const __same=(playingBookId===bookId&&playingChapterId===chapterId)||(typeof miniPlayingState!=='undefined'&&miniPlayingState?.id&&chapter()?.audio===miniPlayingState.id);if(bp>0&&__same)window.__jumpToPos=bp;}catch(e){}}page=p;render();if(window.__jumpToPos==null)window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task'].includes(p)){let __need=false;try{const __c=chapter();__need=!!(__c.unloaded||typeof __c.text!=='string'||!Array.isArray(__c.segments));}catch(e){}if(__need){busy(async()=>{try{await engine.ensureChapter(bookId,chapterId);}catch(e){toast('章节读取失败：'+(e.message||e));throw e;}open();},'读取章节…');}else open();}else open();}
+async function busy(fn,label='正在处理…'){if(!$('#busy').hidden)return;$('#busy').hidden=false;$('#busy div').textContent=label;try{return await fn();}catch(e){toast(cleanErr(e));}finally{$('#busy').hidden=true;render();}}
+function go(p,allowLeave=false){if(p==='policy'||p==='models')p='settings';if(p!==page&&productionLeave(()=>go(p,allowLeave)))return;if(p!==page&&productionPages.includes(page)){productionDraft=null;productionDraftPage=null;}if(!allowLeave&&page==='voicedetail'&&p!==page&&voiceDirty()){askVoiceLeave(()=>go(p,true));return;}if(p!=='choose'&&voiceSource==='preset')voiceSource='all';if(!allowLeave&&configDirty&&['llm','mimo'].includes(page)&&p!==page){askLeave(()=>go(p,true));return;}rememberReading();const open=()=>{resetModalFlags();if(p!=='annotated')window.fromTasks=false;const isTabSwitch=['raw','annotated','listen'].includes(page)&&['raw','annotated','listen'].includes(p);if(!isTabSwitch){history.push({page,bookId,chapterId,voiceId,roleName});}// 从听书切到原文/标注：跳到当前播放对应行（同书同章且有进度时）
+if(page==='listen'&&(p==='raw'||p==='annotated')){try{const bp=(typeof miniPlayingState!=='undefined'&&miniPlayingState?.position)||0;const __same=(playingBookId===bookId&&playingChapterId===chapterId)||(typeof miniPlayingState!=='undefined'&&miniPlayingState?.id&&chapter()?.audio===miniPlayingState.id);if(bp>0&&__same)window.__jumpToPos=bp;}catch(e){}}page=p;render();if(window.__jumpToPos==null)window.scrollTo(0,0);};if(['raw','annotated','listen','editseg','task'].includes(p)){let __need=false;try{const __c=chapter();__need=!!(__c.unloaded||typeof __c.text!=='string'||!Array.isArray(__c.segments)||p==='annotated'&&(!__c.segments.length||__c.analysisDraft&&__c.analysisDraft.version!==2));}catch(e){}if(__need){busy(async()=>{try{if(p==='annotated')await engine.prepareAnnotations(bookId,chapterId);else await engine.ensureChapter(bookId,chapterId);}catch(e){toast('章节读取失败：'+(e.message||e));recoveryError=e;page='recovery';render();return;}open();},'读取章节…');}else open();}else open();}
 function getChapterTarget(c){if(!c)return 'raw';if(c.audio){return 'listen';}const hasAnnotation=c.unloaded?((c.segmentCount||0)>0):(c.segments&&c.segments.length>0);if(hasAnnotation||c.status==='annotated'||c.status==='waiting'){return 'annotated';}return 'raw';}
-window.appBack=()=>{if(closeActiveModal())return;if(page==='annotated'&&window.fromTasks){window.fromTasks=false;page='tasks';render();window.scrollTo(0,0);return;}if(['raw','annotated','listen','editseg'].includes(page)){while(history.length&&['raw','annotated','listen','editseg'].includes(history[history.length-1].page)){history.pop();}if(history.length&&history[history.length-1].page==='detail'&&history[history.length-1].bookId===bookId){const previous=history.pop();({page,bookId,chapterId,voiceId,roleName}=previous);}else{page='detail';}render();window.scrollTo(0,0);return;}const previous=history.pop();if(previous){({page,bookId,chapterId,voiceId,roleName}=previous);}else page='shelf';render();window.scrollTo(0,0);};
+function leaveImport(){
+  importDraft=null;delete dropdownSel.splitRule;resetModalFlags();
+  history=history.filter(entry=>entry.page!=='splitpreview');page='shelf';render();window.scrollTo(0,0);
+}
+function enterImport(draft){
+  importDraft=draft;delete dropdownSel.splitRule;resetModalFlags();
+  page='splitpreview';render();window.scrollTo(0,0);
+}
+function markImportRuleDirty(){
+  if(!importDraft||page!=='splitpreview')return;
+  importDraft.ruleDirty=true;importDraft.error='';
+  importDraft.manualOpen=true;
+  const confirm=$('[data-act="confirmsplit"]');if(confirm)confirm.disabled=true;
+  const result=$('.vc-import-results');if(result)result.hidden=true;
+  const message=$('#import-rule-status');if(message)message.textContent='规则已修改，请应用规则并预览。';
+}
+async function probeImport(){
+  const draft=importDraft;if(!draft||draft.probing||draft.importing||!draft.text.trim())return;
+  draft.probing=true;draft.error='';render();
+  try{
+    const head=VocastUX.probeWindows(draft.text);
+    const response=await engine.llm(Vocast.SPLIT_PROBE_PROMPT+'\n'+head);
+    if(importDraft!==draft)return;
+    const template=String(response.template||'').trim();
+    if(!template.includes('*'))throw Error('LLM 没有返回可用的标题模板。请重新识别，或手动选择规则。');
+    const result=VocastUX.validateProbe(draft.text,template);draft.probeCandidate={template,result};draft.error='';
+    if(!draft.result){draft.ruleId='custom';draft.customPattern=template;draft.result=result;dropdownSel.splitRule='custom';draft.probeCandidate=null;}
+    draft.probeNote='已用全文验证模板：'+template+'，共 '+result.report.count+' 个标题。';
+  }catch(error){if(importDraft===draft)draft.error=cleanErr(error);}
+  finally{if(importDraft===draft){draft.probing=false;render();}}
+}
+window.appBack=()=>{if(productionDialogClose){productionDialogClose('cancel');return;}if(productionLeave(()=>window.appBack()))return;if(productionPages.includes(page)){productionDraft=null;productionDraftPage=null;}if(closeActiveModal())return;if(page==='voicedetail'&&voiceDirty()){askVoiceLeave(()=>{voiceEditor=null;appBack();});return;}if(configDirty&&['llm','mimo'].includes(page)){askLeave(()=>{configDirty=false;appBack();});return;}if(page==='editseg'){page='annotated';history=history.filter(h=>h.page!=='editseg');render();restoreEditorPosition();return;}rememberReading();if(page==='splitpreview'){if(!importDraft?.importing)leaveImport();return;}if(['annotated','raw'].includes(page)&&window.fromTasks){window.fromTasks=false;page='tasks';render();window.scrollTo(0,0);return;}if(['raw','annotated','listen','editseg'].includes(page)){while(history.length&&['raw','annotated','listen','editseg'].includes(history[history.length-1].page)){history.pop();}if(history.length&&history[history.length-1].page==='detail'&&history[history.length-1].bookId===bookId){const previous=history.pop();({page,bookId,chapterId,voiceId,roleName}=previous);}else{page='detail';}render();window.scrollTo(0,0);return;}const previous=history.pop();if(previous){({page,bookId,chapterId,voiceId,roleName}=previous);}else page='shelf';render();window.scrollTo(0,0);};
 let lastProdStatus = null;
 let waitingForNextChapterId = null;
 window.checkAutoProduceUpcoming = checkAutoProduceUpcoming;
@@ -54,8 +453,8 @@ async function syncProductionStatus(){
     const running = activeTasks.find(t => t.status === "running") || activeTasks[0];
     const b = engine.state.books.find(x => x.id === running.bookId);
     const c = b?.chapters.find(x => x.id === running.chapterId);
-    const totalSegs = c?.segments?.length || 0;
-    const doneSegs = c?.segments?.filter(s => s.audio).length || 0;
+    const totalSegs = c?.unloaded?(running.total||c.segmentCount||0):(c?.segments?.length||running.total||0);
+    const doneSegs = c?.unloaded?(running.done||0):(c?.segments?.filter(s => s.audio&&s.audio!=='skip').length||running.done||0);
     const queuedCount = activeTasks.length - 1;
     const title = b ? "后台制作中 · " + b.name : "Vocast 正在后台制作";
     const queueText = queuedCount > 0 ? " (后排队 " + queuedCount + " 章)" : "";
@@ -72,14 +471,64 @@ async function syncProductionStatus(){
     }
   }
 }
-window.appBackground = () => { if(engine){ engine.persist().catch(()=>{}); syncProductionStatus().catch(()=>{}); } };
+window.appBackground = () => { if(engine){ rememberReading();engine.persist().catch(()=>{}); syncProductionStatus().catch(()=>{}); } };
 function nav(){const pend=pendingConfirm();const active=['shelf','detail','splitpreview','roles','choose','make','editseg'].includes(page)?'shelf':['voices','voiceimport','voicedetail','design'].includes(page)?'voices':['tasks','task'].includes(page)?'tasks':'settings';return `<nav class="vc-nav" aria-label="主导航">${[['shelf','library','书架'],['voices','audio-lines','音色'],['tasks','list-checks','制作'],['settings','user-round','我的']].map(([p,i,t])=>`<button class="${active===p?'active':''}" ${active===p?'aria-current="true"':''} data-act="go:${p}">${I(i)}${t}${p==='tasks'&&pend>0?`<span class="vc-nav-badge">${pend>99?'99+':pend}</span>`:''}</button>`).join('')}</nav>`;}
 function modebar(){return `<nav class="vc-nav vc-modebar" aria-label="阅读模式">${[['raw','原文'],['annotated','标注'],['listen','听书']].map(([p,n])=>`<button class="${page===p?'active':''}" data-act="go:${p}">${n}</button>`).join('')}</nav>`;}
 function fitMarquee(){try{document.querySelectorAll('.vc-marquee').forEach(el=>{const over=el.scrollWidth>el.clientWidth+4;el.classList.toggle('scroll',over);if(over)el.style.setProperty('--mq',(-(el.scrollWidth-el.clientWidth))+'px');});}catch(e){}}
 let footerObserver=null,lastRenderedContext='',modalSession=null;
-const hasModal=()=>!!(episodeModalOpen||deleteConfirmBookId||deleteConfirmShelf||batchModalBookId||openDropdown||speedModalOpen||listenSettingsOpen||unmadeChoiceChapterId);
-function resetModalFlags(){episodeModalOpen=false;deleteConfirmBookId=null;deleteConfirmShelf=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;listenSettingsOpen=false;unmadeChoiceChapterId=null;}
-function closeActiveModal(){if(!hasModal())return false;resetModalFlags();render();return true;}
+let renderedModalMarkup='',renderedModalContext='';
+let renderedContentMarkup='',renderedContentContext='';
+function updateScreen(markup,context){
+  const active=document.activeElement;
+  const importFocus=context===renderedModalContext&&active?.id&&active.matches('input,textarea,select')
+    ?{id:active.id,start:active.selectionStart,end:active.selectionEnd}:null;
+  const template=document.createElement('template');template.innerHTML=markup;
+  const overlays=Array.from(template.content.querySelectorAll('.vc-modal-overlay'));
+  const modalMarkup=overlays.map(el=>el.outerHTML).join('');
+  for(const overlay of overlays)overlay.remove();
+  let content=$('#screen-content'),modals=$('#modal-root');
+  if(!content||!modals){
+    content=document.createElement('div');content.id='screen-content';
+    modals=document.createElement('div');modals.id='modal-root';
+    $('#screen').replaceChildren(content,modals);
+  }
+  const contentMarkup=template.innerHTML;
+  if(contentMarkup!==renderedContentMarkup||context!==renderedContentContext){
+    const sameContext=context===renderedContentContext;
+    if(!sameContext){document.getElementById('app').style.setProperty('--reader-header-offset','0px');__slimContext='';__slimOffset=0;__slimLastY=0;}
+    const scrollY=window.scrollY;
+    const collapsed=sameContext&&content.querySelector('.vc-slim-top')?.classList.contains('vc-collapsed');
+    if(collapsed)template.content.querySelector('.vc-slim-top')?.classList.add('vc-collapsed');
+    content.replaceChildren(template.content);
+    renderedContentMarkup=contentMarkup;renderedContentContext=context;
+    if(sameContext)window.scrollTo({top:scrollY,behavior:'instant'});
+  }
+  if(importFocus){const input=document.getElementById(importFocus.id);if(input){input.focus({preventScroll:true});if(typeof input.setSelectionRange==='function'&&importFocus.start!=null)try{input.setSelectionRange(importFocus.start,importFocus.end);}catch(e){}}}
+  // Keep open dialogs attached: replacing them restarts entrance animations and
+  // loses focus/scroll on every background synthesis checkpoint.
+  if(modalMarkup!==renderedModalMarkup||context!==renderedModalContext){
+    modals.replaceChildren(...overlays);
+    renderedModalMarkup=modalMarkup;renderedModalContext=context;
+  }
+}
+const listenChapterLoads=new Set();
+function loadListenTranscript(){
+  if(page!=='listen'||!bookId||!chapterId)return;
+  const c=chapter();
+  if(!c.unloaded&&typeof c.text==='string'&&Array.isArray(c.segments))return;
+  const bid=bookId,cid=chapterId,key=bid+':'+cid;
+  if(listenChapterLoads.has(key))return;
+  listenChapterLoads.add(key);
+  // 读取正文不会触发 onChange；所有听书入口都要在分句加载后刷新。
+  engine.ensureChapter(bid,cid).then(()=>{
+    if(page==='listen'&&bookId===bid&&chapterId===cid)render();
+  }).catch(e=>{
+    if(page==='listen'&&bookId===bid&&chapterId===cid)toast('章节读取失败：'+(e.message||e));
+  }).finally(()=>listenChapterLoads.delete(key));
+}
+const hasModal=()=>!!(segmentPanel||uxDialog||playerCatalogOpen||episodeModalOpen||deleteConfirmBookId||deleteConfirmShelf||batchModalBookId||openDropdown||speedModalOpen||sleepModalOpen||listenSettingsOpen||bookInfoOpen||unmadeChoiceChapterId);
+function resetModalFlags(){segmentPanel=null;playerCatalogOpen=false;uxDialog=null;episodeModalOpen=false;deleteConfirmBookId=null;deleteConfirmShelf=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;sleepModalOpen=false;sleepCustomOpen=false;listenSettingsOpen=false;bookInfoOpen=false;unmadeChoiceChapterId=null;}
+function closeActiveModal(){if(productionDialogClose){productionDialogClose('cancel');return true;}if(!hasModal())return false;resetModalFlags();render();return true;}
 function syncFooterLayout(){
   if(footerObserver)footerObserver.disconnect();
   const root=$('#app'),entries=[['.vc-nav','--vc-nav-height'],['.vc-dock','--vc-dock-height'],['.vc-mini-player','--vc-mini-height']];
@@ -87,9 +536,11 @@ function syncFooterLayout(){
   update();
   if(window.ResizeObserver){footerObserver=new ResizeObserver(update);for(const [selector] of entries){const el=$(selector);if(el)footerObserver.observe(el);}}
 }
-window.addEventListener('resize',()=>{syncFooterLayout();});
+let lastViewportWidth=innerWidth,lastViewportHeight=innerHeight;
+window.addEventListener('resize',()=>{const keyboardClosed=Math.abs(innerWidth-lastViewportWidth)<2&&innerHeight-lastViewportHeight>100;lastViewportWidth=innerWidth;lastViewportHeight=innerHeight;if(keyboardClosed&&document.activeElement?.matches('input,textarea,select'))document.activeElement.blur();syncFooterLayout();});
 function syncModalUI(){
   const overlay=$('.vc-modal-overlay');
+  $('#screen-content').inert=!!overlay;
   if(!overlay){
     if(modalSession){
       document.body.style.overflow=modalSession.bodyOverflow;document.documentElement.style.overflow=modalSession.rootOverflow;
@@ -100,11 +551,10 @@ function syncModalUI(){
     return;
   }
   const dialog=overlay.querySelector('.vc-dialog,.vc-modal-content');if(!dialog)return;
-  const isNew=!modalSession;
-  if(isNew){modalSession={returnAct:modalOpener,bodyOverflow:document.body.style.overflow,rootOverflow:document.documentElement.style.overflow};}
+  const isNew=!dialog.hasAttribute('role');
+  if(!modalSession){modalSession={returnAct:modalOpener,bodyOverflow:document.body.style.overflow,rootOverflow:document.documentElement.style.overflow};}
   document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';
-  // Modal markup may be nested in main (chapter picker); inert only its siblings.
-  for(const child of $('#screen').children){if(child===overlay)continue;if(child.contains(overlay)){for(const sibling of child.children)if(!sibling.contains(overlay)&&sibling!==overlay)sibling.inert=true;}else child.inert=true;}
+  // All overlays, including the chapter picker, live beside the inert content.
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.tabIndex=-1;
   const heading=dialog.querySelector('h3');if(heading){heading.id='vc-dialog-title';dialog.setAttribute('aria-labelledby',heading.id);}
   if(!dialog.querySelector('[data-act="'+overlay.dataset.act+'"]')){
@@ -118,11 +568,30 @@ $('#screen').addEventListener('click',e=>{const trigger=e.target.closest('[data-
 document.addEventListener('keydown',e=>{
   const dialog=$('.vc-modal-overlay .vc-dialog,.vc-modal-overlay .vc-modal-content');if(!dialog)return;
   if(e.key==='Escape'){e.preventDefault();closeActiveModal();return;}
-  if(e.key==='Tab'){const items=Array.from(dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]')).filter(el=>el.getClientRects().length);if(!items.length){e.preventDefault();dialog.focus();return;}const first=items[0],last=items[items.length-1];if(e.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement)||document.activeElement===dialog)){e.preventDefault();last.focus();}else if(!e.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement)||document.activeElement===dialog)){e.preventDefault();first.focus();}}
+  if(e.key==='Tab'){const items=Array.from(dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"],summary,select:not(:disabled)')).filter(el=>el.getClientRects().length);if(!items.length){e.preventDefault();dialog.focus();return;}const first=items[0],last=items[items.length-1];if(e.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement)||document.activeElement===dialog)){e.preventDefault();last.focus();}else if(!e.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement)||document.activeElement===dialog)){e.preventDefault();first.focus();}}
 });
-function render(){if(!engine)return;const context=[page,bookId,chapterId,voiceId,roleName].join('|');const keepForm=lastRenderedContext===context&&(modalSession||hasModal());const formDraft=keepForm?Array.from(document.querySelectorAll('#screen input[id]:not([type=range]):not([type=hidden]), #screen textarea[id]')).map(el=>({id:el.id,value:el.value,checked:el.checked})):[];lastRenderedContext=context;const state=engine.state;const autoMode=state.settings?.mode==='auto';let h='';
+function segmentAdvancedKey(b,c,s){return JSON.stringify([b.id,c.id,String(s.id)]);}
+function segmentAdvancedOptions(b,c,s){
+ const role=b.characters.find(r=>r.name===s.speaker),key=segmentAdvancedKey(b,c,s),prompt=segmentPromptDrafts.has(key)?segmentPromptDrafts.get(key):engine.speechDirection(role?.voice,s.emotion,role?.description,s.ttsPrompt);
+ const busy=engine.segmentBusy(b.id,c.id,s.id),skipped=s.skip||s.isAd||s.audio==='skip',previous=s.lastSpeechRequest;
+ const note=Vocast.isPunctOnly(s.text)?'此句仅含标点，将生成停顿，不向 TTS 发送请求。':s.audio&&s.audio!=='skip'&&!previous?'旧音频未记录提示词，以下按当前音色生成。修改后点击重做本句生效。':'提示词将原样发送给 TTS，朗读原文保持不变。';
+ return `<details class="vc-segment-advanced" data-advanced-seg="${E(String(s.id))}" ${segmentAdvancedOpen.has(segmentAdvancedKey(b,c,s))?'open':''}><summary>合成提示词与历史</summary><p class="vc-sub">${note}</p><label class="vc-field" for="ttsPrompt-${s.id}">合成提示词<textarea id="ttsPrompt-${s.id}" data-tts-prompt="true" rows="6" spellcheck="false" ${busy?'readonly':''}>${E(prompt)}</textarea></label><div class="vc-advanced-actions"><button class="vc-link" data-act="resetsegprompt:${s.id}" ${busy?'disabled':''}>恢复默认提示词</button></div><p class="vc-sub">${skipped?'此句已跳过，取消跳过后可合成。':!role?.voice?'请先为此句角色选择音色。':'重做会产生合成费用；失败保留原音频。'}</p>${previous?`<details class="vc-last-prompt"><summary>上次合成请求</summary><small>提示词</small><pre>${E(previous.prompt)}</pre><small>朗读原文</small><pre>${E(previous.text)}</pre></details>`:''}</details>`;
+}
+function segmentQualityControls(b,c,s,showControls=true){
+ if(s.skip||s.isAd||s.audio==='skip')return '';
+ const busy=engine.segmentBusy(b.id,c.id,s.id),draft=s.retryDraft||s.speechDraft;
+ const issues=s.qualityIssues||draft?.qualityIssues||[];
+ const pending=s.qualityStatus==='pending'&&!s.audio;
+ const contentRejected=pending&&Vocast.isContentRejected(s.failReason);
+ const controls=showControls&&(pending||s.audio||s.retryError||busy)?'<div class="vc-issue-actions"><button class="vc-btn secondary" data-act="regenerateseg:'+s.id+'" '+(busy?'disabled':'')+'>'+(busy?'正在合成此句…':'重新合成此句')+'</button><small>会产生合成费用</small></div>':'';
+ return (issues.length?'<p class="vc-sub">本地检查提示：'+E(issues.join('、'))+'；请试听判断。</p>':'')+
+  (contentRejected?'':pending?'<p class="vc-sub">已自动重试 '+Number(s.qualityAttempts??draft?.qualityAttempts??0)+' / 1 次</p>':'')+
+  (s.retryError?'<p class="vc-sub">重新合成失败：'+E(s.retryError)+'</p>':'')+controls;
+}
+function render(){if(!engine)return;const panelScroll=document.getElementById('segment-panel-scroll');if(panelScroll&&segmentPanel)segmentPanel.scroll=panelScroll.scrollTop;const context=page==='detail'?['detail',bookId].join('|'):[page,bookId,chapterId,voiceId,roleName].join('|');const keepForm=lastRenderedContext===context;const catalogAnchor=keepForm&&page==='detail'?captureCatalogAnchor():null;const enteringCatalog=page==='detail'&&!keepForm;const formDraft=keepForm?Array.from(document.querySelectorAll('#screen input[id]:not([type=range]):not([type=hidden]), #screen textarea[id]')).map(el=>({id:el.id,value:el.value,preserveValue:!el.hasAttribute('data-tts-prompt')||el.value!==el.defaultValue,checked:el.checked,focused:el===document.activeElement,start:el.selectionStart,end:el.selectionEnd})):[];lastRenderedContext=context;const state=engine.state;if(bookId){const b=state.books.find(b=>b.id===bookId);selected=b?selected.filter(id=>b.chapters.some(c=>c.id===id)):[];}const autoMode=state.settings?.mode==='auto';let h='';
+if(page==='design'&&designJob?.result&&designJob.bookId===bookId&&designJob.roleName===roleName&&!candidate)candidate=designJob.result;
 switch(page){
-case 'shelf':{let resumeBanner='';if(engine?.state?.lastPlayback){const lp=engine.state.lastPlayback;const rb=engine.state.books.find(b=>b.id===lp.bookId);const rc=rb?.chapters.find(c=>c.id===lp.chapterId&&c.audio);if(rb&&rc){resumeBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次听至 · ${E(rb.name)}</small><strong>${E(rc.title)}</strong></div><button class="vc-btn primary" data-act="resumebook:${rb.id}:${rc.id}">${I('play')} 继续收听</button></div>`;}}h=title('VOCAST · 让故事有声','我的书架',(shelfMulti?L('完成','shelfmulti')+L('全选','shelfselectall')+L('清空','shelfselectnone'):L('编辑','shelfmulti'))+B(I('plus'),'importbook',true))+(!configured.llmConfigured||!configured.ttsConfigured?`<div class="vc-note">开始制作前，先配置语言模型与 MiMo TTS。${L('配置模型 →','go:models')}</div>`:'')+resumeBanner+(state.books.length?`<div class="vc-covers">${state.books.map(b=>shelfMulti?`<div class="vc-book vc-book-sel"><input type="checkbox" data-shelfcheck="${b.id}" ${shelfSelected.includes(b.id)?'checked':''} aria-label="选择${E(b.name)}"><button data-act="book:${b.id}">${cover(b.name)}<h3>${E(b.name)}</h3><small>${b.chapters.length} 章 · ${b.chapters.filter(c=>c.audio).length} 章可听</small></button></div>`:`<button class="vc-book" data-act="book:${b.id}">${cover(b.name)}<h3>${E(b.name)}</h3><small>${b.chapters.length} 章 · ${b.chapters.filter(c=>c.audio).length} 章可听</small></button>`).join('')}</div>${shelfMulti?`<div class="vc-split vc-bottom">${B('删除所选整书（'+shelfSelected.length+'）','shelfdeletebooks',false,!shelfSelected.length)}</div>`:''}`:`<div class="empty">${I('book-open')}<h3>你的第一本有声书</h3><p class="vc-sub">导入 TXT / EPUB，或先体验示例小说。</p>${B('导入小说','importbook')}<p>${L('添加示例文本','samplebook')}</p></div>`);break;}
+case 'shelf':{let resumeBanner='';if(engine?.state?.lastPlayback){const lp=engine.state.lastPlayback;const rb=engine.state.books.find(b=>b.id===lp.bookId);const rc=rb?.chapters.find(c=>c.id===lp.chapterId&&c.audio);if(rb&&rc){resumeBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次听至 · ${E(rb.name)}</small><strong>${E(rc.title)}</strong></div><button class="vc-btn primary" data-act="resumebook:${rb.id}:${rc.id}">${I('play')} 继续收听</button></div>`;}}h=shelfHeader(state)+(!configured.llmConfigured||!configured.ttsConfigured?`<div class="vc-note">开始制作前，先配置语言模型与 MiMo TTS。${L('配置模型 →','go:models')}</div>`:'')+resumeBanner+(state.books.length?`<div class="vc-covers">${state.books.map(b=>shelfMulti?`<button class="vc-book vc-book-select ${shelfSelected.includes(b.id)?'is-selected':''}" data-act="book:${b.id}" aria-pressed="${shelfSelected.includes(b.id)}" aria-label="选择${E(b.name)}">${cover(b.name)}<span class="vc-book-check" aria-hidden="true">${shelfSelected.includes(b.id)?I('check'):''}</span><h3>${E(b.name)}</h3><small>${b.chapters.length} 章 · ${b.chapters.filter(c=>c.audio).length} 章可听</small></button>`:`<button class="vc-book" data-act="book:${b.id}">${cover(b.name)}<h3>${E(b.name)}</h3><small>${b.chapters.length} 章 · ${b.chapters.filter(c=>c.audio).length} 章可听</small></button>`).join('')}</div>`:`<div class="empty">${I('book-open')}<h3>你的第一本有声书</h3><p class="vc-sub">导入 TXT / EPUB，或先体验示例小说。</p>${B('导入小说','importbook')}<p>${L('添加示例文本','samplebook')}</p></div>`);break;}
 case 'detail':{
   const b=book();
   if(!b){go('shelf');break;}
@@ -136,45 +605,18 @@ case 'detail':{
     }).catch(()=>{});
   }
   const totalChapters=b.chapters.length;
-  const totalPages=Math.ceil(totalChapters/50)||1;
-  if(chapterPage>=totalPages)chapterPage=0;
-  const pageStart=chapterPage*50;
-  const pageEnd=Math.min(pageStart+50,totalChapters);
-  const currentChapters=b.chapters.slice(pageStart,pageEnd);
+  const visibleChapters=b.chapters;const totalPages=Math.ceil(visibleChapters.length/50)||1;
+  prepareCatalog(b,visibleChapters,enteringCatalog);
+  const currentChapters=catalogWindow.visible;
   const pendingRoles=b.characters.filter(r=>r.name!=='旁白'&&r.name!=='广告'&&!r.voice).length;
 
   const headingHtml = multi ? `
-    <div class="vc-batch-header">
-      <div class="vc-batch-left">
-        <h3>批量选择</h3>
-        ${L('完成','multiselect')}
-      </div>
-      <div class="vc-batch-right">
-        <button class="vc-btn primary vc-top-make-btn" data-act="go:make" ${!selected.length?'disabled':''}>制作所选（${selected.length}）</button>
-        <button class="vc-btn secondary" data-act="clearchapters" ${!selected.length?'disabled':''}>释放所选音频（${selected.length}）</button>
-        <button class="vc-btn danger" data-act="resetchapters" ${!selected.length?'disabled':''}>删除所选（${selected.length}）</button>
-      </div>
-    </div>
-    <div class="vc-batch-toolbar">
-      <div class="vc-batch-tools">
-        ${L('全选本页','selectpage')}
-        ${L('全选整书','selectall')}
-        ${L('全选未完成','selectunfinished')}
-        ${L('清空','selectnone')}
-      </div>
-      ${totalPages>1?`<button class="vc-btn-sub" data-act="openepisodes">选集 ${pageStart+1}-${pageEnd} ▾</button>`:''}
+    <div class="vc-chapter-management od-stack">
+      <div class="vc-chapter-selection od-row"><p class="od-fill" role="status" aria-live="polite">已选 <strong>${selected.length}</strong> / ${totalChapters} 章</p><button type="button" class="vc-btn-sub" data-act="openepisodes" aria-label="选择章节组" aria-haspopup="dialog">选集 ▾</button></div>
+      <div class="vc-chapter-batch-actions"><button class="vc-btn primary" data-act="go:make" ${!selected.length?'disabled':''}>制作音频</button><button class="vc-btn secondary" data-act="clearchapters" ${!selected.length?'disabled':''}>释放音频</button><button class="vc-btn secondary vc-chapter-reset" data-act="resetchapters" ${!selected.length?'disabled':''}>重置标注</button></div>
     </div>
   ` : `
-    <div class="vc-list-heading">
-      <div class="vc-chapter-title-wrap">
-        <h3>章节目录</h3>
-        <small class="vc-sub-count">共 ${totalChapters} 章</small>
-      </div>
-      <div class="vc-heading-actions">
-        ${totalPages>1?`<button class="vc-btn-sub" data-act="openepisodes">选集 ${pageStart+1}-${pageEnd} ▾</button>`:''}
-        ${L('编辑','multiselect')}
-      </div>
-    </div>
+    <div class="vc-list-heading"><div class="vc-chapter-title-wrap"><h3>章节目录</h3><small class="vc-sub-count">共 ${totalChapters} 章</small></div><div class="vc-heading-actions">${totalPages>1?`<button class="vc-btn-sub" data-act="openepisodes">选集 ▾</button>`:''}<button type="button" class="vc-manage-chapters" data-act="multiselect" aria-label="管理章节">${I('list-checks')}<span>管理章节</span></button></div></div>
   `;
 
   const episodeModalHtml = episodeModalOpen ? `
@@ -188,7 +630,7 @@ case 'detail':{
         <div class="vc-episode-grid">
           ${Array.from({length:totalPages},(_,idx)=>{
             const s=idx*50+1;
-            const e=Math.min((idx+1)*50,totalChapters);
+            const e=Math.min((idx+1)*50,visibleChapters.length);
             return `<button class="vc-episode-btn ${idx===chapterPage?'active':''}" data-act="setchpage:${idx}">${s}-${e}</button>`;
           }).join('')}
         </div>
@@ -196,62 +638,39 @@ case 'detail':{
     </div>
   ` : '';
 
-  let resumeChapBanner='';if(b.chapters.some(c=>c.audio)){const lp=engine.state.lastPlayback?.bookId===b.id?engine.state.lastPlayback:null;const rcPtr=lp?b.chapters.find(c=>c.id===lp.chapterId):(b.lastPlayedChapterId?b.chapters.find(c=>c.id===b.lastPlayedChapterId):null);const rc=(rcPtr&&(rcPtr.audio||streamPrefix(rcPtr).length))?rcPtr:(lp?b.chapters.find(c=>c.id===lp.chapterId&&c.audio):b.chapters.find(c=>c.audio&&(c.lastPlayedPosition||0)>0));if(rc){const posSec=Math.round(((rc.id===(lp?.chapterId)?(lp?.position||0):0)||rc.lastPlayedPosition||0)/1000);resumeChapBanner=`<div class="vc-resume-banner"><div class="vc-resume-info"><small>上次收听进度</small><strong>${E(rc.title)} · 已收听 ${posSec}秒</strong></div><button class="vc-btn primary" data-act="resumechapter:${rc.id}">${I('play')} 继续收听</button></div>`;}}
-  h=top('书籍详情')+resumeChapBanner+`
-    <div class="vc-row vc-book-summary">${cover(b.name,'vc-detail-cover')}<div class="vc-book-info" style="flex:1"><h3>${E(b.name)}</h3><p class="vc-sub">${totalChapters} 章${b.splitReport?' · 切章：'+E(({auto:'自动',chapter_cn:'第X章',volume_cn:'第X卷',special_cn:'特殊',chapter_en:'英文',number_dot:'数字点',paren_num:'括号',bare_num:'纯数字',bare_cn_num:'汉字数字',num_chapter:'第N标题',custom:'自定义'})[b.splitRule]||b.splitRule):''}</p>${T(b.chapters.filter(c=>c.audio).length+' 章已有声')}</div></div>
-    <div class="vc-split vc-bottom">${B('继续阅读','read:'+b.chapters[0].id,true)}${(!autoMode&&pendingRoles)?`<button class="vc-btn vc-btn-attn" data-act="go:roles">${I('alert-circle')} 确认角色音色 · ${pendingRoles}待确认</button>`:B('角色与音色','go:roles')}</div>
-    ${headingHtml}
-    ${currentChapters.map((c,i)=>{
-      const globalIndex=pageStart+i+1;
-      const activeTask=engine.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
-      let statusLabel='未制作';
-      let statusKind='normal';
-      if(activeTask){
-        if(activeTask.status==='running'){
-          statusLabel=activeTask.phase||'制作中';
-          statusKind='running';
-        }else if(activeTask.status==='queued'){
-          statusLabel='排队中';
-          statusKind='running';
-        }else if(activeTask.status==='waiting'){
-          statusLabel='待确认';
-          statusKind='warn';
-        }else if(activeTask.status==='failed'){
-          statusLabel='失败';
-          statusKind='warn';
-        }else if(activeTask.status==='paused'){
-          statusLabel='已暂停';
-        }
-      }else if(c.audio){
-        if(c.listened){statusLabel='已完播';statusKind='listened';}
-        else statusLabel='可听';
-      }else if(c.status==='waiting'){
-        statusLabel='待确认';
-        statusKind='warn';
-      }else if(segCount(c)){
-        statusLabel='已标注';
-      }
-      const isWaiting=statusLabel==='待确认';
-      const badge=(c.audioCleared&&!c.audio)?T('已释放','cleared'):'';
-      return `<div class="vc-chapter ${isWaiting?'vc-chapter-waiting':''}">${multi?`<input type="checkbox" data-check="${c.id}" ${selected.includes(c.id)?'checked':''} aria-label="选择${E(c.title)}">`:`<span class="vc-num">${globalIndex}</span>`}<button data-act="${isWaiting?'confirm:'+c.id:'read:'+c.id}">${E(c.title)}<br><small>${textLen(c)} 字</small></button>${badge}${isWaiting?`<button class="vc-tag warn clickable" data-act="confirm:${c.id}">待确认</button>`:T(statusLabel,statusKind)}</div>`;
-    }).join('')}
+  h=(multi?`<header class="vc-chapter-manage-header od-row"><h2 class="od-fill">管理章节</h2><button type="button" class="vc-btn" data-act="multiselect">完成</button></header>`:top('书籍详情'))+`
+    <section class="vc-detail-overview" ${multi?'hidden':''}>
+    <div class="vc-row vc-book-summary">${coverEl(b,'vc-detail-cover')}<div class="vc-book-info" style="flex:1"><h3>${E(b.name)}</h3><p class="vc-sub">${b.author?E(b.author):'佚名'} · ${totalChapters} 章</p>${T(b.chapters.filter(c=>c.audio).length+' 章已有声')}</div></div>
+    <div class="vc-split vc-bottom vc-detail-actions"><button class="vc-btn secondary vc-role-action" data-act="go:roles" aria-label="角色与音色${!autoMode&&pendingRoles?'，'+pendingRoles+'个待确认':''}">角色与音色${!autoMode&&pendingRoles?`<span class="vc-role-count">${pendingRoles>99?'99+':pendingRoles}</span>`:''}</button>${B('继续播放','continuebook')}</div>
+    ${engine.state.chapterUndo?.bookId===b.id?'<div class="vc-detail-tools">'+B('撤销删除章节','undochapter',true)+'</div>':''}
+    </section>
+    <div class="vc-catalog-heading${multi?' is-managing':''}" id="catalog-heading">${headingHtml}</div>
+    <div id="catalog-scroll" class="vc-catalog-scroll od-scroll" role="region" aria-label="章节目录滚动区域" tabindex="0">
+    <div id="chapter-list" class="vc-chapter-list" role="list" aria-label="章节目录">${currentChapters.map(c=>catalogChapterRow(b,c)).join('')}</div>
+    <div id="catalog-tail" aria-hidden="true"></div>
+    </div>
     ${episodeModalHtml}
   `;
   break;
 }
-case 'raw':case 'annotated':case 'listen':{const b=book(),c=chapter();h=slimTop(b.name,c.title);
-if(page==='raw')h+=typeof c.text==='string'?(()=>{let __units=[];try{__units=Vocast.units?Vocast.units(c.text):[{id:0,text:c.text}];}catch(e){__units=[{id:0,text:c.text}];}return `<article class="reader" id="rawArticle">${__units.map(u=>{const __t=String(u.text??'');const __paras=__t.split('\n');return `<p>${__paras.map(__p=>`<span class="vc-raw-seg" data-rawseg="${u.id}">${E(__p)}</span>`).join('<br>')}</p>`;}).join('')}</article>`;})():`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>请删除本书后重新导入。</small></div>`;
+case 'raw':case 'annotated':case 'listen':{const b=book(),c=chapter();h=page==='listen'?slimTop(c.title,b.name):slimTop(b.name,c.title);
+if(c.audioStale)h+='<div class="vc-note">正在听旧版成品；标注已改变，可重新制作。旧版会保留到新音频完成。</div>';if(page==='raw')h+=typeof c.text==='string'?(()=>{let __units=[];try{__units=Vocast.units?Vocast.units(c.text):[{id:0,text:c.text}];}catch(e){__units=[{id:0,text:c.text}];}return `<article class="reader" id="rawArticle">${__units.map(u=>{const __t=String(u.text??'');const __paras=__t.split('\n');return `<p>${__paras.map(__p=>`<span class="vc-raw-seg" data-rawseg="${u.id}">${E(__p)}</span>`).join('<br>')}</p>`;}).join('')}</article>`;})():`<div class="empty"><p>章节文本缺失，无法显示原文。</p><small>可以重读本章，或从原文件恢复本章。</small></div>`;
 if(page==='annotated'){
+  if(c.analysisDraft)h+=`<div class="vc-note">已处理 ${(c.segments||[]).filter(s=>s.annotationStatus!=='pending').length} / ${segCount(c)} 句标注，已完成结果会保留。${B('继续 AI 标注','analyze',true,engine.state.tasks.some(t=>t.bookId===b.id&&t.chapterId===c.id&&t.status==='running'))}</div>`;
   if((c.segments||[]).length){
-    const probCount=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker))).length;
+    const probCount=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.annotationStatus!=='pending'||s.annotationError)&&(s.annotationError||s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker))).length;
     const __actSpk=[...new Set((c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];
     const __probRoles=b.characters.filter(r=>(__actSpk.includes(r.name)||r.candidate)&&!r.voice).length;
     const __task=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
-    if(__task){const __pct=__task.total?Math.min(100,Math.max(0,Math.round((Number(__task.done)||0)/__task.total*100))):0;h+=`<div class="vc-panel vc-task-strip"><div class="vc-row">${T(status(__task.status),['failed','waiting'].includes(__task.status)?'warn':__task.status==='running'?'running':'')}<small>${E(__task.phase||'')}</small><span></span><small>${Number(__task.done)||0} / ${__task.total||'—'} 句 · ${__pct}%</small></div><div class="vc-meter"><span style="width:${__pct}%"></span></div>${__task.message?`<p class="vc-sub">${E(cleanErr(__task.message))}</p>`:''}<div class="vc-issue-actions">${__task.status==='running'?(__task.resumeRequested?T('正在接续'):__task.pauseRequested?B('继续','resume:'+__task.id,true):B('完成当前句后暂停','pause:'+__task.id,true)):['paused','failed'].includes(__task.status)?B('继续 / 重试','resume:'+__task.id,true):__task.status==='waiting'?B('去标注页处理确认','confirm:'+c.id,true):B('开始制作','resume:'+__task.id,true)}${L(I('x')+'取消任务','cancel:'+__task.id)}</div></div>`;}
-    h+=`<div class="vc-annotated-topbar"><div class="vc-annotated-summary"><span>共 ${segCount(c)} 个段落</span>${(!autoMode&&probCount)?`<span class="vc-issue-badge">${I('alert-circle')} ${probCount} 处待确认</span>`:''}</div><div class="vc-annotated-actions">${c.audio?L('听书播放 →','go:listen'):B('制作本章音频','makeone',true)}${c.audio?L('导出本章 WAV','exportcur'):''}${c.audio?L('优化句末停顿','repacecur'):''}${(!autoMode&&__probRoles)?`<button class="vc-btn secondary" data-act="go:roles">${I('users')} 角色音色 · ${__probRoles}待确认</button>`:''}${(!autoMode&&probCount)?`${L('一键全部忽略并继续制作','ignoreall:'+c.id)}`:''}</div></div>`+(c.segments||[]).map(s=>{const isProblem=!autoMode&&!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker));return `<div class="vc-quote ${isProblem?'vc-issue-card uncertain':s.speaker==='旁白'?'':'speaker'}" data-seg="${s.id}"><div class="vc-row">${L(E(s.speaker)+' '+I('pencil'),'editseg:'+s.id)}<small>${E(s.emotion)}</small>${s.audio&&s.audio!=='skip'?'<span class="vc-tag">已合成</span>':s.audio==='skip'?(s.failReason?'<span class="vc-tag warn" title="'+E(s.failReason)+'">跳过·合成失败</span>':'<span class="vc-tag">已跳过</span>'):'<span class="vc-tag" style="opacity:.55">待合成</span>'}${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认说话人</span>`:''}</div><p class="vc-quote-text">${E(s.text)}</p>${isProblem?`<div class="vc-issue-actions">${L(I('pencil')+'修改说话人','editseg:'+s.id)}<button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} 忽略（沿用识别）</button></div>`:''}${s.audio&&s.audio!=='skip'?L(I('play')+'试听此句','play:'+s.audio):''}</div>`;}).join('');
+    if(__task&&__task.status!=='waiting'){const __pct=__task.total?Math.min(100,Math.max(0,Math.round((Number(__task.done)||0)/__task.total*100))):0;h+=`<div class="vc-panel vc-task-strip"><div class="vc-row">${T(status(__task.status),['failed','waiting'].includes(__task.status)?'warn':__task.status==='running'?'running':'')}<small>${E(__task.phase||'')}</small><span></span><small>${Number(__task.done)||0} / ${__task.total||'—'} 句 · ${__pct}%</small></div><div class="vc-meter"><span style="width:${__pct}%"></span></div>${__task.message?`<p class="vc-sub">${E(cleanErr(__task.message))}</p>`:''}<div class="vc-issue-actions">${__task.status==='running'?(__task.resumeRequested?T('正在接续'):__task.pauseRequested?B('继续','resume:'+__task.id,true):B('完成当前句后暂停','pause:'+__task.id,true)):['paused','failed'].includes(__task.status)?B('继续 / 重试','resume:'+__task.id,true):__task.status==='waiting'?(c.segments.some(s=>s.qualityStatus==='pending'&&!s.audio)?L('查看待处理句子','qualitypending'):B('继续制作','resume:'+__task.id,true)+L('定位待处理句子','nextissue')):B('开始制作','resume:'+__task.id,true)}${L(I('x')+'取消任务','cancel:'+__task.id)}</div></div>`;}
+    h+=`<div class="vc-annotated-topbar"><div class="vc-annotated-summary"><span>共 ${segCount(c)} 个段落</span>${(!autoMode&&probCount)?`<span class="vc-issue-badge">${I('alert-circle')} ${probCount} 处待确认</span>`:''}</div><div class="vc-annotated-actions">${c.audio?L('听书播放 →','go:listen'):B('制作本章音频','makeone',true)}${c.audio?L('导出本章 WAV','exportcur'):''}${c.audio?L('优化句末停顿','repacecur'):''}${(!autoMode&&__probRoles)?`<button class="vc-btn secondary" data-act="go:roles">${I('users')} 角色音色 · ${__probRoles}待确认</button>`:''}${(!autoMode&&probCount)?`${L('一键全部忽略并继续制作','ignoreall:'+c.id)}`:''}</div></div>`+(c.segments||[]).map(s=>{const isProblem=!autoMode&&!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.annotationStatus!=='pending'||s.annotationError)&&(s.annotationError||s.confidence<engine.spkThr()||!b.characters.some(r=>r.name===s.speaker));return `<div class="vc-quote ${isProblem?'vc-issue-card uncertain':s.speaker==='旁白'?'':'speaker'}" data-seg="${s.id}"><div class="vc-row">${L(E(s.speaker)+' '+I('pencil'),'editseg:'+s.id)}<small>${E(s.emotion)}</small>${s.annotationStatus==='pending'?'':s.qualityStatus==='pending'&&!s.audio?'<span class="vc-tag warn" title="'+E(s.failReason||'音频待核验')+'">音频待处理</span>':s.audio&&s.audio!=='skip'?(s.qualityStatus==='passed_with_warnings'?'<span class="vc-tag warn">已合成·建议试听</span>':'<span class="vc-tag">已合成</span>'):s.audio==='skip'?(s.failReason?'<span class="vc-tag warn" title="'+E(s.failReason)+'">跳过·合成失败</span>':'<span class="vc-tag">已跳过</span>'):'<span class="vc-tag" style="opacity:.55">待合成</span>'}${s.annotationStatus==='pending'&&!s.annotationError?'<span class="vc-tag">待标注</span>':s.annotationStatus==='fallback'?'<span class="vc-tag">旁白兜底</span>':''}${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} ${s.annotationError?'标注待处理':'待确认说话人'}</span>`:''}<button type="button" class="vc-segment-trigger od-touch" data-act="opensegment:${s.id}" aria-label="第${c.segments.indexOf(s)+1}段操作" aria-haspopup="dialog" aria-expanded="${!!segmentPanel&&segmentPanel.id===String(s.id)}">${I('ellipsis')}</button></div><p class="vc-quote-text">${E(s.text)}</p>${isProblem&&s.annotationError?`<p class="vc-sub">本句自动标注未完成，可修改说话人或使用旁白；其余句子的结果已保留。</p><details class="vc-error-detail"><summary>失败详情</summary><code>${E(String(s.annotationError))}</code></details>`:''}${isProblem?`<div class="vc-issue-actions">${L(I('pencil')+'修改说话人','editseg:'+s.id)}<button class="vc-btn-ignore" data-act="ignorespeaker:${s.id}">${I('fast-forward')} ${s.annotationError?'使用旁白':'忽略（沿用识别）'}</button></div>`:''}${s.qualityStatus==='pending'&&!s.audio?`<div class="vc-sub">${errorMarkup({message:s.failReason||'请核对音频后重试。',provider:'tts'})}</div>${s.speechDraft?.pendingRaw?.file?.id&&s.speechDraft.pendingRaw.playable!==false?L(I('play')+'试听原始返回','play:'+s.speechDraft.pendingRaw.file.id):''}`:''}</div>`;}).join('');
   }else{
     h+=`<div class="empty"><p>还没有标注结果。</p>${B('AI 识别角色','analyze')}</div>`;
   }
+}
+if(page==='raw'||page==='annotated'){
+ const chapterIndex=b.chapters.findIndex(item=>item.id===c.id),next=chapterIndex>=0?b.chapters[chapterIndex+1]:null;
+ h+=`<footer class="vc-reading-next">${next?`<p class="vc-reading-end">本章已读完</p><button type="button" class="vc-btn primary vc-next-chapter" data-act="readnext:${E(next.id)}"><span>下一章</span>${I('arrow-right')}</button><p class="vc-reading-next-title">${E(next.title)}</p>`:'<p class="vc-reading-end" role="status">已读至末章</p>'}</footer>`;
 }
 if(page==='listen'){
   const chapters=b.chapters||[];
@@ -273,12 +692,12 @@ if(page==='listen'){
     prodBanner = '<button class="vc-listening-prod-banner" data-act="gotasksactive"><span class="vc-pulse-dot"></span><span>正在制作 ' + E(tc?.title || '下一章') + ' ' + pct + '%，点此查看 →</span></button>';
   }
   h += prodBanner;
-  h += '<div class="vc-player"><div class="vc-player-head"><h3 class="vc-marquee"><span>' + E(c.title) + '</span></h3></div>';
+  h += '<div class="vc-player">';
   h += c.audio?(()=>{ const segs = engine?.computeSegmentTimestamps ? engine.computeSegmentTimestamps(c.segments || [], c.duration || 0) : (c.segments || []); if (!segs || !segs.length) { return '<div class="vc-center"><small>时长 ' + fmt(c.duration || 0) + ' · 多角色演绎</small></div>'; } return '<div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="逐句字幕跟读">' + segs.map((s, idx) => { return '<div class="vc-transcript-line' + (s.speaker && s.speaker !== '旁白' ? ' is-dialogue' : '') + '" data-act="seekseg:' + Math.round(s.startMs || 0) + '" data-start="' + Math.round(s.startMs || 0) + '" data-end="' + Math.round(s.endMs || 0) + '">' + '<span class="vc-transcript-speaker">' + E(s.speaker || '旁白') + '</span>' + '<span class="vc-transcript-text">' + E(s.text || '') + '</span>' + '</div>'; }).join('') + '</div>'; })():streamHtml(b,c);
   const streamReady=streamPrefix(c).length>0||engine?.state.tasks.some(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
   if(c.audio||streamState||streamReady){
-h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-link-tag' + (engine?.state?.autoDeletePlayed ? ' active' : '') + '" data-act="toggleautodelete">完播自删 · ' + (engine?.state?.autoDeletePlayed ? '开' : '关') + '</button><button class="vc-link-tag' + (engine?.state?.settings?.autoProduceUpcoming !== false ? ' active' : '') + '" data-act="toggleautoproduce">边听边做 · ' + (engine?.state?.settings?.autoProduceUpcoming !== false ? '开' : '关') + '</button><button class="vc-link-tag" data-act="listensettings">' + I('sliders-horizontal') + ' 设置</button></div><div class="vc-player-progress"><small id="playtime">00:00</small><input type="range" id="seek" class="big-progress" min="0" max="' + ((c.duration||0)*1000) + '" value="0" aria-label="播放进度"><small>' + fmt(c.duration||0) + '</small></div>';
-    h += '<div class="vc-ctlbar"><button class="vc-ctl vc-ctl-speed" data-act="speedmodal" title="倍速">' + I('gauge') + '<span class="vc-spd-val" id="speedBtnVal">' + curSpeed + 'x</span></button><button class="vc-ctl' + (hasPrev?'':' disabled') + '" data-act="prevchapter" title="上一集"' + (hasPrev?'':' disabled') + '>' + I('skip-back') + '</button><button class="vc-ctl primary" data-act="playchapter" id="playBtn">' + I('play') + '</button><button class="vc-ctl' + (hasNext?'':' disabled') + '" data-act="nextchapter" title="下一集"' + (hasNext?'':' disabled') + '>' + I('skip-forward') + '</button><button class="vc-ctl" data-act="back" title="回到本书目录">' + I('list') + '</button></div></div>';
+h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-timer-button" data-act="sleepmenu" aria-label="睡眠定时">' + I('timer') + '<span>定时</span><span data-sleep-status></span></button><button class="vc-tool-toggle' + (engine.state.settings?.autoProduceUpcoming!==false?' is-on':'') + '" aria-pressed="' + (engine.state.settings?.autoProduceUpcoming!==false) + '" data-act="autoproducesettings" aria-haspopup="dialog">自动制作后续章节</button><button class="vc-tool-toggle' + (engine.state.settings?.autoDeletePlayed?' is-on':'') + '" aria-pressed="' + (!!engine.state.settings?.autoDeletePlayed) + '" data-act="listensettings" aria-haspopup="dialog">完播自动释放</button></div><div class="vc-player-progress"><button class="vc-seek-step" data-act="seekback" aria-label="快退15秒">' + I('rotate-ccw') + '<span>15</span></button><div class="vc-seek-track"><input type="range" id="seek" class="big-progress" min="0" max="' + ((c.duration||0)*1000) + '" value="0" aria-label="播放进度"><div class="vc-seek-times"><small class="vc-seek-bubble"><span id="playtime">00:00</span><span aria-hidden="true">/</span><span>' + fmt(c.duration||0) + '</span></small></div></div><button class="vc-seek-step" data-act="seekforward" aria-label="快进15秒">' + I('rotate-cw') + '<span>15</span></button></div>';
+    h += '<div class="vc-ctlbar"><button class="vc-ctl vc-ctl-speed" data-act="speedmodal" title="倍速">' + I('gauge') + '<span class="vc-spd-val" id="speedBtnVal">' + curSpeed + 'x</span></button><button class="vc-ctl' + (hasPrev?'':' disabled') + '" data-act="prevchapter" title="上一章"' + (hasPrev?'':' disabled') + '>' + I('skip-back') + '</button><button class="vc-ctl primary" data-act="playchapter" id="playBtn" aria-label="播放">' + I('play') + '</button><button class="vc-ctl' + (hasNext?'':' disabled') + '" data-act="nextchapter" title="下一章"' + (hasNext?'':' disabled') + '>' + I('skip-forward') + '</button><button class="vc-ctl" data-act="playercatalog" title="章节目录" aria-label="章节目录">' + I('list') + '</button></div></div>';
 
     
 
@@ -287,24 +706,23 @@ h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-link-t
 }
 break;}case 'editseg':{const c=chapter(),seg=c.segments.find(x=>x.id===editSegment);h=top('修正说话人')+`<div class="vc-quote"><p>${E(seg.text)}</p></div>${dd('segSpeaker','角色',book().characters.map(r=>[r.name,r.name]),seg.speaker)}${field('本句演绎','segmentEmotion',seg.emotion)}${B('保存修正','saveseg')}<hr class="vc-sep">${field('如需新增角色','newRole','')}${field('角色音色描述（性别、年龄、声音听起来怎么样）','newRoleDescription','')}${B('添加角色','addrole',true)}<p class="footer-note">修正会将本句标记为待重生成，其他已完成片段保留。</p>`;break;}
 case 'voices':h=title('VOICE LIBRARY · 声音档案','音色库',B(I('plus'),'importvoices',true))+`<div class="vc-tabs"><button class="${voiceTab==='mine'?'active':''}" data-act="voicetab:mine">我的音色 · ${state.voices.length}</button><button class="${voiceTab==='preset'?'active':''}" data-act="voicetab:preset">MiMo 预设</button></div>`+(voiceTab==='mine'?`<div class="vc-note">导入和设计统一保存，AI 根据描述匹配可用音色。</div><div class="vc-split">${B('导入音频','importvoices')}${B('设计新音色','newdesign',true)}</div>${state.voices.length?state.voices.map(v=>`<div class="vc-panel vc-card-clickable" data-act="voice:${v.id}"><div class="vc-row"><div class="vc-avatar">${I(v.source==='import'?'mic':'sparkles')}</div><div style="flex:1"><h3 class="voice-name">${E(v.name)}</h3><small>${v.source==='import'?'用户导入':'AI 设计'} · ${v.format.toUpperCase()}${v.tested?' · 已试音':''}</small></div>${v.sample?`<button class="vc-preset-btn" data-act="play:${v.sample}">${I('play')} 试听</button>`:T(v.tested?'已试音':'可使用')}</div><p class="vc-sub">${E(v.description)}</p><div class="vc-row"><small>${v.enabled?'参与 AI 匹配':'仅手动选用'}</small><div style="display:flex;align-items:center;gap:14px"><span class="vc-link-text">管理 →</span>${L(I('trash-2')+'删除','deletevoice:'+v.id)}</div></div></div>`).join(''):'<div class="empty"><p>还没有自己的音色。</p><small>根据声音特征命名，朗读内容不限。</small></div>'}`:Vocast.PRESETS.map(v=>`<div class="vc-preset-row"><div class="vc-preset-title">${I('volume-2')}${E(v)}</div><button class="vc-preset-btn" data-act="preset:${E(v)}">${I('play')} 试听</button></div>`).join(''));break;
-case 'splitpreview':{const d=importDraft||{name:'',text:'',ruleId:'auto',customPattern:'',result:null};const r=d.result?.report;const ruleName={auto:'自动识别',chapter_cn:'第X章/节/回',volume_cn:'第X卷',special_cn:'楔子/番外',chapter_en:'Chapter N',number_dot:'数字点标题',paren_num:'括号序号',bare_num:'纯数字行',bare_cn_num:'纯汉字数字',num_chapter:'第N+空格+标题',custom:'自定义模板'};h=top('导入预览 · 切章检查')+`<h1 class="vc-title">${E(d.name)}</h1>`+(r?`<div class="vc-panel"><div class="vc-row"><b>切章结果</b>${T(r.failed?'切章失败':d.result.chapters.length+' 章',r.failed?'warn':'')}</div><p class="vc-sub">规则：${E(ruleName[d.ruleId]||d.ruleId)}${r.score?' · 得分 '+r.score:''}${r.candidates?' · 候选 '+r.candidates.map(x=>ruleName[x.ruleId]+'('+x.count+')').join(' / '):''}</p>${r.failed?'<p class="vc-sub">没找到章节标题，请换规则、填自定义模板，或用 LLM 探测。</p>':`<details><summary>查看前 20 章标题</summary><p class="vc-sub">${d.result.chapters.slice(0,20).map(c=>E(c.title)).join('<br>')}</p></details>`}</div>`:'')+`${dd('splitRule','切章规则',[['auto','自动识别（推荐）'],['chapter_cn','第X章/节/回'],['volume_cn','第X卷'],['special_cn','楔子/番外/序章'],['chapter_en','Chapter N'],['number_dot','数字点标题'],['paren_num','括号序号'],['bare_num','纯数字行'],['bare_cn_num','纯汉字数字'],['num_chapter','第N+空格+标题'],['custom','自定义模板']],d.ruleId)}`+(d.ruleId==='custom'?field('自定义模板（* 代表章号，如 卷一-第*章）','splitCustom',d.customPattern):'')+`<div class="vc-split">${B('重新切分','resplit',true)}${B('LLM 探测规则','splitprobe',true)}</div><div class="vc-split vc-bottom">${B('确认导入','confirmsplit')}${B('取消','cancelsplit',true)}</div><p class="footer-note">LLM 探测只读前 60 行生成模板，不上传全文。确认导入后可在书籍详情重切（未制作前）。</p>`;break;}
-case 'voiceimport':h=top('导入样本')+`<h1 class="vc-title">一段朗读，就是一种声音。</h1><p class="vc-sub">仅填写性别、年龄和声音特征，名称将自动生成；不填写人名或人物身份。MP3 / WAV；编码后不超过 10 MB。</p>${imports.map((f,i)=>`<div class="vc-panel"><p class="vc-filename">${E(f.name)}</p>${field('音色描述','import-'+i,Vocast.cleanVoiceDescription(f.name.replace(/\.[^.]+$/,'')))}<div class="vc-row"><small>${f.format.toUpperCase()} · ${(f.size/1000000).toFixed(2)} MB</small>${L('播放样本','play:'+f.id)}</div></div>`).join('')}<button class="vc-btn full" data-act="saveimports">保存 ${imports.length} 个样本</button><p class="footer-note">可直接用于克隆合成，不必先设计或创建声音 ID。</p>`;break;
-case 'voicedetail':{const v=voice();h=top('我的音色')+`<div class="vc-note">音色名称：${E(v.name)} · 根据描述自动生成</div>`+area('音色描述 · 仅性别、年龄与声音特征，禁止人物身份','vdescription',v.description)+`<label class="vc-label"><span>参与 AI 自动匹配</span><input type="checkbox" id="venabled" ${v.enabled?'checked':''}></label><div class="vc-split">${B('播放参考样本','play:'+v.sample,true)}${B('保存描述','savevoice')}</div><div class="vc-panel"><h3>克隆试音</h3>${area('用此声线朗读新文本','trialText','山里的风停了，故事才刚刚开始。')}${B('生成并播放试音','trial')}</div><div class="vc-danger-zone"><button class="vc-btn danger full" data-act="deletevoice:${v.id}">${I('trash-2')} 删除此音色</button></div><p class="footer-note">删除后，该音色将从音色库移除，已绑定此音色的角色将恢复为未分配状态。</p>`;break;}
-case 'design':h=top(roleName?'确认新角色音色':'设计新音色')+`<div class="vc-note">音色名根据声音特征自动生成，如「开朗青年男性」。${candidate?`当前名称：${E(candidate.name)}`:''}</div>${area('音色描述（禁止人名、职业、身份和背景，仅描述性别、年龄、声音听起来怎么样，如：六七岁的小女孩，说话奶声奶气）','designDescription',candidate?.description||(roleName?book().characters.find(r=>r.name===roleName)?.description:'')||'')}${area('样本朗读内容','designText',candidate?.previewText||'清晨的风穿过树林，远方的故事刚刚开始。')}<div class="vc-split">${B(candidate?'重新生成样本':'生成试听样本','designsample')}${candidate?B('试听样本','play:'+candidate.sample,true):''}</div>${candidate?`<div class="vc-note">候选样本已返回，确认后可复用。</div><button class="vc-btn full" data-act="acceptsample">${roleName?'采用样本并继续配音':'保存到我的音色'}</button>`:''}`;break;
-case 'roles':{const b=book();const __sugs=(b.mergeSuggestions||[]);const __chTitle=id=>{try{return engine.chapter(b.id,id)?.title||id;}catch(e){return id;}};const __aliasHtml=r=>{const spans=r.aliasSpans||{};const items=(r.aliases||[]).map(a=>{const ids=spans[a]||[];const label=ids.length>1?`${__chTitle(ids[0])} 等 ${ids.length} 章`:ids.length?__chTitle(ids[0]):'未标注';const list=ids.length>1?`<details class="vc-alias-list"><summary>查看 ${ids.length} 章</summary><p class="vc-sub">${ids.map(__chTitle).map(E).join('、')}</p></details>`:'';return `<div class="vc-alias-row"><span>${E(a)}</span><small>${E(label)}</small></div>${list}`;}).join('');return items?`<div class="vc-alias-block"><div class="vc-alias-head">曾用名 / 别名 · 音色共用</div>${items}</div>`:'';};h=top('角色与音色')+`<h1 class="vc-title">角色绑定，全书一致。</h1><p class="vc-sub">${E(b.name)}${autoMode?' · 全自动模式：新音色自动采用，无需确认。':' · 已有音色直接复用，仅新设计等待确认。'}</p>`+(__sugs.length&&!autoMode?`<div class="vc-panel vc-issue-card"><div class="vc-row"><b class="vc-nowrap">疑似同一人 · 待合并确认</b></div>${__sugs.map((m,i)=>`<div class="vc-alias-row"><span>「${E(m.from)}」→「${E(m.to)}」</span><small>${E(m.reason||'')}</small></div><div class="vc-issue-actions"><button class="vc-btn secondary" data-act="mergeroles:${i}">${I('check')} 确认合并</button><button class="vc-btn-ignore" data-act="ignoremerge:${i}">${I('x')} 不是同一人</button></div>`).join('')}</div>`:'')+`${b.characters.map(r=>{const isProblem=!r.voice&&!autoMode;const __tp=r.voice?('trialrole:'+r.name):(r.candidate?('play:'+r.candidate.sample):null);return `<div class="vc-panel ${isProblem?'vc-issue-card':''}"><div class="vc-row"><div class="vc-avatar ${isProblem?'warn':''}">${E(r.name[0])}</div><div style="flex:1"><h3 class="${isProblem?'vc-issue-speaker':''}">${E(r.name)}</h3><small>${E(voiceName(r.voice))}</small></div>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认音色</span>`:__tp?`<button class="vc-btn secondary" data-act="${__tp}">${I('play')} 试听</button>`:T('已分配')}</div><p class="vc-sub">${E(r.description)}</p>${__aliasHtml(r)}${r.reason?`<p class="mini">${E(r.reason)}</p>`:''}<div class="${isProblem?'vc-issue-actions':'vc-row'}">${L('从已有音色中选择','chooserole:'+r.name)}${r.candidate?L('试听并确认新设计','candidate:'+r.name):B('制作新音色','candidate:'+r.name,true)}${isProblem?`<button class="vc-btn-ignore" data-act="ignorerole:${E(r.name)}">${I('fast-forward')} 忽略（自动设计）</button>`:''}</div></div>`;}).join('')}${menu('workflow','全局音色策略','优先复用我的音色','go:policy')}`;break;}
-case 'choose':h=top('为'+roleName+'选音色')+`<div class="vc-note">先试听再选用。更换绑定后，本书已有的该角色片段将标记为待重制，其他角色保留。</div><h3>我的音色</h3>${state.voices.map(v=>`<div class="vc-panel"><div class="vc-row"><div style="flex:1"><h3>${E(v.name)}</h3><small>${E(v.description)}</small></div><button class="vc-preset-btn" data-act="trialvoice:${v.id}">${I('play')} 试听</button></div><div class="vc-row" style="margin-top:8px"><span></span>${B('选用','bind:'+v.id,true)}</div></div>`).join('')||'<div class="empty"><p>还没有自己的音色。</p></div>'}<h3 style="margin-top:22px">MiMo 预设</h3>${Vocast.PRESETS.map(v=>`<div class="vc-preset-row"><div class="vc-preset-title">${I('volume-2')}${E(v)}</div><div style="display:flex;gap:8px"><button class="vc-preset-btn" data-act="preset:${E(v)}">${I('play')} 试听</button><button class="vc-btn secondary" data-act="bind:preset:${E(v)}">选用</button></div></div>`).join('')}`;break;
-case 'policy':{const st=state.settings;h=top('全局音色策略')+`<div class="vc-flow"><div><b>1</b><span>沿用角色已有绑定</span></div><div><b>2</b><span>AI 按描述匹配我的音色</span></div><div><b>3</b><span>没有合适音色才新设计</span></div></div>${dd('policyMode','新设计确认方式',[['manual','确认样本后使用（默认）'],['auto','全自动，仅失败时处理']],st.mode)}<label class="vc-label"><span>允许匹配 MiMo 预设</span><input id="usePresets" type="checkbox" ${st.usePresets?'checked':''}></label>${dd('retries','可恢复错误重试',[['0','0'],['1','1'],['2','2'],['3','3']],String(state.settings.retries))}${dd('speakerThreshold','说话人确认阈值（低于此置信度需人工确认）',[['0.3','0.3 · 宽松（更少打扰）'],['0.5','0.5 · 适中（默认）'],['0.65','0.65 · 严格（旧版）'],['0.8','0.8 · 很严格']],String(st.speakerThreshold??0.5))}${dd('taskParallel','同时制作任务数（章节级并行）',[['1','1 · 一次一章（默认，最稳）'],['2','2 · 同时做两章'],['3','3 · 同时做三章']],String(st.taskParallel??1))}${dd('ttsParallel','TTS 总并发句数（全部任务共用）',[['1','1 · 逐句合成（最稳）'],['2','2 · 默认'],['3','3 · 更快'],['4','4 · 最快（易被限流）']],String(st.ttsParallel??2))}${B('保存策略','savepolicy')}<h3 style="margin-top:18px">默认切章规则（新导入的书用它）</h3>${dd('splitRule','切章规则',[['auto','自动识别（推荐）'],['chapter_cn','第X章/节/回'],['volume_cn','第X卷'],['special_cn','楔子/番外/序章'],['chapter_en','Chapter N'],['number_dot','数字点标题'],['paren_num','括号序号'],['bare_num','纯数字行'],['bare_cn_num','纯汉字数字'],['num_chapter','第N+空格+标题'],['custom','自定义模板']],st.splitRule||'auto')}${(dropdownSel.splitRule||st.splitRule)==='custom'?field('自定义模板（* 代表章号）','splitCustom',st.splitCustom||''):''}<p class="footer-note">鉴权与额度错误不会持续重试。修改策略不会更换已有角色音色。已有书的重切仍在书籍详情页，按本书规则执行。</p>`;break;}
-case 'make':h=top('批量制作')+`<h1 class="vc-title">制作 ${selected.length} 个章节</h1><div class="vc-panel"><h3>${E(book().name)}</h3><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).slice(0,3).map(c=>E(c.title)).join('、')}${selected.length>3?' 等 '+selected.length+' 章':''}</p>${selected.length>3?`<details><summary>查看全部所选章节</summary><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).map(c=>E(c.title)).join('、')}</p></details>`:''}</div>${menu('brain-circuit','语言模型',E(state.settings.llmModel),'go:llm')}${menu('audio-lines','MiMo TTS','预设 / 参考音频克隆自动选择','go:mimo')}${(()=>{const pendRoles=book().characters.filter(r=>r.name!=='旁白'&&r.name!=='广告'&&!r.voice).length;return (state.settings.mode!=='auto'&&pendRoles)?`<div class="vc-note warn">有 ${pendRoles} 个角色音色待确认，先去角色页确认后再制作，否则新角色将用默认音色。<br>${L('去角色与音色确认 →','go:roles')}</div>`:'';})()}${menu('workflow','新角色音色策略',state.settings.mode==='auto'?'全自动，失败后处理':'新设计候选样本等待确认','go:policy')}<button class="vc-btn full vc-bottom" data-act="enqueue">加入队列并开始制作</button><p class="footer-note">离开应用时在当前请求结束后暂停并保存。返回制作页可继续；已完成片段不重复调用。</p>`;break;
-case 'tasks':{const isMaking=t=>['running','queued','waiting','paused','failed'].includes(t.status);const isFinished=t=>['done','cancelled'].includes(t.status);const isActive=t=>['running','queued','paused'].includes(t.status);const isAttention=t=>['waiting','failed'].includes(t.status);const hasProducing=state.tasks.some(t=>['queued','running'].includes(t.status)&&!t.pauseRequested);const hasPausedTasks=state.tasks.some(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested);const rank=t=>t.status==='running'?0:t.status==='queued'?1:t.status==='waiting'?2:t.status==='paused'?3:t.status==='failed'?4:9;const ord=(a,b)=>rank(a)-rank(b)||((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0));const makingList=state.tasks.filter(isMaking).sort(ord);const finishedList=state.tasks.filter(isFinished).sort((a,b)=>(b.created||0)-(a.created||0));const activeList=state.tasks.filter(isActive).sort(ord);const attentionList=state.tasks.filter(isAttention).sort(ord);const card=t=>{const missingData=isMissingData(t.message);let b=null,c=null;try{b=engine.book(t.bookId);c=engine.chapter(t.bookId,t.chapterId);}catch(e){b=null;c=null;}if(!b||!c){const pct0=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;return `<div class="vc-panel"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase||'')}</small></div><h3 style="margin-top:14px">关联内容已移除</h3><p>该任务对应的书籍或章节已不存在，可安全移除此条记录，不影响其他任务。</p><div class="vc-meter"><span style="width:${pct0}%"></span></div><p class="vc-sub">${Number(t.done)||0} / ${t.total||'—'} 句 ${E(cleanErr(t.message)||'')}${missingData?'<br><small>章节数据缺失，删除本书并重导后重新导入</small>':''}</p><div class="vc-row"><span></span>${L(I('x')+'清除','removetask:'+t.id)}</div></div>`;}const pct=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;let acts='';const pendOrder=['queued','waiting','paused','failed'].includes(t.status);if(pendOrder){const sibs=state.tasks.filter(o=>['queued','waiting','paused','failed'].includes(o.status)).sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0)));const si=sibs.findIndex(o=>o.id===t.id);if(si>0)acts+=L('↑ 上移','taskup:'+t.id);if(si>=0&&si<sibs.length-1)acts+=L('↓ 下移','taskdown:'+t.id);if(si>0)acts+=L('⤒ 置顶','tasktop:'+t.id);}
-if(t.status==='waiting')acts+=L('去标注页确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('移除任务','removetask:'+t.id)+`<button class="vc-btn danger" data-act="deletebookconfirm:${t.bookId}">删除本书并重导</button>`;}else if(['paused','failed'].includes(t.status))acts+=L('继续 / 重试','resume:'+t.id);else if(t.status==='running')acts+=t.resumeRequested?T('正在接续'):t.pauseRequested?L('继续','resume:'+t.id):L('暂停','pause:'+t.id);else if(t.status==='queued')acts+=`<button class="vc-btn primary" data-act="resume:${t.id}">开始</button>`;else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;acts+=L('重新制作','remake:'+t.id);}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);else acts+=L(I('x')+'清除','removetask:'+t.id);return `<div class="vc-panel vc-card-clickable" data-act="task:${t.id}"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h3 style="margin-top:14px">${E(b.name)}</h3><p>${E(c.title)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${Number(t.done)||0} / ${t.total||'—'} 句 ${E(cleanErr(t.message)||'')}${missingData?'<br><small>章节数据缺失，删除本书并重导后重新导入</small>':''}</p><div class="vc-task-card-actions">${acts}</div></div>`;};
+case 'splitpreview':{h=VocastImport.renderDraft(importDraft,{E,I,B,top,dd,field,llmConfigured:configured.llmConfigured});break;}
+case 'voiceimport':h=top('导入样本')+`<h1 class="vc-title">一段朗读，就是一种声音。</h1><p class="vc-sub">填写容易辨认的名称，以及性别、年龄、音质、口音等完整声音描述。MP3 / WAV；编码后不超过 10 MB。</p>${imports.map((f,i)=>`<div class="vc-panel"><p class="vc-filename">${E(f.name)}</p>${field('音色名称','import-name-'+i,f.name.replace(/\.[^.]+$/,''))}${field('音色描述','import-'+i,f.description||'')}<div class="vc-row"><small>${f.format.toUpperCase()} · ${(f.size/1000000).toFixed(2)} MB</small>${L('播放样本','play:'+f.id)}</div></div>`).join('')}<button class="vc-btn full" data-act="saveimports">保存 ${imports.length} 个样本</button><p class="footer-note">可直接用于克隆合成，不必先设计或创建声音 ID。</p>`;break;
+case 'voicedetail':{const v=voice();h=top('我的音色')+`${field('音色名称','vname',v.name)}`+area('音色描述 · 音质、发声、口音、节奏与声音气质','vdescription',v.description)+`<label class="vc-label"><span>参与 AI 自动匹配</span><input type="checkbox" id="venabled" ${v.enabled?'checked':''}></label><div class="vc-split">${B('播放参考样本','play:'+v.sample,true)}${B('保存描述','savevoice')}</div><div class="vc-panel"><h3>克隆试音</h3>${area('用此声线朗读新文本','trialText','山里的风停了，故事才刚刚开始。')}${B('生成并播放试音','trial')}</div><div class="vc-danger-zone"><button class="vc-btn danger full" data-act="deletevoice:${v.id}">${I('trash-2')} 删除此音色</button></div><p class="footer-note">删除后，该音色将从音色库移除，已绑定此音色的角色将恢复为未分配状态。</p>`;break;}
+case 'design':h=top(roleName?'确认新角色音色':'设计新音色')+`<div class="vc-note">音色名根据声音特征自动生成，如「开朗青年男性」。${candidate?`当前名称：${E(candidate.name)}`:''}</div>${area('音色描述（保留完整声音细节，可参考评书先生、纪录片旁白等声音风格）','designDescription',candidate?.description||(roleName?book().characters.find(r=>r.name===roleName)?.description:'')||'')}${area('样本朗读内容（留空自动生成适配文本）','designText',candidate?.previewCustomized===false?'':candidate?.previewText||'')}${candidate?.previewCustomized===false&&candidate.previewText?`<p class="vc-sub">适配试听文本：${E(candidate.previewText)}</p>`:''}<div class="vc-split">${B(candidate?'重新生成样本':'生成试听样本','designsample')}${candidate?B('试听样本','play:'+candidate.sample,true):''}</div>${candidate?`<div class="vc-note">候选样本已返回，确认后可复用。</div><button class="vc-btn full" data-act="acceptsample">${roleName?'采用样本并继续配音':'保存到我的音色'}</button>`:''}`;break;
+case 'roles':{const b=book();const __sugs=(b.mergeSuggestions||[]);const __chTitle=id=>{try{return engine.chapter(b.id,id)?.title||id;}catch(e){return id;}};const __aliasHtml=r=>{const spans=r.aliasSpans||{};const items=(r.aliases||[]).map(a=>{const ids=spans[a]||[];const label=ids.length>1?`${__chTitle(ids[0])} 等 ${ids.length} 章`:ids.length?__chTitle(ids[0]):'未标注';const list=ids.length>1?`<details class="vc-alias-list"><summary>查看 ${ids.length} 章</summary><p class="vc-sub">${ids.map(__chTitle).map(E).join('、')}</p></details>`:'';return `<div class="vc-alias-row"><span>${E(a)}</span><small>${E(label)}</small></div>${list}`;}).join('');return items?`<div class="vc-alias-block"><div class="vc-alias-head">曾用名 / 别名 · 音色共用</div>${items}</div>`:'';};h=top('角色与音色')+`<h1 class="vc-title">角色绑定，全书一致。</h1><p class="vc-sub">${E(b.name)}${autoMode?' · 全自动模式：新音色自动采用，无需确认。':' · 已有音色直接复用，仅新设计等待确认。'}</p>`+(__sugs.length&&!autoMode?`<div class="vc-panel vc-issue-card"><div class="vc-row"><b class="vc-nowrap">疑似同一人 · 待合并确认</b></div>${__sugs.map((m,i)=>`<div class="vc-alias-row"><span>「${E(m.from)}」→「${E(m.to)}」</span><small>${E(m.reason||'')}</small></div><div class="vc-issue-actions"><button class="vc-btn secondary" data-act="mergeroles:${i}">${I('check')} 确认合并</button><button class="vc-btn-ignore" data-act="ignoremerge:${i}">${I('x')} 不是同一人</button></div>`).join('')}</div>`:'')+`${b.characters.map(r=>{const isProblem=!r.voice&&!autoMode&&!['匹配中','设计中'].includes(roleVoiceStatus(b,r));const __tp=r.voice?('trialrole:'+r.name):(r.candidate?('play:'+r.candidate.sample):null);return `<div class="vc-panel ${isProblem?'vc-issue-card':''}"><div class="vc-row"><div class="vc-avatar ${isProblem?'warn':''}">${E(r.name[0])}</div><div style="flex:1"><h3 class="${isProblem?'vc-issue-speaker':''}">${E(r.name)}</h3><small>${E(voiceName(r.voice))}</small></div>${isProblem?`<span class="vc-issue-badge">${I('alert-circle')} 待确认音色</span>`:__tp?`<button class="vc-btn secondary" data-act="${__tp}">${I('play')} 试听</button>`:T(roleVoiceStatus(b,r),!r.voice)}</div><p class="vc-sub">${E(r.description)}</p>${__aliasHtml(r)}${r.reason?`<p class="mini">${E(r.reason)}</p>`:''}<div class="${isProblem?'vc-issue-actions':'vc-row'}">${L('从已有音色中选择','chooserole:'+r.name)}${r.suggestedVoice&&!r.voice?B('采用匹配音色','acceptsuggested:'+r.name,true):''}${r.candidate?L('试听并确认新设计','candidate:'+r.name):B('制作新音色','candidate:'+r.name,true)}${isProblem?`<button class="vc-btn-ignore" data-act="ignorerole:${E(r.name)}">${I('fast-forward')} 忽略（自动设计）</button>`:''}</div></div>`;}).join('')}${menu('workflow','音色分配','优先复用我的音色','go:voicepolicy')}`;break;}
+case 'choose':h=top('为'+roleName+'选音色')+`<div class="vc-note">先试听再选用。更换音色后，已有音频保留，后续合成使用新音色。</div><h3>我的音色</h3>${state.voices.map(v=>`<div class="vc-panel"><div class="vc-row"><div style="flex:1"><h3>${E(v.name)}</h3><small>${E(v.description)}</small></div><button class="vc-preset-btn" data-act="trialvoice:${v.id}">${I('play')} 试听</button></div><div class="vc-row" style="margin-top:8px"><span></span>${B('选用','bind:'+v.id,true)}</div></div>`).join('')||'<div class="empty"><p>还没有自己的音色。</p></div>'}<h3 style="margin-top:22px">MiMo 预设</h3>${Vocast.PRESETS.map(v=>`<div class="vc-preset-row"><div class="vc-preset-title">${I('volume-2')}${E(v)}</div><div style="display:flex;gap:8px"><button class="vc-preset-btn" data-act="preset:${E(v)}">${I('play')} 试听</button><button class="vc-btn secondary" data-act="bind:preset:${E(v)}">选用</button></div></div>`).join('')}`;break;
+case 'voicepolicy':case 'productionpolicy':case 'importpolicy':case 'quality':h=productionSettingsHtml(page);break;
+case 'make':h=top('批量制作')+`<h1 class="vc-title">制作 ${selected.length} 个章节</h1><div class="vc-panel"><h3>${E(book().name)}</h3><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).slice(0,3).map(c=>E(c.title)).join('、')}${selected.length>3?' 等 '+selected.length+' 章':''}</p>${selected.length>3?`<details><summary>查看全部所选章节</summary><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).map(c=>E(c.title)).join('、')}</p></details>`:''}</div>${menu('brain-circuit','语言模型',E(state.settings.llmModel),'go:llm')}${menu('audio-lines','MiMo TTS','预设 / 参考音频克隆自动选择','go:mimo')}${(()=>{const pendRoles=book().characters.filter(r=>r.name!=='旁白'&&r.name!=='广告'&&!r.voice).length;return (state.settings.mode!=='auto'&&pendRoles)?`<div class="vc-note warn">有 ${pendRoles} 个角色音色待确认，先去角色页确认后再制作，未分配音色的角色将等待确认。<br>${L('去角色与音色确认 →','go:roles')}</div>`:'';})()}${menu('workflow','新角色音色策略',state.settings.mode==='auto'?'全自动，失败后处理':'新设计候选样本等待确认','go:voicepolicy')}<button class="vc-btn full vc-bottom" data-act="enqueue">加入队列并开始制作</button><p class="footer-note">制作使用前台服务在后台继续，系统通知显示进度。你可以主动暂停；被系统终止后可从保存片段继续。</p>`;break;
+case 'tasks':{const isMaking=t=>['running','queued','waiting','paused','failed'].includes(t.status);const isFinished=t=>['done','cancelled'].includes(t.status);const isActive=t=>['running','queued','paused'].includes(t.status);const isAttention=t=>t.status==='waiting';const hasProducing=state.tasks.some(t=>['queued','running'].includes(t.status)&&!t.pauseRequested);const hasPausedTasks=state.tasks.some(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested);const rank=t=>t.status==='running'?0:t.status==='queued'?1:t.status==='waiting'?2:t.status==='paused'?3:t.status==='failed'?4:9;const ord=(a,b)=>rank(a)-rank(b)||((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0));const makingList=state.tasks.filter(isMaking).sort(ord);const finishedList=state.tasks.filter(isFinished).sort((a,b)=>(b.created||0)-(a.created||0));const activeList=state.tasks.filter(isActive).sort(ord);const attentionList=state.tasks.filter(isAttention).sort(ord);const failedList=state.tasks.filter(t=>t.status==='failed').sort(ord);const card=t=>{const missingData=isMissingData(t.message);let b=null,c=null;try{b=engine.book(t.bookId);c=engine.chapter(t.bookId,t.chapterId);}catch(e){b=null;c=null;}if(!b||!c){const pct0=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;return `<div class="vc-panel"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase||'')}</small></div><h3 style="margin-top:14px">关联内容已移除</h3><p>该任务对应的书籍或章节已不存在，可安全移除此条记录，不影响其他任务。</p><div class="vc-meter"><span style="width:${pct0}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':(Number(t.done)||0)+' / '+(t.total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}<div class="vc-row"><span></span>${L(I('x')+'清除','removetask:'+t.id)}</div></div>`;}const pct=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;let acts='';const pendOrder=['queued','waiting','paused','failed'].includes(t.status);if(pendOrder){const sibs=state.tasks.filter(o=>['queued','waiting','paused','failed'].includes(o.status)).sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0)));const si=sibs.findIndex(o=>o.id===t.id);if(si>0)acts+=L('↑ 上移','taskup:'+t.id);if(si>=0&&si<sibs.length-1)acts+=L('↓ 下移','taskdown:'+t.id);if(si>0)acts+=L('⤒ 置顶','tasktop:'+t.id);}
+if(t.status==='waiting')acts+=L('去标注页确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('恢复本章','recovertask:'+t.id)+L('移除任务','removetask:'+t.id);}else if(['paused','failed'].includes(t.status)){acts+=L('处理标注','task:'+t.id);acts+=L('继续 / 重试','resume:'+t.id);}else if(t.status==='running')acts+=t.resumeRequested?T('正在接续'):t.pauseRequested?L('继续','resume:'+t.id):L('暂停','pause:'+t.id);else if(t.status==='queued')acts+=`<button class="vc-btn primary" data-act="resume:${t.id}">开始</button>`;else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;acts+=L('重新制作','remake:'+t.id);}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);else acts+=L(I('x')+'清除','removetask:'+t.id);return `<div class="vc-panel vc-card-clickable" data-act="task:${t.id}"><div class="vc-row">${T(status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}<small>${E(t.phase)}</small></div><h3 style="margin-top:14px">${E(b.name)}</h3><p>${E(c.title)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':(Number(t.done)||0)+' / '+(t.total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}<div class="vc-task-card-actions">${acts}</div></div>`;};
 const tabBtn=(id,label,n)=>`<button class="${taskTab===id?'active':''}" data-act="tasktab:${id}">${label} · ${n}</button>`;
-const tabList=taskTab==='active'?activeList:taskTab==='attention'?attentionList:finishedList;
-let topBtn='';if(taskTab==='attention'){const waitN=attentionList.filter(t=>t.status==='waiting').length;topBtn=B('全部自动确认','autoconfirmall',true,!waitN);}else if(taskTab==='done'){topBtn=B('全部清除','clearfinished',true,!finishedList.length);}else if(hasProducing)topBtn=B('全部暂停','pauseall',true);else if(hasPausedTasks)topBtn=B('继续制作','resumeall',true);
-h=title('PRODUCTION STUDIO','制作任务',topBtn)+`<div class="vc-tabs">${tabBtn('active','制作中',activeList.length)}${tabBtn('attention','待确认',attentionList.length)}${tabBtn('done','已完成',finishedList.length)}</div>`+(state.tasks.length?(tabList.length?tabList.map(card).join(''):'<div class="empty"><p>'+(taskTab==='active'?'暂无制作中的任务':taskTab==='attention'?'暂无待确认的任务':'暂无已完成的任务')+'</p></div>'):'<div class="empty"><p>暂无制作任务</p>'+B('从书架选择章节','go:shelf')+'</div>');break;}
+const tabList=taskTab==='active'?activeList:taskTab==='attention'?attentionList:taskTab==='failed'?failedList:finishedList;
+let topBtn='';if(taskTab==='attention'){const waitN=attentionList.filter(t=>t.status==='waiting').length;topBtn=B('全部自动确认','autoconfirmall',true,!waitN);}else if(taskTab==='done'){topBtn=B('全部清除','clearfinished',true,!finishedList.length);}else if(hasProducing)topBtn=B('全部暂停','pauseall',true);else if(taskTab==='failed')topBtn=B('重试失败任务','retryfailed',true,!failedList.length);else if(hasPausedTasks)topBtn=B('继续制作','resumeall',true);
+h=title('PRODUCTION STUDIO','制作任务',topBtn)+`<div class="vc-tabs">${tabBtn('active','制作中',activeList.length)}${tabBtn('attention','待确认',attentionList.length)}${tabBtn('failed','失败',failedList.length)}${tabBtn('done','已完成',finishedList.length)}</div>`+(state.tasks.length?(tabList.length?tabList.map(card).join(''):'<div class="empty"><p>'+(taskTab==='active'?'暂无制作中的任务':taskTab==='attention'?'暂无待确认的任务':'暂无已完成的任务')+'</p></div>'):'<div class="empty"><p>暂无制作任务</p>'+B('从书架选择章节','go:shelf')+'</div>');break;}
 case 'task':{const __t=state.tasks.find(t=>t.id===window.currentTask);if(__t){bookId=__t.bookId;chapterId=__t.chapterId;go('annotated');}else{go('tasks');}break;}
-case 'models':h=top('模型配置')+`<h1 class="vc-title">一个声音引擎，自选理解模型。</h1><div class="vc-panel"><div class="vc-row"><h3>MiMo TTS</h3>${T(configured.ttsConfigured?'已配置':'待配置',!configured.ttsConfigured)}</div><p class="vc-sub">预设合成、音色设计、参考样本克隆。</p>${L('配置连接 →','go:mimo')}</div><div class="vc-panel"><div class="vc-row"><h3>语言模型</h3>${T(configured.llmConfigured?'已配置':'待配置',!configured.llmConfigured)}</div><p class="vc-sub">${E(state.settings.llmModel)}</p><p class="vc-model-id">${E(state.settings.llmBase)}</p>${L('配置连接 →','go:llm')}</div>`;break;
-case 'llm':h=top('语言模型')+`<div class="vc-note">默认 MiniMax 中国区 Token Plan。密钥与区域必须对应，不自动切换国际区。</div>${dd('llmProtocol','接口协议',[['openai','OpenAI 兼容'],['anthropic','Anthropic Messages']],state.settings.llmProtocol)}${field('Base URL','llmBase',state.settings.llmBase)}${field('模型 ID','llmModel',state.settings.llmModel)}${field('API Key','llmKey','','password')}<div class="vc-split">${B('保存配置','savellm')}${B('真实连接测试','testllm',true)}</div><p class="footer-note">测试使用已保存的配置，会实际调用一次语言模型。</p>`;break;
-case 'mimo':h=top('MiMo TTS')+field('API Key','ttsKey','','password')+`<div class="vc-panel"><h3>按任务自动使用</h3><p>预设音色</p><div class="vc-model-id">mimo-v2.5-tts</div><p>样本设计</p><div class="vc-model-id">mimo-v2.5-tts-voicedesign</div><p>样本克隆合成</p><div class="vc-model-id">mimo-v2.5-tts-voiceclone</div></div><div class="vc-split">${B('保存配置','savemimo')}${B('真实合成测试','testmimo',true)}</div><p class="footer-note">测试使用已保存的配置并生成可播放音频。统一输出 WAV，章节合并保留原音质。</p>`;break;
+case 'llm':h=top('语言模型')+`${dd('llmProtocol','接口协议',[['openai','OpenAI 兼容'],['anthropic','Anthropic Messages']],state.settings.llmProtocol)}${field('Base URL','llmBase',state.settings.llmBase||'')}<p class="llm-field-example">例如：https://api.deepseek.com</p>${''}${field('模型 ID','llmModel',state.settings.llmModel||'')}<p class="llm-field-example">例如：deepseek-flash</p>${''}${field('API Key','llmKey','','password')}<div class="vc-split">${B('保存配置','savellm')}${B('测试连接','testllm',true)}</div><p class="footer-note">密钥使用 Android Keystore 加密保存。测试连接会调用当前填写的模型。</p>`;break;
+case 'mimo':h=top('MiMo TTS')+field('API Key','ttsKey','','password')+`<div class="vc-panel"><h3>按任务自动使用</h3><p>预设音色</p><div class="vc-model-id">mimo-v2.5-tts</div><p>样本设计</p><div class="vc-model-id">mimo-v2.5-tts-voicedesign</div><p>样本克隆合成</p><div class="vc-model-id">mimo-v2.5-tts-voiceclone</div></div><div class="vc-split">${B('保存配置','savemimo')}${B('测试合成','testmimo',true)}</div><p class="footer-note">密钥使用 Android Keystore 加密保存。测试合成会调用 MiMo 并生成可试听音频。</p>`;break;
 case 'storage':{
   const totalAudioCount = engine.state.books.reduce((sum, b) => sum + b.chapters.filter(c => c.audio).length, 0);
   const totalListenedCount = engine.state.books.reduce((sum, b) => sum + b.chapters.filter(c => c.audio && c.listened).length, 0);
@@ -354,11 +772,11 @@ case 'storage':{
           <strong>完播自动释放音频</strong>
           <small style="color:var(--vc-sub);">单章听完后自动释放对应音频文件，保留文本与角色设计</small>
         </div>
-        <button class="vc-switch${engine.state.autoDeletePlayed ? ' on' : ''}" role="switch" aria-checked="${engine.state.autoDeletePlayed ? 'true' : 'false'}" aria-label="完播自动释放音频" data-act="toggleautodelete"><span class="vc-switch-knob"></span></button>
+        <button class="vc-switch${engine.state.settings.autoDeletePlayed ? ' on' : ''}" role="switch" aria-checked="${engine.state.settings.autoDeletePlayed ? 'true' : 'false'}" aria-label="完播自动释放音频" data-act="toggleautodelete"><span class="vc-switch-knob"></span></button>
       </div>
       <div class="vc-action-item">
         <div class="vc-action-info">
-          <strong>完播自动保留</strong>
+          <strong>完播自动释放音频时保留章节</strong>
           <small style="color:var(--vc-sub);">完播或切章自删时，保留最近听过的章节缓存供回听</small>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%">${(()=>{const kn=Math.max(0,Number(engine.state.settings.keepRecentCount ?? 2)||0);return [0,1,2,3].map(n=>`<button class="vc-link-tag${kn===n?' active':''}" style="justify-content:center" data-act="setkeepcount:${n}">${n===0?'不保留':'保留'+n+'章'}</button>`).join('');})()}</div>
@@ -412,13 +830,24 @@ case 'storage':{
   `;
   break;
 }
-case 'settings':h=title('YOUR READING SPACE','我的')+menu('sliders-horizontal','模型配置','MiMo TTS + 自选语言模型','go:models')+menu('workflow','全局音色策略','先复用，必要时设计','globalpolicy')+menu('hard-drive','存储与有声书资源','资源回收与完播自动释放','go:storage')+`<div class="vc-panel"><h3>本地保存，按需合成</h3><p class="vc-sub">密钥由 Android Keystore 加密。书籍、音色样本和完成音频保存在设备内。</p><p class="vc-sub">后台听书使用系统播放服务。制作在离开应用后暂停，回到任务列表可继续。</p></div><p class="footer-note">Vocast 0.1.2 · ${state.usage.length} 条最近 API 用量记录</p>`;break;
+case 'policy':case 'models':case 'settings':h=title('YOUR READING SPACE','我的')
++`<section class="vc-settings-group od-stack" aria-labelledby="settings-voice"><h2 id="settings-voice">模型与声音</h2>`
++menu('sliders-horizontal','语言模型',configured.llmConfigured?'已配置 · 理解文本与识别角色':'配置文本理解与角色识别服务','go:llm')
++menu('audio-lines','语音引擎',configured.ttsConfigured?'MiMo TTS · 已配置':'MiMo TTS · 配置语音服务','go:mimo')
++menu('workflow','音色分配',state.settings.mode==='auto'?'复用已有音色，自动采用新声音':'复用已有音色，新声音先试听确认','go:voicepolicy')
++`</section><section class="vc-settings-group od-stack" aria-labelledby="settings-production"><h2 id="settings-production">制作</h2>`
++menu('wifi','网络与制作',state.settings.wifiOnlyProduction?'仅 Wi-Fi 下制作 · 制作速度':'不限网络 · 制作速度','go:productionpolicy')
++menu('refresh-cw','合成异常处理','请求失败重试与音频异常重合成','go:quality')
++`</section><section class="vc-settings-group od-stack" aria-labelledby="settings-library"><h2 id="settings-library">导入与存储</h2>`
++menu('book-open','新书导入','默认切章规则与自定义模板','go:importpolicy')
++menu('hard-drive','存储与有声书资源','资源回收与完播自动释放','go:storage')
++`</section>`;break;
 }
-let miniHtml = '';
-if (page !== 'listen' && playingBookId && playingChapterId) {
+h=enhancePage(h,state);let miniHtml = '';
+if (page !== 'listen' && page !== 'splitpreview' && playingBookId && playingChapterId) {
   const mBook = engine?.state.books.find(b => b.id === playingBookId);
   const mChap = mBook?.chapters.find(c => c.id === playingChapterId);
-  if (mBook && mChap && mChap.audio) {
+  if (mBook && mChap && (mChap.audio||streamState)) {
     const pos = miniPlayingState?.position || 0;
     const dur = (mChap.duration || 0) * 1000;
     const pct = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
@@ -431,26 +860,41 @@ if (page !== 'listen' && playingBookId && playingChapterId) {
         <div class="vc-mini-sub">${E(mBook.name)}</div>
       </div>
       <div class="vc-mini-ctrls">
-        <button class="vc-mini-btn" data-act="miniseekback" title="快退15秒">${I('rotate-ccw')}</button>
+        <button class="vc-mini-btn" data-act="miniprev" title="上一章" aria-label="上一章">${I('skip-back')}</button>
         <button class="vc-mini-btn primary" data-act="miniplaypause" title="${isPlaying?'暂停':'播放'}">${I(isPlaying?'pause':'play')}</button>
-        <button class="vc-mini-btn" data-act="mininext" title="下一章">${I('skip-forward')}</button>
+        <button class="vc-mini-btn" data-act="mininext" title="下一章" aria-label="下一章">${I('skip-forward')}</button>
       </div>
     </div>`;
   }
 }
-let modalHtml = '';
-if(unmadeChoiceChapterId){const __uc=book()?.chapters?.find(ch=>ch.id===unmadeChoiceChapterId);
-  modalHtml+=`<div class="vc-modal-overlay" data-act="closeunmade"><div class="vc-dialog"><h3>${E(__uc?.title||'未制作章节')}</h3><p class="vc-sub">本章还没有音频，你想怎么开始？</p><div class="vc-stack" style="margin-top:12px">${B(I('book-open')+' 阅读原文','readraw')}${B(I('hammer')+' 制作有声书','makechapter')}${B(I('headphones')+' 边做边听','makeandlisten',true)}</div></div></div>`;
+let modalHtml = uxDialog?`<div class="vc-modal-overlay" data-act="uxcancel"><div class="vc-dialog${uxDialog.voiceLeave?' ved-leave-dialog':''}"><h3>${E(uxDialog.title)}</h3>${uxDialog.html||''}${uxDialog.voiceLeave?'<div class="ved-leave-actions"><button class="vc-btn" data-act="vedsaveleave">保存并离开</button><button class="vc-btn secondary" data-act="uxconfirm">放弃修改</button><button class="ved-leave-cancel" data-act="uxcancel">继续编辑</button></div><div>':'<div class="vc-split">'}${uxDialog.voiceLeave?'':B(uxDialog.title==='阅读设置'?'完成':'取消','uxcancel',true)}${!uxDialog.voiceLeave&&uxDialog.confirm?B(uxDialog.confirmLabel||'确认','uxconfirm',false,!!uxDialog.loading):''}</div></div></div>`:'';
+if(unmadeChoiceChapterId){const __uc=book()?.chapters?.find(ch=>ch.id===unmadeChoiceChapterId),__task=chapterTask(bookId,unmadeChoiceChapterId),__producing=isChapterProducing(__task);
+  modalHtml+=`<div class="vc-modal-overlay" data-act="closeunmade"><div class="vc-dialog"><h3>${E(__uc?.title||'未制作章节')}</h3><p class="vc-sub">${__producing?'当前章节正在制作中'+(__task.status==='queued'?'，正在排队等待。':'。')+'你可以阅读原文，或边做边听。':'本章还没有音频，你想怎么开始？'}</p><div class="vc-stack" style="margin-top:12px">${B(I('book-open')+' 阅读原文','readraw')}${__producing?'':B(I('hammer')+' 制作有声书','makechapter')}${B(I('headphones')+' 边做边听','makeandlisten',true)}</div></div></div>`;
 }
 if(speedModalOpen){
-  const spd=engine?.state?.playbackSpeed||1;
-  const ticks=[0.5,0.75,1,1.25,1.5,1.75,2];
-  modalHtml+=`<div class="vc-modal-overlay" data-act="closespeed"><div class="vc-dialog"><h3>播放倍速</h3><div class="vc-speed-big"><span id="speedVal">${spd}x</span></div><input type="range" id="speedRange" class="vc-speed-range" min="0.5" max="2" step="0.05" value="${spd}"><div class="vc-speed-ticks">${ticks.map(t=>`<button class="vc-tick${Math.abs(t-spd)<0.01?' active':''}" data-act="setspeed:${t}">${t}x</button>`).join('')}</div></div></div>`;
+ const spd=engine.state.playbackSpeed||1,ticks=[.5,1,1.5,2,2.5,3];
+ modalHtml+=`<div class="vc-modal-overlay vc-player-sheet-overlay" data-act="closespeed"><div class="vc-dialog vc-player-sheet vc-speed-sheet" data-theme="${E(engine.state.settings.readerTheme)}"><div class="vc-sheet-heading"><button class="vc-icon vc-sheet-close" data-act="closespeed" aria-label="关闭语速设置">${I('x')}</button><h3>语速 <span id="speedVal">${spd}x</span></h3></div><div class="vc-speed-slider"><input type="range" id="speedRange" class="vc-speed-range" min="0.5" max="3" step="0.05" value="${spd}" aria-label="播放语速"><span class="vc-speed-bubble" id="speedBubble" aria-hidden="true">${spd}x</span></div><div class="vc-speed-ticks">${ticks.map(t=>`<button class="vc-tick" data-act="setspeed:${t}">${t}x</button>`).join('')}</div><div class="vc-speed-directions"><span>慢</span><span>快</span></div></div></div>`;
 }
-if(listenSettingsOpen){
+if(sleepModalOpen){
+ const active=!!sleepStatus(),presets=[10,30,45,60,90],current=engine.state.settings.sleepTimer,custom=Number(current)>0&&!presets.includes(Number(current));
+ modalHtml+=`<div class="vc-modal-overlay vc-player-sheet-overlay" data-act="closesleep"><div class="vc-dialog vc-player-sheet vc-sleep-sheet" data-theme="${E(engine.state.settings.readerTheme)}"><div class="vc-sheet-heading vc-sleep-heading"><h3 id="sleepTitle">${active?'定时已开启':'定时关闭'}</h3><button class="vc-switch" role="switch" aria-label="睡眠定时开关" aria-checked="${active}" data-act="togglesleep"><span></span></button><button class="vc-icon" data-act="closesleep" aria-label="关闭定时设置">${I('x')}</button></div><div class="vc-sleep-options"><h4>按章数</h4><div class="vc-sleep-chapters">${[1,2,3].map(n=>`<button data-act="setsleep:chapters:${n}" data-sleep-choice="chapters:${n}" aria-pressed="false">${n===1?'播完当前章':'播完'+n+'章'}</button>`).join('')}</div><h4>按时间 <small>分钟</small></h4><div class="vc-sleep-minutes">${presets.map(n=>`<button data-act="setsleep:${n}" data-sleep-choice="${n}" aria-label="${n}分钟" aria-pressed="false">${n}</button>`).join('')}</div><button class="vc-sleep-custom${custom&&active?' active':''}" data-act="sleepcustom" aria-expanded="${sleepCustomOpen}">自定义${custom&&active?' · '+Number(current)+' 分钟':''}</button>${sleepCustomOpen?`<div class="vc-sleep-custom-form"><label for="sleepMinutes">时长（1–720 分钟）</label><div><input class="vc-input" type="number" inputmode="numeric" min="1" max="720" step="1" id="sleepMinutes" value="${custom?Number(current):30}">${B('开始定时','setsleepcustom',false)}</div></div>`:''}</div><p class="vc-sleep-summary" data-sleep-status>${E(sleepStatus())}</p></div></div>`;
+}
+if(playerCatalogOpen&&book()){
+ const b=book();
+ modalHtml+=`<div class="vc-modal-overlay vc-player-sheet-overlay" data-act="closeplayercatalog"><section class="vc-dialog vc-player-sheet vc-player-catalog" data-theme="${E(engine.state.settings.readerTheme)}" role="dialog" aria-modal="true" aria-label="章节目录"><div class="vc-sheet-heading"><button class="vc-icon" data-act="closeplayercatalog" aria-label="关闭目录">${I('x')}</button><h3>目录</h3><span class="od-spacer od-touch"></span></div><div class="vc-catalog-summary"><span>共 ${b.chapters.length} 章</span><button class="vc-link-tag" data-act="catalogcurrent">${I('locate-fixed')}当前章节</button></div><div class="vc-player-catalog-scroll" id="player-catalog-scroll"><div class="vc-chapter-list" role="list" aria-label="章节列表">${b.chapters.map(c=>catalogChapterRow(b,c,true)).join('')}</div></div></section></div>`;
+}
+if(listenSettingsOpen&&!uxDialog){
+  const production=listenSettingsOpen==='produce';
+  const title=production?'自动制作后续章节':'完播自动释放';
+  const enabled=production?engine.state.settings.autoProduceUpcoming!==false:!!engine.state.settings.autoDeletePlayed;
   const keepN=Math.max(0,Number(engine?.state?.settings?.keepRecentCount ?? 2)||0);
   const prodN=Math.min(3,Math.max(1,Number(engine?.state?.settings?.autoProduceCount ?? 2)||2));
-  modalHtml+=`<div class="vc-modal-overlay" data-act="closesettings"><div class="vc-dialog"><h3>听书设置</h3><p class="vc-set-label">完播自动删除时保留</p><div class="vc-chip-row">${[0,1,2,3].map(n=>`<button class="vc-link-tag${keepN===n?' active':''}" data-act="setkeepcount:${n}">${n===0?'不保留':'保留'+n+'章'}</button>`).join('')}</div><p class="vc-set-label">边听边做最多提前</p><div class="vc-chip-row">${[1,2,3].map(n=>`<button class="vc-link-tag${prodN===n?' active':''}" data-act="setproducecount:${n}">提前${n}章</button>`).join('')}</div></div></div>`;
+  const options=production?`<p class="vc-set-label">提前制作章节数</p><div class="vc-chip-row">${[1,2,3].map(n=>`<button class="vc-link-tag${prodN===n?' active':''}" aria-pressed="${prodN===n}" data-act="setproducecount:${n}">提前${n}章</button>`).join('')}</div>`:`<p class="vc-set-label">完播自动释放音频时保留章节</p><div class="vc-chip-row">${[0,1,2,3].map(n=>`<button class="vc-link-tag${keepN===n?' active':''}" aria-pressed="${keepN===n}" data-act="setkeepcount:${n}">${n===0?'不保留':'保留'+n+'章'}</button>`).join('')}</div>`;
+  modalHtml+=`<div class="vc-modal-overlay vc-player-sheet-overlay" data-act="closesettings"><section class="vc-dialog vc-player-sheet vc-listen-settings-sheet" data-theme="${E(engine.state.settings.readerTheme)}" role="dialog" aria-modal="true" aria-label="${title}"><div class="vc-sheet-heading vc-sleep-heading"><h3>${title}</h3><button class="vc-switch" role="switch" aria-checked="${enabled}" aria-label="${title}" data-act="${production?'toggleautoproduce':'toggleautodelete'}"><span></span></button><button class="vc-icon" data-act="closesettings" aria-label="关闭">${I('x')}</button></div>${options}<p class="vc-sub">${production?'听书时自动准备后续章节音频；关闭后暂停自动预制，提前章节数仍会保留。':'释放已完播音频，保留原文与标注；未播完的当前章节始终保留，释放的音频需要重新制作才能播放。'}</p></section></div>`;
+}
+if(bookInfoOpen&&!uxDialog&&bookInfoTarget()){
+  const bi=bookInfoTarget(),curColor=/^#[a-f0-9]{6}$/i.test(bi.coverColor||'')?bi.coverColor:COVER_STYLES[0].color;
+  modalHtml+=`<div class="vc-modal-overlay" data-act="closebookinfo"><section class="vc-dialog vc-bookinfo-dialog" id="bookInfoDialog" role="dialog" aria-modal="true" aria-label="编辑书籍信息"><h3>编辑书籍信息</h3><div class="vc-field"><span class="vc-field-label">书名</span><input id="biName" type="text" maxlength="40" autocomplete="off" value="${E(bi.name)}"></div><div class="vc-field"><span class="vc-field-label">作者</span><input id="biAuthor" type="text" maxlength="40" autocomplete="off" value="${E(bi.author||'')}"></div><p class="vc-bookinfo-label">书封皮背景</p><div class="vc-cover-picker" role="radiogroup" aria-label="书封皮背景">${COVER_STYLES.map(s=>`<button class="vc-cover-opt${s.color===curColor?' is-on':''}" data-act="pickcover:${s.color}" role="radio" aria-checked="${s.color===curColor}" aria-label="${s.name}"><span class="vc-cover-mini" style="background:${s.color}"><b>${E(bi.name)}</b><small>${E(bi.author||'有声书')}</small></span><span class="vc-cover-name">${s.name}</span></button>`).join('')}</div><div class="vc-split vc-bottom">${B('取消','closebookinfo',true)}${B('保存','savebookinfo')}</div></section></div>`;
 }
 if(openDropdown){
   let ddTitle='选择',ddOpts=[];
@@ -513,8 +957,9 @@ if (deleteConfirmBookId) {
   </div>`;
 
 }
+modalHtml+=segmentPanelHtml();
 let __keepTop=null;try{const __p=document.getElementById('transcriptPanel');if(page==='listen'&&__p)__keepTop=__p.scrollTop;}catch(__e){}
-$('#screen').innerHTML=`<main class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${['raw','annotated','listen'].includes(page)?modebar():nav()}${modalHtml}`;for(const f of formDraft){const el=document.getElementById(f.id);if(el){el.value=f.value;if(el.type==='checkbox')el.checked=f.checked;}}syncModalUI();syncFooterLayout();lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
+updateScreen(`<main class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${page==='splitpreview'?'':['raw','annotated','listen','editseg'].includes(page)?modebar():nav()}${modalHtml}`,context);for(const f of formDraft){const el=document.getElementById(f.id);if(el){if(f.preserveValue)el.value=f.value;if(el.type==='checkbox')el.checked=f.checked;if(f.focused){el.focus({preventScroll:true});if(f.start!=null&&el.setSelectionRange)try{el.setSelectionRange(f.start,f.end);}catch(e){}}}}syncModalUI();const panelBody=document.getElementById('segment-panel-scroll');if(panelBody&&segmentPanel)panelBody.scrollTop=segmentPanel.scroll||0;syncFooterLayout();enhanceRendered();lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
 try{if(pendingSeg!=null){const __el=document.querySelector('[data-seg="'+pendingSeg+'"]')||document.getElementById('confirm-seg-'+pendingSeg);if(__el){__el.scrollIntoView({block:'center'});__el.classList.add('vc-flash');setTimeout(()=>{try{__el.classList.remove('vc-flash');}catch(e){}},1800);}pendingSeg=null;}}catch(__e){}
 // 从听书切入原文/标注：按播放进度跳到对应行（等布局完再滚）
 try{if(window.__jumpToPos!=null&&(page==='raw'||page==='annotated')&&bookId&&chapterId){const __pos=window.__jumpToPos;window.__jumpToPos=null;
@@ -527,6 +972,9 @@ if(!__el&&page==='annotated'&&__c&&__c.segments&&__c.audio){try{const __segs=eng
 if(page==='raw'&&__c&&typeof __c.text==='string'&&!__el){try{const __us=Vocast.units(__c.text);const __total=__us.map(u=>(u.text||'').length).reduce((a,b)=>a+b,0)||1;let __acc=0,__target=0;const __frac=__c.duration>0?(__pos/1000)/__c.duration:0;for(let i=0;i<__us.length;i++){__acc+=((__us[i].text||'').length)/__total;if(__acc>=__frac){__target=__us[i].id;break;}}__el=document.querySelector('[data-rawseg="'+__target+'"]');}catch(e){}}
 if(__el){__el.scrollIntoView({block:'center'});__el.classList.add('vc-flash');setTimeout(()=>{try{__el.classList.remove('vc-flash');}catch(e){}},1800);}}catch(e){}});}}catch(__e){window.__jumpToPos=null;}
 try{if(page==='listen'&&__keepTop!==null&&__keepTop!==undefined){const __n=document.getElementById('transcriptPanel');if(__n)__n.scrollTop=__keepTop;}}catch(__e){}
+if(page==='listen'){renderedListenSignature=listenSignature();if(miniPlayingState)syncDisplayedPlayback(miniPlayingState);}
+syncCatalogViewport(catalogAnchor);
+loadListenTranscript();
 try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId;if(window.__calibKey!==__ck){window.__calibKey=__ck;engine.calibrateDurations(bookId,chapterId).then(n=>{if(n>0&&page==='listen')render();}).catch(()=>{});}}}catch(__e){}
 }
 const value=id=>$('#'+id)?.value||'';
@@ -534,19 +982,20 @@ const value=id=>$('#'+id)?.value||'';
 // 播放中的分句始终逐句播完；整章合并不打断当前句，也不重新启动本章。
 function playablePrefix(c){return c.audio?[{audio:c.audio,whole:true}]:streamPrefix(c);}
 function streamAudible(c){return (c.segments||[]).filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告');}
-function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip')continue;if(s.audio)out.push(s);else if((s.text||'').trim())break;}return out;}
+function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip')continue;if(s.generationVersion&&s.qualityStatus&&!['passed','corrected','passed_with_warnings'].includes(s.qualityStatus))break;if(s.audio)out.push(s);else if((s.text||'').trim())break;}return out;}
 function streamHtml(b,c){
   const task=engine?.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
-  const ready=streamPrefix(c);
+  const ready=streamPrefix(c),finished=streamAudible(c);
   if(!task&&!ready.length)return '<div class="empty"><p>本章尚未生成完整音频。</p>'+B('制作本章','makeone')+'</div>';
   const total=(c.segments||[]).filter(s=>(s.text||'').trim()&&!s.skip&&!s.isAd&&s.speaker!=='广告').length;
   const lines=(c.segments||[]).map(s=>{
     const ok=!!(s.audio&&s.audio!=='skip'),skipped=!!(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip');
-    return '<div class="vc-transcript-line'+(s.speaker&&s.speaker!=='旁白'?' is-dialogue':'')+(skipped?' is-skip':'')+'" data-segstream="'+s.id+'"><span class="vc-transcript-speaker">'+E(s.speaker||'旁白')+'</span><span class="vc-transcript-text">'+E(s.text||'')+'</span><small>'+(ok?'可播':skipped?'跳过':'制作中')+'</small></div>';
+    return '<div class="vc-transcript-line'+(s.speaker&&s.speaker!=='旁白'?' is-dialogue':'')+(skipped?' is-skip':'')+'" data-act="streamsegment:'+s.id+'" data-segstream="'+s.id+'"><span class="vc-transcript-speaker">'+E(s.speaker||'旁白')+'</span><span class="vc-transcript-text">'+E(s.text||'')+'</span><small>'+(ok?(ready.includes(s)?'连续可播':'已生成，等待前句'):skipped?'跳过':'制作中')+'</small></div>';
   }).join('');
-  return '<div class="vc-note">边做边听 · 已完成 '+ready.length+' / '+total+' 句'+(task?'（'+(status(task.status)||task.phase||'制作中')+'）':'')+'</div><div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="边做边听">'+lines+'</div>';
+  return '<div class="vc-note">边做边听 · 已完成 '+finished.length+' / '+total+' 句，开头连续可播 '+ready.length+' 句'+(task?'（'+(status(task.status)||task.phase||'制作中')+'）':'')+'</div><div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="边做边听">'+lines+'</div>';
 }
 async function playStreamSeg(bid,cid,segIdx){
+  playbackPrompts?.cancel();waitingForNextChapterId=null;
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!b||!c)throw Error('章节不存在');
   const prefix=streamPrefix(c);
@@ -557,6 +1006,7 @@ async function playStreamSeg(bid,cid,segIdx){
   const idx=b.chapters.indexOf(c);
   await device.call('play',{id:seg.audio,title:c.title+'（边做边听 · 第'+(prefix.indexOf(seg)+1)+'句）',bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · Vocast',duration:Math.round((seg.durMs||0)),position:0,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
   playingId=seg.audio;playingBookId=bid;playingChapterId=cid;
+  playbackPrompts?.warm(bid,['waiting',...(idx===b.chapters.length-1?['finished']:[])]);
   engine?.updatePlaybackProgress(bid,cid,doneBefore,0,false).catch(()=>{});
   if(page==='listen'&&bookId===bid&&chapterId===cid)render();
   checkAutoProduceUpcoming(bid,cid).catch(()=>{});
@@ -571,17 +1021,19 @@ async function advanceStream(){
   if(curIdx<0){streamState=null;render();return false;} // 当前句被改/重制：停播等用户操作
   if(curIdx+1<prefix.length){await playStreamSeg(bid,cid,curIdx+1);return true;}
   const task=engine.state.tasks.find(t=>t.bookId===bid&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));
-  if(task&&['running','queued'].includes(task.status)){toast('已追上制作进度，稍等新句子…');streamState.waiting=true;render();return true;}
+  if(task&&['running','queued'].includes(task.status)||prefix.length<(c.segments||[]).filter(s=>(s.text||'').trim()&&!s.skip&&!s.isAd&&s.speaker!=='广告'&&s.audio!=='skip').length){const wasWaiting=streamState.waiting;streamState.waiting=true;if(!wasWaiting){toast('已追上制作进度，稍等新句子…');playbackPrompts?.schedule('waiting',bid,cid,playingId);}render();return true;}
   streamState=null;return false; // 交给唯一的 completion 处理器完成本章并推进下一章
 }
 async function refreshListenNav(){if(page!=="listen")return;try{var b=book(),c=chapter(),chs=b.chapters||[],i=chs.findIndex(function(x){return x.id===c.id;});var hasPrev=!!(i>0&&chs[i-1]&&playablePrefix(chs[i-1]).length),hasNext=!!(i>=0&&i<chs.length-1&&chs[i+1]&&playablePrefix(chs[i+1]).length);var prev=document.querySelector('[data-act="prevchapter"]'),next=document.querySelector('[data-act="nextchapter"]');if(prev){prev.classList.toggle("disabled",!hasPrev);if(hasPrev)prev.removeAttribute("disabled");else prev.setAttribute("disabled","");}if(next){next.classList.toggle("disabled",!hasNext);if(hasNext)next.removeAttribute("disabled");else next.setAttribute("disabled","");}}catch(e){}}
 let chapterPlayRequest=0;
 async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
+  playbackPrompts?.cancel();waitingForNextChapterId=null;
   const request=++chapterPlayRequest;
+  const beforeLoad=engine.chapter(bid,cid);
+  const needsTranscript=beforeLoad.unloaded||typeof beforeLoad.text!=='string'||!Array.isArray(beforeLoad.segments);
   await engine.ensureChapter(bid,cid);
-  const repaired=await engine.repairChapterAudio(bid,cid);
   if(request!==chapterPlayRequest)return;
-  if(repaired)toast('已修复 '+repaired+' 句重复朗读');
+  if(needsTranscript&&page==='listen'&&bookId===bid&&chapterId===cid)render();
   streamState=null;
   const b=engine?.state.books.find(b=>b.id===bid),c=b?.chapters.find(c=>c.id===cid);
   if(!c?.audio){if(streamPrefix(c).length){chapterId=cid;page='listen';render();await playStreamSeg(bid,cid,0);return;}return;}
@@ -600,6 +1052,7 @@ async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null){
     coverPath: b.cover||''
   });
   playingId=c.audio;playingBookId=bid;playingChapterId=cid;
+  playbackPrompts?.warm(bid,idx===b.chapters.length-1?['finished']:playablePrefix(b.chapters[idx+1]).length?[]:['waiting']);
   checkAutoProduceUpcoming(bid, cid).catch(()=>{});
 }
 async function restorePlayingChapter(){
@@ -621,10 +1074,10 @@ function syncDisplayedPlayback(p){
   const position = active?(streamActive?streamState.posBefore+pos:pos):0;
   if($('#playtime'))$('#playtime').textContent=fmt(position/1000);
   if($('#seek')&&(!active||document.activeElement!==$('#seek')))$('#seek').value=position;
-  const btn=$('#playBtn'),isPlay=active&&!!p.playing;
+  const btn=$('#playBtn'),isPlay=active&&!!p.playing;if(btn)btn.setAttribute('aria-label',isPlay?'暂停':'播放');
   if(btn&&btn.dataset.playing!==String(isPlay)){btn.dataset.playing=String(isPlay);btn.innerHTML=`${I(isPlay?'pause':'play')}`;lucide.createIcons({attrs:{width:20,height:20}});}
   const curSpeed = engine?.state?.playbackSpeed || 1;
-  const __sv2=$('#speedBtnVal');if(__sv2)__sv2.textContent=curSpeed+'x';const __sr2=$('#speedRange');if(__sr2&&document.activeElement!==__sr2)__sr2.value=curSpeed;const __sl2=$('#speedVal');if(__sl2&&document.activeElement!==__sr2)__sl2.textContent=curSpeed+'x';
+  if(document.activeElement!==$('#speedRange'))syncSpeedUI(curSpeed);
   const panel = document.getElementById('transcriptPanel');
   if (panel) {
     const lines = Array.from(panel.querySelectorAll('.vc-transcript-line'));
@@ -700,7 +1153,7 @@ function syncDisplayedPlayback(p){
     }else if(existingBanner){existingBanner.remove();}
   }catch(bannerErr){}
 }
-async function applySpeed(sp){if(!(sp>0)){toast('无效的倍速');return;}engine.state.playbackSpeed=sp;await engine.persist();try{await device.call('playback',{op:'speed',value:sp});}catch(e){}toast('已设置 '+sp+'x 倍速');const __sv=$('#speedBtnVal');if(__sv)__sv.textContent=sp+'x';const __sr=$('#speedRange');if(__sr&&document.activeElement!==__sr)__sr.value=sp;const __sl=$('#speedVal');if(__sl)__sl.textContent=sp+'x';}
+async function applySpeed(sp){if(!Number.isFinite(sp)||sp<.5||sp>3){toast('语速范围为 0.5–3 倍');return;}engine.state.playbackSpeed=sp;await engine.persist();await device.call('playback',{op:'speed',value:sp});syncSpeedUI(sp);toast('已设置 '+sp+'x 倍速');}
 async function seekDisplayedChapter(op,value,delta=null){
   const bid=bookId,cid=chapterId;
   const p=await device.call('playbackState');
@@ -721,6 +1174,9 @@ async function seekDisplayedChapter(op,value,delta=null){
 }
 let playbackNavigationBusy=false;
 window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
+  if(['play','pause','stop','seek','next','prev'].includes(act))playbackPrompts?.cancel();
+  if(act==='play'){if(streamState?.waiting){streamState.waiting=false;streamState.autoResumePaused=false;}waitingForNextChapterId=null;}
+  if(['pause','stop'].includes(act)){if(streamState?.waiting)streamState.autoResumePaused=true;waitingForNextChapterId=null;}
   if(act==='completion'&&sourceAudioId&&playingId&&sourceAudioId!==playingId)return;
   const navigation=['completion','next','prev'].includes(act);
   if(navigation&&playbackNavigationBusy)return;
@@ -734,12 +1190,11 @@ window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
       if(b&&c&&engine){
         await engine.updatePlaybackProgress(b.id,c.id,val||c.duration*1000||0,c.duration*1000||0,true);
       }
-      if(stopAfterChapter){
-        stopAfterChapter=false;
-        await device.call('playback',{op:'pause'});
-        toast('已播完本章，睡眠定时停止');
-        render();
-        return;
+      const sleepPlan=engine?.state.sleepChapterPlan;
+      if(sleepPlan&&b&&c&&sleepPlan.bookId===b.id&&sleepPlan.lastChapterId!==c.id){
+        sleepPlan.lastChapterId=c.id;sleepPlan.remaining=Math.max(0,sleepPlan.remaining-1);
+        if(!sleepPlan.remaining){engine.state.sleepChapterPlan=null;engine.state.settings.sleepTimer=0;await device.call('playback',{op:'pause'});await engine.persist();toast('已播完设定章数，定时停止');render();return;}
+        await engine.persist();updateSleep({sleepRemainingMs:0});
       }
       // 正常播完：自动连播下一章（与睡眠定时无关）
       {
@@ -758,14 +1213,18 @@ window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
           if(isProducing){
             waitingForNextChapterId = nextCh.id;
             toast("下一章正在后台制作中，完成后自动播放...");
+            playbackPrompts?.schedule('waiting',b.id,c.id,playingId);
           } else if(engine.state.settings?.autoProduceUpcoming !== false){
             waitingForNextChapterId = nextCh.id;
             await engine.enqueue(b.id, nextCh.id);
             toast("正在为你自动制作下一章，请稍候...");
+            playbackPrompts?.schedule('waiting',b.id,c.id,playingId);
           } else {
             toast("下一章尚未制作");
           }
         }
+      }else if(b&&c&&chIdx===b.chapters.length-1){
+        playbackPrompts?.schedule('finished',b.id,c.id,playingId);
       }
       return;
       }
@@ -793,13 +1252,72 @@ window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
     }
   }catch(e){toast(e.message||'播放控制失败');}finally{if(navigation)playbackNavigationBusy=false;}
 };
-$('#screen').addEventListener('click',async e=>{const el=e.target.closest('[data-act]');if(!el||el.disabled)return;if(el.classList.contains('vc-modal-overlay')&&e.target!==el)return;const [a,...rest]=el.dataset.act.split(':'),x=rest.join(':');
+async function handleAction(el,e,approved=false){if(!el||el.disabled)return;if(el.classList.contains('vc-modal-overlay')&&e.target!==el)return;const [a,...rest]=el.dataset.act.split(':'),x=rest.join(':');
 try{
+if(a==='opensegment'){if(page!=='annotated')return;resetModalFlags();segmentPanel={bookId,chapterId,id:String(x),scroll:0,result:''};render();return;}
+if(a==='closesegment'){segmentPanel=null;render();return;}
+if(a==='segmentpreview'){const s=panelSegment();if(!s||String(s.id)!==x||!s.audio||s.audio==='skip')return;const panel=segmentPanel;panel.playError='';try{await startPreview(s.audio,'第 '+(chapter().segments.indexOf(s)+1)+' 段 · '+s.speaker);panel.result='正在试听本句，可在试听条暂停或结束。';}catch(error){panel.playError='试听失败：'+cleanErr(error);}render();return;}
+if(a.startsWith('voicebatch')){
+ if(page!=='voices'||voiceTab!=='mine')return;
+ if(a==='voicebatchedit'){voiceBatch=!voiceBatch;voiceBatchIds=[];}
+ if(a==='voicebatchtoggle'&&voiceBatch&&engine.state.voices.some(v=>v.id===x)){voiceBatchIds=voiceBatchIds.includes(x)?voiceBatchIds.filter(id=>id!==x):[...voiceBatchIds,x];}
+ if(a==='voicebatchall'&&voiceBatch){voiceBatchIds=voiceBatchIds.length===engine.state.voices.length?[]:engine.state.voices.map(v=>v.id);}
+ if(a==='voicebatchdelete'&&voiceBatch){
+  const targets=engine.state.voices.filter(v=>voiceBatchIds.includes(v.id));if(!targets.length)return;
+  const bindings=engine.state.books.flatMap(b=>b.characters.filter(r=>targets.some(v=>v.id===r.voice)));
+  uxDialog={title:'删除所选音色？',html:'<p>将删除 '+targets.length+' 个音色：</p><p>'+targets.map(v=>E(v.name)).join('、')+'</p><p>'+bindings.length+' 个角色绑定将解除。已完成的音频保留，此操作无法撤销。</p>',confirmLabel:'确认删除',confirm:async()=>{
+   try{for(const v of targets){await engine.deleteVoice(v.id);voiceBatchIds=voiceBatchIds.filter(id=>id!==v.id);}voiceBatch=false;toast('已删除 '+targets.length+' 个音色');}
+   catch(err){toast('删除未全部完成：'+cleanErr(err)+'，可重新选择后重试');}
+  }};
+ }
+ render();return;
+}
+if(a==='deletevoice'&&approved&&page==='voicedetail'){voiceEditor=null;voiceLeaveNext=null;}
+if(a==='vedsave'||a==='vedsaveleave'){await saveVoiceEditor(a==='vedsaveleave'?voiceLeaveNext:null);return;}
+if(['vedredesign','vedcompareold','vedcomparenew','veddiscard','vedreplay'].includes(a)){
+ captureVoiceDraft();const d=voiceDraft();if(d.working)return;
+ if(a==='veddiscard'){d.candidate=null;d.candidateDescription='';d.error='';d.status='已放弃新方案，原音色未改变。';render();return;}
+ if(a==='vedredesign'){
+  const description=Vocast.cleanVoiceDescription(d.description.trim());
+  if(!description){d.error='请先填写声音描述。';render();document.getElementById('vdescription')?.focus();return;}
+  d.working=true;d.error='';d.status='正在根据描述设计新音色，请稍候…';render();
+  try{d.candidate=await engine.design(description,d.text.trim()||'山里的风停了，故事才刚刚开始。');d.candidateDescription=description;d.status='新方案已生成。';}
+  catch(err){d.error='设计失败：'+cleanErr(err)+'，请重试。';d.status='';}
+  finally{d.working=false;render();}return;
+ }
+ const id=a==='vedcompareold'?voice().sample:a==='vedcomparenew'?d.candidate?.sample:d.trial?.id;
+ if(!id){d.error='暂无样本，请先生成。';render();return;}
+ try{if(preview?.id===id){await device.call('playback',{op:'stop'});preview=null;}await startPreview(id,voice().name+(a==='vedcomparenew'?' · 新方案':a==='vedreplay'?' · 文字试音':' · 原音色'));d.error='';d.status='已开始播放，可在试听条暂停或结束。';}
+ catch(err){d.error='播放失败：'+cleanErr(err)+'，请重试。';}
+ render();return;
+}
+if(a==='vedsample'||a==='vedtrial'){
+ captureVoiceDraft();const d=voiceDraft();if(d.working)return;
+ if(a==='vedtrial'&&!d.text.trim()){d.error='请先填写要试听的文本。';d.trialOpen=true;render();return;}
+ d.working=true;d.error='';d.status=a==='vedsample'?'正在播放样本…':'正在生成试音，请稍候…';render();
+ try{if(a==='vedsample'){await startPreview(voice().sample,voice().name+' · 参考样本');d.status='样本已开始播放，可通过试听条暂停。';}else{const file=await engine.synthesize(d.text,voiceId);d.trial={id:file.id,text:d.text};voice().tested=true;voice().lastTrial=file.id;await engine.persist();await startPreview(file.id,voice().name+' · 文字试音');d.status='试音已生成并开始播放，上方资料仍可继续编辑。';}}
+ catch(err){d.status='';d.error='试听失败：'+cleanErr(err)+'，请重试。';}finally{d.working=false;render();}return;
+}
+if(['playchapter','miniplaypause','nextchapter','prevchapter','streamsegment','seekseg','seekback','seekforward','play','previewpause','previewstop'].includes(a))playbackPrompts?.cancel();
+if(await handleUXAction(a,x,el,e,approved))return;
+if(a==='readnext'){
+ if(!['raw','annotated'].includes(page))return;
+ const mode=page,bid=bookId,fromId=chapterId,chapters=book().chapters,index=chapters.findIndex(item=>item.id===fromId),next=index>=0?chapters[index+1]:null;
+ if(!next||next.id!==x)return;
+ rememberReading();
+ await busy(async()=>{
+  if(mode==='annotated')await engine.prepareAnnotations(bid,next.id);else await engine.ensureChapter(bid,next.id);
+  if(page!==mode||bookId!==bid||chapterId!==fromId)return;
+  chapterId=next.id;selected=[];pendingSeg=null;resetModalFlags();delete window.__jumpToPos;
+  render();window.scrollTo({top:0,behavior:'instant'});rememberReading();
+ },'读取下一章…');return;
+}
 if(a==='reload'){location.reload();return;}
 if(a==='go'){for(const k of['segSpeaker','policyMode','retries','speakerThreshold','taskParallel','ttsParallel','llmProtocol'])delete dropdownSel[k];openDropdown=null;if(x==='tasks'&&e.target.closest('.vc-nav-badge'))taskTab='attention';go(x);return;}if(a==='back'){if(closeActiveModal())return;for(const k of['segSpeaker','policyMode','retries','speakerThreshold','taskParallel','ttsParallel','llmProtocol'])delete dropdownSel[k];openDropdown=null;appBack();return;}
 
+if(a==='continuebook'){const b=book(),lp=engine.state.lastPlayback;const ids=[lp?.bookId===b.id?lp.chapterId:null,b.lastPlayedChapterId,b.readProgress?.chapterId];const c=ids.map(id=>b.chapters.find(ch=>ch.id===id&&ch.audio)).find(Boolean)||b.chapters.find(ch=>ch.audio);if(!c){toast('暂无可播放音频，请先制作章节');return;}chapterId=c.id;page='listen';render();await playCurrentChapter(b.id,c.id);return;}
 if(a==='resumebook'){const [bid,cid]=x.split(':');bookId=bid;chapterId=cid;page='listen';render();await playCurrentChapter(bid,cid);return;}
-if(a==='resumechapter'){const c=book()?.chapters?.find(ch=>ch.id===x);if(c?.audio){chapterId=x;page='listen';render();await playCurrentChapter(bookId,x);return;}const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===x&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[x]);job.catch(e=>toast(e.message));toast('已开始制作');go('detail');return;}
+if(a==='resumechapter'){playerCatalogOpen=false;const c=book()?.chapters?.find(ch=>ch.id===x);if(c?.audio){chapterId=x;page='listen';render();await playCurrentChapter(bookId,x);return;}const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===x&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[x]);job.catch(e=>toast(e.message));toast('已开始制作');go('detail');return;}
 if(a==='setspeed'){await applySpeed(parseFloat(x));return;}
 
 if(a==="toggleautoproduce"){
@@ -807,8 +1325,8 @@ if(!engine.state.settings)engine.state.settings={};
 engine.state.settings.autoProduceUpcoming=engine.state.settings.autoProduceUpcoming===false?true:false;
 await engine.persist();
 toast("听书自动预制: "+(engine.state.settings.autoProduceUpcoming?"已开启":"已关闭"));
-if(page==="listen"){document.querySelectorAll('[data-act="toggleautoproduce"]').forEach(b=>{const on=engine.state.settings.autoProduceUpcoming!==false;b.classList.toggle("active",on);b.textContent="边听边做 · "+(on?"开":"关");});}else{render();}return;}
-if(a==='toggleautodelete'){engine.state.autoDeletePlayed=!engine.state.autoDeletePlayed;await engine.persist();toast('完播自动释放: '+(engine.state.autoDeletePlayed?'已开启':'已关闭'));if(page==='listen'){document.querySelectorAll('[data-act="toggleautodelete"]').forEach(b=>{b.classList.toggle('active',!!engine.state.autoDeletePlayed);b.textContent='完播自删 · '+(engine.state.autoDeletePlayed?'开':'关');});}else{render();}return;}
+render();return;}
+if(a==='toggleautodelete'){if(engine.state.settings.autoDeletePlayed){engine.state.settings.autoDeletePlayed=false;await engine.persist();render();}else{uxDialog={title:'开启完播自动释放？',html:'<p>完播或切换章节时，将删除保留范围外的已听音频。原文与标注保留，但重制会重新请求服务。</p><p>当前保留 '+engine.state.settings.keepRecentCount+' 个已完播章节。</p>',confirm:async()=>{engine.state.settings.autoDeletePlayed=true;await engine.persist();}};render();}return;}
 
 if(a==='seekseg'){
   const targetMs=parseInt(x,10)||0;
@@ -862,141 +1380,180 @@ if(a==='clearbooklistened'){const b=engine.state.books.find(bk=>bk.id===x);if(b)
 if(a==='clearbookaudio'){const b=engine.state.books.find(bk=>bk.id===x);if(b){await engine.clearBookAudio(b.id);storageStats=await device.call('audioStats');toast('已释放《'+b.name+'》全部音频');render();}return;}
 if(a==='deletebookconfirm'){deleteConfirmBookId=x;render();return;}
 if(a==='closedeleteconfirm'){deleteConfirmBookId=null;render();return;}
-if(a==='executedeletebook'){if(deleteConfirmBookId){const b=engine.state.books.find(bk=>bk.id===deleteConfirmBookId);const bName=b?.name||'书籍';await engine.deleteBook(deleteConfirmBookId);deleteConfirmBookId=null;storageStats=await device.call('audioStats');toast('已彻底删除《'+bName+'》');if(bookId===deleteConfirmBookId){bookId=null;chapterId=null;go('shelf');}else{render();}}return;}
+if(a==='executedeletebook'){if(deleteConfirmBookId){const removedBookId=deleteConfirmBookId;const b=engine.state.books.find(bk=>bk.id===deleteConfirmBookId);const bName=b?.name||'书籍';await engine.deleteBook(deleteConfirmBookId);deleteConfirmBookId=null;storageStats=await device.call('audioStats');toast('已彻底删除《'+bName+'》');if(bookId===removedBookId){bookId=null;chapterId=null;go('shelf');}else{render();}}return;}
 if(a==='minigolisten'){if(playingBookId&&playingChapterId){bookId=playingBookId;chapterId=playingChapterId;go('listen');}return;}
-if(a==='miniseekback'){await device.call('playback',{op:'seek',value:Math.max(0,(miniPlayingState?.position||0)-15000)});return;}
 if(a==='miniplaypause'){const isPlay=!!miniPlayingState?.playing;await device.call('playback',{op:isPlay?'pause':'resume'});return;}
 if(a==='mininext'){await window.onNativePlaybackAction('next',0);return;}
+if(a==='miniprev'){await window.onNativePlaybackAction('prev',0);return;}
 if(a==='shelfmulti'){shelfMulti=!shelfMulti;if(!shelfMulti)shelfSelected=[];render();return;}
 if(a==='shelfselectall'){shelfSelected=engine.state.books.map(b=>b.id);render();return;}
 if(a==='shelfselectnone'){shelfSelected=[];render();return;}
 if(a==='shelfdeletebooks'){if(!shelfSelected.length)return;deleteConfirmShelf=[...shelfSelected];render();return;}
 if(a==='closeshelfdelete'){deleteConfirmShelf=null;render();return;}
 if(a==='executeshelfdelete'){if(deleteConfirmShelf?.length){const ids=[...deleteConfirmShelf];for(const bid of ids){try{await engine.deleteBook(bid);}catch(e){}}deleteConfirmShelf=null;shelfSelected=[];shelfMulti=false;if(ids.includes(bookId)){bookId=null;chapterId=null;}try{storageStats=await device.call('audioStats');}catch(e){}toast('已删除 '+ids.length+' 本书');if(page!=='shelf')go('shelf');else render();}return;}
-if(a==='book'){shelfMulti=false;shelfSelected=[];bookId=x;chapterId=book().chapters[0].id;multi=false;selected=[];chapterPage=0;episodeModalOpen=false;go('detail');return;}
-if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);if(c&&!c.audio&&!(c.unloaded?((c.segmentCount||0)>0):((c.segments||[]).length>0))){unmadeChoiceChapterId=x;render();return;}go(getChapterTarget(c));return;}
+if(a==='book'){if(shelfMulti){const scroll=window.scrollY;shelfSelected=shelfSelected.includes(x)?shelfSelected.filter(id=>id!==x):[...shelfSelected,x];render();window.scrollTo(0,scroll);requestAnimationFrame(()=>Array.from(document.querySelectorAll('.vc-book-select')).find(el=>el.dataset.act==='book:'+x)?.focus({preventScroll:true}));return;}shelfMulti=false;shelfSelected=[];bookId=x;chapterId=book().chapters[0].id;multi=false;selected=[];chapterPage=0;episodeModalOpen=false;go('detail');return;}
+if(a==='producechapter'){const c=book()?.chapters?.find(ch=>ch.id===x);if(!c)return;const existing=chapterTask(bookId,x);if(isChapterProducing(existing)){chapterId=x;unmadeChoiceChapterId=x;render();return;}if(existing){toast('本章已有制作任务，请在制作页处理');return;}if(c.audio&&!c.audioStale){toast('本章已有音频，可以直接播放');return;}if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}engine.enqueue(bookId,[x]).catch(e=>toast(e.message));toast('已加入制作任务');render();return;}
+if(a==='read'){chapterId=x;const c=book()?.chapters?.find(ch=>ch.id===x);if(isChapterProducing(chapterTask(bookId,x))||c&&!c.audio&&!(c.unloaded?((c.segmentCount||0)>0):((c.segments||[]).length>0))){unmadeChoiceChapterId=x;render();return;}go(getChapterTarget(c));return;}
 if(a==='closeunmade'){unmadeChoiceChapterId=null;render();return;}
-if(a==='readraw'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;chapterId=cid;page='raw';render();window.scrollTo(0,0);return;}
-if(a==='makechapter'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;chapterId=cid;selected=[cid];go('make');return;}
-if(a==='makeandlisten'){const cid=unmadeChoiceChapterId||x;unmadeChoiceChapterId=null;if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}chapterId=cid;const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===cid&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[cid]);job.catch(e=>toast(e.message));toast('已开始制作，边做边听');taskTab='active';page='listen';render();window.scrollTo(0,0);return;}
-if(a==='confirm'){chapterId=x;pendingSeg=null;const cc=book()?.chapters?.find(ch=>ch.id===x);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,x);},'读取章节…');}go('annotated');return;}
+if(a==='readraw'){const cid=unmadeChoiceChapterId||x;chapterId=cid;go('raw');return;}
+if(a==='makechapter'){const cid=unmadeChoiceChapterId||x;if(isChapterProducing(chapterTask(bookId,cid))){unmadeChoiceChapterId=cid;render();return;}unmadeChoiceChapterId=null;chapterId=cid;selected=[cid];go('make');return;}
+if(a==='makeandlisten'){const cid=unmadeChoiceChapterId||x,existing=chapterTask(bookId,cid),c=book()?.chapters?.find(ch=>ch.id===cid);if(!c)return;const needsStart=!isChapterProducing(existing)&&(!c.audio||c.audioStale);if(needsStart&&(!configured.llmConfigured||!configured.ttsConfigured)){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}chapterId=cid;if(needsStart){const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[cid]);job.catch(e=>toast(e.message));}toast(needsStart?'已开始制作，边做边听':'已进入边做边听');taskTab='active';go('listen');return;}
+if(a==='confirm'){chapterId=x;pendingSeg=null;await busy(async()=>{await engine.prepareAnnotations(bookId,x);pendingSeg=readingIssues()[0]?.id??null;go('annotated');},'定位待处理句子…');return;}
 if(a==='tasktab'){taskTab=x;render();return;}
 if(a==='gotasksactive'){taskTab='active';go('tasks');return;}
 if(a==='mergeroles'){const b=book();const m=(b.mergeSuggestions||[])[Number(x)];if(m){await engine.mergeRoles(b.id,m.to,m.from);toast('已合并「'+m.from+'」→「'+m.to+'」，音色共用');}go('roles');return;}
 if(a==='ignoremerge'){const b=book();const m=(b.mergeSuggestions||[]).splice(Number(x),1)[0];if(m){b.mergeDismissed=b.mergeDismissed||[];b.mergeDismissed.push(m.from+'→'+m.to);}await engine.persist();go('roles');return;}
 if(a==='ignorerole'){const b=book();const ch=b.characters.find(r=>r.name===x);if(ch){const reuse=engine.autoVoiceFor(bookId,x);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';await engine.persist();toast('角色「'+ch.name+'」已自动复用已有音色');}else{ch.autoDesign=true;await engine.persist();toast('角色「'+ch.name+'」稍后后台自动设计');}engine.resumeWaiting(bookId).catch(e=>toast(e.message));}taskTab='active';go('tasks');return;}
-if(a==='ignorespeaker'){const b=book(),c=chapter();const seg=c.segments.find(s=>s.id===Number(x));if(seg){const sp=String(seg.speaker||'');if(sp==='未知角色'||sp==='未识别角色'||!sp||!b.characters.some(r=>r.name===sp)){seg.speaker='旁白';seg.emotion='自然朗读';toast('未知说话人已设为旁白');}else{const ch=b.characters.find(r=>r.name===sp);if(ch&&!ch.voice){const reuse=engine.autoVoiceFor(bookId,sp);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';}else{ch.autoDesign=true;}}toast('已沿用LLM识别：'+sp+'，音色稍后自动处理');}seg.confidence=1;seg.audio=null;c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;if(t.status==='done')t.status='paused';}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');}return;}
-if(a==='ignoreall'){const b=book(),c=chapter();const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const rolesToFix=b.characters.filter(r=>(activeSpeakers.includes(r.name)||r.candidate)&&!r.voice);for(const ch of rolesToFix){const reuse=engine.autoVoiceFor(bookId,ch.name);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';continue;}ch.autoDesign=true;}for(const seg of c.segments){if(!seg.skip&&!seg.isAd&&seg.speaker!=='广告'&&(seg.confidence<engine.spkThr()||!b.characters.some(r=>r.name===seg.speaker))){const sp=String(seg.speaker||'');if(sp==='未知角色'||sp==='未识别角色'||!sp||!b.characters.some(r=>r.name===sp)){seg.speaker='旁白';seg.emotion='自然朗读';}seg.confidence=1;seg.audio=null;}}c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('已记录选择，后台继续制作');taskTab='active';go('tasks');return;}
+if(a==='ignorespeaker'){const b=book(),c=chapter();const seg=c.segments.find(s=>s.id===Number(x));if(seg){const sp=String(seg.speaker||'');if(sp==='未知角色'||sp==='未识别角色'||!sp||!b.characters.some(r=>r.name===sp)){seg.speaker='旁白';seg.emotion='自然朗读';toast('未知说话人已设为旁白');}else{const ch=b.characters.find(r=>r.name===sp);if(ch&&!ch.voice){const reuse=engine.autoVoiceFor(bookId,sp);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';}else{ch.autoDesign=true;}}toast('已沿用LLM识别：'+sp+'，音色稍后自动处理');}seg.confidence=1;seg.annotationStatus='resolved';delete seg.annotationError;seg.audio=null;c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;if(t.status==='done')t.status='paused';}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');}return;}
+if(a==='ignoreall'){const b=book(),c=chapter();const activeSpeakers=[...new Set(c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const rolesToFix=b.characters.filter(r=>(activeSpeakers.includes(r.name)||r.candidate)&&!r.voice);for(const ch of rolesToFix){const reuse=engine.autoVoiceFor(bookId,ch.name);if(reuse){ch.voice=reuse;ch.candidate=null;ch.reason='性别年龄与声音特征相近，自动复用已有音色';continue;}ch.autoDesign=true;}for(const seg of c.segments){if(!seg.skip&&!seg.isAd&&seg.speaker!=='广告'&&(seg.annotationStatus!=='pending'||seg.annotationError)&&(seg.annotationError||seg.confidence<engine.spkThr()||!b.characters.some(r=>r.name===seg.speaker))){const sp=String(seg.speaker||'');if(sp==='未知角色'||sp==='未识别角色'||!sp||!b.characters.some(r=>r.name===sp)){seg.speaker='旁白';seg.emotion='自然朗读';}seg.confidence=1;seg.annotationStatus='resolved';delete seg.annotationError;seg.audio=null;}}c.audio=null;c.status='annotated';engine.touch(c);for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&t.chapterId===chapterId)){t.done=c.segments.filter(s=>s.audio).length;}await engine.persist();engine.resumeWaiting(bookId).catch(e=>toast(e.message));toast('已记录选择，后台继续制作');taskTab='active';go('tasks');return;}
 if(a==='acceptrole'){const bid=bookId;await busy(async()=>{await engine.accept(bid,x,false);toast('已采用角色「'+x+'」专属音色');},'正在保存音色…');engine.resumeWaiting(bid).catch(e=>toast(e.message));taskTab='active';go('tasks');return;}
-if(a==='acceptsuggested'){const ch=book().characters.find(r=>r.name===x);if(ch&&ch.suggestedVoice){ch.voice=ch.suggestedVoice;ch.candidate=null;await engine.persist();toast('已为角色「'+x+'」绑定音色');engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');}return;}
-if(a==='resumechapter'){const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===x&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[x]);job.catch(e=>toast(e.message));toast('已开始制作');go('detail');return;}
+if(a==='acceptsuggested'){const ch=book().characters.find(r=>r.name===x);if(ch&&ch.suggestedVoice){await engine.bind(bookId,x,ch.suggestedVoice,false);toast('已为角色「'+x+'」绑定音色');engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');}return;}
+if(a==='resumechapter'){playerCatalogOpen=false;const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===x&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[x]);job.catch(e=>toast(e.message));toast('已开始制作');go('detail');return;}
 if(a==='samplebook'){await busy(async()=>{const b=await engine.addBook('雾山来信 · 示例文本','第一章 山中来信\n雨停了，青年男子沈砚推开木门。\n“你终于来了。”沈砚用低沉温润的声音说。\n年轻女子林晚抬起头，用清亮的声音问：“这封信是谁寄来的？”\n第二章 天亮之前\n清晨，沈砚走出邮局。\n“别担心，我会回来。”他轻声说。');bookId=b.id;chapterId=b.chapters[0].id;chapterPage=0;episodeModalOpen=false;go('detail');});return;}
-if(a==='importbook'){const files=await device.call('pick',{kind:'book'});if(!files||!files.length)return;const f=files[0];await busy(async()=>{const st=engine.state.settings;importDraft={name:f.name,text:f.text,ruleId:st.splitRule||'auto',customPattern:st.splitCustom||'',result:Vocast.splitChapters(f.text,{ruleId:st.splitRule||'auto',customPattern:st.splitCustom||''})};delete dropdownSel.splitRule;},'正在切分章节…');page='splitpreview';render();window.scrollTo(0,0);return;}
-if(a==='multiselect'){multi=!multi;render();return;}
+if(a==='importbook'){
+  try{
+    const files=await device.call('pick',{kind:'book'});if(!files?.length)return;
+    const draft=VocastImport.createDraft(files[0],engine.state.settings);
+    if(!draft.error)VocastImport.splitDraft(draft,Vocast.splitChapters);enterImport(draft);
+  }catch(error){const draft=VocastImport.createDraft({});draft.error=cleanErr(error.message||error);enterImport(draft);}
+  return;
+}
+if(a==='multiselect'){multi=!multi;selected=[];render();const target=document.querySelector(multi?'.vc-chapter-manage-header button':'.vc-manage-chapters');target?.focus({preventScroll:true});return;}
+if(a==='togglechapter'){if(page!=='detail'||!multi)return;selected=selected.includes(x)?selected.filter(id=>id!==x):[...selected,x];render();Array.from(document.querySelectorAll('[data-act]')).find(el=>el.dataset.act==='togglechapter:'+x)?.focus({preventScroll:true});return;}
+if(a==='nextissue'){const ids=readingIssues().map(s=>String(s.id)),context=bookId+'|'+chapterId,previous=window.__lastReadingIssue,position=previous?.context===context?ids.indexOf(previous.id):-1,id=ids[(position+1)%ids.length],row=id==null?null:Array.from(document.querySelectorAll('[data-seg]')).find(el=>el.dataset.seg===id);if(row){window.__lastReadingIssue={context,id};row.scrollIntoView({block:'center',behavior:'instant'});row.classList.remove('vc-flash');requestAnimationFrame(()=>row.classList.add('vc-flash'));row.setAttribute('tabindex','-1');row.focus({preventScroll:true});setTimeout(()=>row.classList.remove('vc-flash'),1800);}else toast('没有待处理的异常');return;}
 if(a==='selectunfinished'){selected=book().chapters.filter(c=>!c.audio).map(c=>c.id);render();return;}
 if(a==='selectpage'){const b=book();const cur=b.chapters.slice(chapterPage*50,(chapterPage+1)*50).map(c=>c.id);selected=[...new Set([...selected,...cur])];render();return;}
 if(a==='selectnone'){selected=[];render();return;}
 if(a==='selectall'){selected=book().chapters.map(c=>c.id);render();return;}
 if(a==='clearchapters'){await busy(async()=>{const ids=[...selected];for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&ids.includes(t.chapterId)&&['running','queued'].includes(t.status)))await engine.cancel(t.id);let n=0;for(const cid of ids){const cc=engine.chapter(bookId,cid);if(cc?.audio){await engine.clearChapterAudio(bookId,cid);n++;}}selected=[];multi=false;try{storageStats=await device.call('audioStats');}catch(e){}toast('已释放 '+n+' 章音频，标注保留，可直接重听时重合');},'正在释放所选章节音频…');return;}
 if(a==='resetchapters'){await busy(async()=>{const ids=[...selected];for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&ids.includes(t.chapterId)&&['running','queued'].includes(t.status)))await engine.cancel(t.id);const n=await engine.resetChapters(bookId,ids);selected=[];multi=false;try{storageStats=await device.call('audioStats');}catch(e){}toast('已清除 '+n+' 章的标注与音频，原文保留，可重新制作');},'正在清除所选章节的标注与音频…');return;}
+if(a==='playercatalog'){playerCatalogOpen=true;render();requestAnimationFrame(()=>{const list=document.getElementById('player-catalog-scroll'),row=list?.querySelector('.vc-chapter-current');if(list&&row)list.scrollTop=row.getBoundingClientRect().top-list.getBoundingClientRect().top+list.scrollTop;});return;}
+if(a==='closeplayercatalog'){playerCatalogOpen=false;render();return;}
+if(a==='catalogcurrent'){const list=document.getElementById('player-catalog-scroll'),row=list?.querySelector('.vc-chapter-current');if(list&&row)list.scrollTop+=row.getBoundingClientRect().top-list.getBoundingClientRect().top;return;}
+if(a==='listenpick'){playerCatalogOpen=false;chapterId=x;page='listen';render();await playCurrentChapter(bookId,x);return;}
 if(a==='openepisodes'){episodeModalOpen=true;render();return;}
 if(a==='dropdown'){openDropdown=x;render();return;}
 if(a==='closedropdown'){openDropdown=null;render();return;}
-if(a==='pickopt'){const pi=x.indexOf('|');const pid=x.slice(0,pi),pval=x.slice(pi+1);dropdownSel[pid]=pval;openDropdown=null;if(importDraft&&pid==='splitRule'){importDraft.ruleId=pval;}render();return;}
-if(a==='resplit'){if(!importDraft){render();return;}importDraft.ruleId=dropdownSel.splitRule!==undefined?dropdownSel.splitRule:importDraft.ruleId;importDraft.customPattern=value('splitCustom')||importDraft.customPattern;await busy(async()=>{importDraft.result=Vocast.splitChapters(importDraft.text,{ruleId:importDraft.ruleId,customPattern:importDraft.customPattern});},'重新切分…');render();return;}
-if(a==='splitprobe'){if(!importDraft){render();return;}await busy(async()=>{const head=importDraft.text.split('\n').slice(0,60).join('\n');const r=await engine.llm(Vocast.SPLIT_PROBE_PROMPT+'\n'+head);const tpl=String(r.template||'');if(!tpl.includes('*'))throw Error('探测未返回可用模板');importDraft.ruleId='custom';importDraft.customPattern=tpl;dropdownSel.splitRule='custom';importDraft.result=Vocast.splitChapters(importDraft.text,{ruleId:'custom',customPattern:tpl});toast('探测到规则：'+tpl);},'LLM 探测切章规则…');render();return;}
-if(a==='confirmsplit'){if(!importDraft||!importDraft.result){render();return;}await busy(async()=>{const b=await engine.addBook(importDraft.name,importDraft.text,{ruleId:importDraft.ruleId,customPattern:importDraft.customPattern});bookId=b.id;chapterId=b.chapters[0].id;chapterPage=0;episodeModalOpen=false;importDraft=null;delete dropdownSel.splitRule;if(b.importWarnings&&b.importWarnings.length){b._warnNotified=true;device.call('notify',{channel:'notice',title:'书籍导入提示 · '+b.name,message:b.importWarnings.join('\n'),type:'info'}).catch(()=>{});}},'导入小说…');go('detail');return;}
-if(a==='cancelsplit'){importDraft=null;delete dropdownSel.splitRule;go('shelf');return;}
-if(a==='speedmodal'){speedModalOpen=true;render();return;}
+if(a==='pickopt'){if(openDropdown==='llmProtocol')configDirty=true;const pi=x.indexOf('|');const pid=x.slice(0,pi),pval=x.slice(pi+1);dropdownSel[pid]=pval;openDropdown=null;if(importDraft&&page==='splitpreview'&&pid==='splitRule'&&importDraft.ruleId!==pval){importDraft.ruleId=pval;markImportRuleDirty();}render();return;}
+if(a==='resplit'){if(!importDraft||importDraft.probing||importDraft.importing)return;VocastImport.splitDraft(importDraft,Vocast.splitChapters);importDraft.probeNote='';render();return;}
+if(a==='splitprobe'){if(!configured.llmConfigured)return;await probeImport();return;}
+if(a==='importllm'){if(importDraft){importDraft.configuring=true;go('llm');}return;}
+if(a==='confirmsplit'){
+  if(!VocastImport.canImport(importDraft))return;
+  const draft=importDraft;draft.importing=true;render();
+  try{
+    const b=await engine.addBook(draft.name,draft.text,{ruleId:draft.ruleId,customPattern:draft.customPattern});
+    bookId=b.id;chapterId=b.chapters[0].id;chapterPage=0;selected=[];multi=false;importDraft=null;delete dropdownSel.splitRule;
+    history=history.filter(entry=>entry.page!=='splitpreview');page='shelf';go('detail');
+  }catch(error){draft.importing=false;draft.error='保存导入结果失败：'+cleanErr(error.message||error);render();}
+  return;
+}
+if(a==='cancelsplit'){if(!importDraft?.importing)leaveImport();return;}
+if(a==='speedmodal'){resetModalFlags();speedModalOpen=true;render();return;}
 if(a==='closespeed'){speedModalOpen=false;render();return;}
-if(a==='listensettings'){listenSettingsOpen=true;render();return;}
+if(a==='autoproducesettings'){resetModalFlags();listenSettingsOpen='produce';render();return;}
+if(a==='listensettings'){resetModalFlags();listenSettingsOpen='release';render();return;}
 if(a==='closesettings'){listenSettingsOpen=false;render();return;}
 if(a==='setkeepcount'){const n=Math.max(0,Math.min(3,parseInt(x,10)));if(!isNaN(n)){engine.state.settings.keepRecentCount=n;await engine.persist();}render();return;}
 if(a==='setproducecount'){const n=Math.min(3,Math.max(1,parseInt(x,10)));if(!isNaN(n)){engine.state.settings.autoProduceCount=n;await engine.persist();}render();return;}
+if(a==='editbookinfo'){resetModalFlags();pendingCoverColor=null;bookInfoOpen=true;render();return;}
+if(a==='closebookinfo'){bookInfoOpen=false;render();return;}
+if(a==='pickcover'){
+  if(!/^#[a-f0-9]{6}$/i.test(x))return;
+  pendingCoverColor=x;
+  document.querySelectorAll('#bookInfoDialog .vc-cover-opt').forEach(el=>{const on=el.dataset.act==='pickcover:'+x;el.classList.toggle('is-on',on);el.setAttribute('aria-checked',String(on));});
+  return;
+}
+if(a==='savebookinfo'){
+  const bi=bookInfoTarget();if(!bi)return;
+  const nameInput=document.getElementById('biName'),authorInput=document.getElementById('biAuthor');
+  const nextName=(nameInput?.value||'').trim(),nextAuthor=(authorInput?.value||'').trim();
+  if(!nextName){toast('书名不能为空');nameInput?.focus();return;}
+  const dup=engine.state.books.find(b=>b.id!==bi.id&&b.name===nextName);
+  if(dup){toast('书架里已有同名书籍');nameInput?.focus();return;}
+  if(pendingCoverColor)bi.coverColor=pendingCoverColor;
+  bi.name=nextName;bi.author=nextAuthor;bi.sourceFile=bi.sourceFile||nextName;
+  await engine.persist();bookInfoOpen=false;render();toast('书籍信息已更新');return;
+}
 if(a==='closeepisodes'){episodeModalOpen=false;render();return;}
-if(a==='setchpage'){chapterPage=Number(x)||0;episodeModalOpen=false;render();return;}
+if(a==='setchpage'){chapterPage=Number(x)||0;catalogRequestId=book().chapters[chapterPage*50]?.id;episodeModalOpen=false;render();return;}
 if(a==='analyze'){await busy(()=>engine.analyze(bookId,chapterId),'正在实际调用语言模型，识别角色…');return;}
 if(a==='makeone'){selected=[chapterId];go('make');return;}
 if(a==='enqueue'){if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}const ids=[...selected];go('tasks');engine.enqueue(bookId,ids).catch(e=>toast(e.message));return;}
-if(a==='task'||a==='taskroles'){const t=engine.state.tasks.find(t=>t.id===x);if(!t){toast('任务不存在');return;}window.currentTask=t.id;bookId=t.bookId;chapterId=t.chapterId;pendingSeg=null;window.fromTasks=true;const cc=book().chapters.find(ch=>ch.id===t.chapterId);if(cc&&cc.unloaded){await busy(async()=>{await engine.ensureChapter(bookId,t.chapterId);},'读取章节…');}if(a==='task'){go('annotated');}else{go('roles');}return;}
+if(a==='task'||a==='taskroles'){const t=engine.state.tasks.find(t=>t.id===x);if(!t){toast('任务不存在');return;}window.currentTask=t.id;bookId=t.bookId;chapterId=t.chapterId;pendingSeg=null;window.fromTasks=true;const cc=book().chapters.find(ch=>ch.id===t.chapterId);if(a==='task'){const prepared=await busy(()=>engine.prepareAnnotations(bookId,t.chapterId),'读取标注…');if(!prepared)return;pendingSeg=engine.chapter(bookId,chapterId).segments?.find(s=>s.annotationError||s.qualityStatus==='pending'||s.confidence<engine.spkThr())?.id;go('annotated');window.fromTasks=true;}else{if(cc&&cc.unloaded)await busy(()=>engine.ensureChapter(bookId,t.chapterId),'读取章节…');go('roles');}return;}
 if(a==='pause'){await engine.pause(x);toast('将在当前请求完成后暂停');return;}
 if(a==='taskup'){await engine.moveTask(x,'up');render();return;}
 if(a==='taskdown'){await engine.moveTask(x,'down');render();return;}
 if(a==='tasktop'){await engine.moveTask(x,'top');render();return;}
-if(a==='resume'){const __rt=engine.state.tasks.find(t=>t.id===x);if(__rt&&isMissingData(__rt.message)){toast('章节数据缺失，无法继续：请删除本书后重新导入');go('tasks');return;}engine.resume(x).catch(e=>toast(cleanErr(e.message)||String(e)));return;}
+if(a==='resume'){const __rt=engine.state.tasks.find(t=>t.id===x);if(__rt&&isMissingData(__rt.error||__rt.message)){bookId=__rt.bookId;chapterId=__rt.chapterId;recoveryError=__rt.message;go('recovery');return;}taskTab='active';go('tasks');engine.resume(x).catch(e=>toast(cleanErr(e.message)||String(e)));return;}
 if(a==='cancel'){await engine.cancel(x);toast('任务已取消');render();return;}
 if(a==='pauseall'){const active=engine.state.tasks.filter(t=>['queued','running'].includes(t.status));for(const t of active)await engine.pause(t.id);toast(active.length?`已暂停 ${active.length} 个任务，当前句子完成后停止`:'没有正在制作的任务');render();return;}
-if(a==='autoconfirmall'){const bids=[...new Set(engine.state.tasks.filter(t=>t.status==='waiting').map(t=>t.bookId))];let n=0;for(const bid of bids){const before=engine.state.tasks.filter(t=>t.bookId===bid&&t.status==='waiting').length;await engine.resumeWaiting(bid);n+=before;}toast(n?`已自动确认 ${n} 个待确认任务，后台继续制作`:'没有待确认的任务');render();return;}
+if(a==='autoconfirmall'){const result=await engine.confirmWaiting();confirmationResult=result;taskTab=result.blocked.length?'attention':'active';toast('已处理 '+result.roles+' 个角色、'+result.speakers+' 处说话人；'+result.resumed+' 个任务可继续，'+result.blocked.length+' 个仍需处理');render();return;}
 if(a==='clearfinished'){const gone=engine.state.tasks.filter(t=>['done','cancelled'].includes(t.status));for(const t of gone)await engine.removeTask(t.id);toast(gone.length?`已清除 ${gone.length} 条已完成记录`:'没有可清除的记录');render();return;}
 if(a==='resumeall'){const paused=engine.state.tasks.filter(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested).sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0)));engine.resumeTasks(paused.map(t=>t.id)).catch(e=>toast(e.message));toast(paused.length?`已继续制作 ${paused.length} 个任务`:'没有可继续的任务');render();return;}
 if(a==='listentask'){const t=engine.state.tasks.find(t=>t.id===x);if(!t)throw Error('任务不存在');bookId=t.bookId;chapterId=t.chapterId;page='listen';render();await playCurrentChapter(t.bookId,t.chapterId);return;}
 if(a==='removetask'){await engine.removeTask(x);toast('已清除任务记录，音频资源保留');if(page==='task')go('tasks');else render();return;}
 if(a==='remake'){const t=engine.state.tasks.find(t=>t.id===x);if(t){const bid=t.bookId,cid=t.chapterId;await engine.removeTask(x);engine.enqueue(bid,[cid]).catch(e=>toast(e.message));toast('已重新加入制作队列');go('tasks');}return;}
-if(a==='importvoices'){await busy(async()=>{imports=await device.call('pick',{kind:'voice'});go('voiceimport');},'选择参考样本…');return;}
-if(a==='saveimports'){await busy(async()=>{for(let i=0;i<imports.length;i++){const description=value('import-'+i).trim();if(!description)throw Error('请填写所有音色描述');imports[i].description=description;}for(const f of imports){await engine.importVoice(f);}await engine.persist();imports=[];go('voices');});return;}
-if(a==='voicetab'){voiceTab=x;render();return;}
+if(a==='importvoices'){await busy(async()=>{const files=await device.call('pick',{kind:'voice'});if(!files?.length)return;imports=files;go('voiceimport');},'选择参考样本…');return;}
+if(a==='saveimports'){await busy(async()=>{for(let i=0;i<imports.length;i++){const description=value('import-'+i).trim();if(!description)throw Error('请填写所有音色描述');imports[i].description=description;imports[i].displayName=value('import-name-'+i).trim();}for(const f of imports){const v=await engine.importVoice(f);if(f.displayName)v.name=f.displayName;}await engine.persist();imports=[];go('voices');});return;}
+if(a==='voicetab'){voiceTab=x;voiceBatch=false;voiceBatchIds=[];render();return;}
 if(a==='voice'){voiceId=x;go('voicedetail');return;}
-if(a==='savevoice'){if(!value('vdescription').trim())throw Error('请填写音色描述');voice().description=Vocast.cleanVoiceDescription(value('vdescription').trim());voice().enabled=$('#venabled').checked;await engine.saveVoice(voice());toast('音色描述与名称已保存');render();return;}
+if(a==='savevoice'){if(!value('vdescription').trim())throw Error('请填写音色描述');voice().name=value('vname').trim()||voice().name;voice().description=Vocast.cleanVoiceDescription(value('vdescription').trim());voice().enabled=$('#venabled').checked;await engine.saveVoice(voice());toast('音色描述与名称已保存');render();return;}
 if(a==='deletevoice'){const targetId=x||voiceId;const targetVoice=engine.state.voices.find(v=>v.id===targetId);const name=targetVoice?.name||'该音色';await busy(async()=>{await engine.deleteVoice(targetId);toast(`已删除音色「${name}」`);go('voices');},'正在删除音色…');return;}
 if(a==='newdesign'){candidate=null;roleName=null;designDirty=false;go('design');return;}
-if(a==='designsample'){const description=value('designDescription'),text=value('designText');await busy(async()=>{const v=await engine.design(description,text);candidate=v;candidate.previewText=text;designDirty=false;if(roleName){book().characters.find(r=>r.name===roleName).candidate=v;await engine.persist();}},'MiMo 正在设计真实音色样本…');return;}
-if(a==='acceptsample'){if(designDirty)throw Error('描述或文本已修改，请重新生成样本');await busy(async()=>{if(roleName){engine.accept(bookId,roleName).catch(e=>toast(e.message));go('roles');}else{await engine.saveVoice(candidate);go('voices');}},'保存样本…');return;}
+if(a==='designsample'){startDesignJob();return;}
+if(a==='acceptsample'){if(designJob?.running)throw Error('请等待当前样本生成完成');if(designDirty)throw Error('描述或文本已修改，请重新生成样本');await busy(async()=>{if(roleName){engine.accept(bookId,roleName).catch(e=>toast(e.message));go('roles');}else{await engine.saveVoice(candidate);go('voices');}},'保存样本…');return;}
 if(a==='candidate'){roleName=x;candidate=book().characters.find(r=>r.name===x).candidate;designDirty=false;go('design');return;}
-if(a==='chooserole'){roleName=x;go('choose');return;}
+if(a==='chooserole'){roleName=x;chooseTab=(book().characters.find(r=>r.name===x)?.voice||'').startsWith('preset:')?'preset':'mine';go('choose');return;}
+if(a==='choosetab'){chooseTab=x;render();return;}
+if(a==='choosevoice'){const r=book().characters.find(c=>c.name===roleName);if(!r)return;if(r.voice===x){toast('「'+roleName+'」正在使用该音色');render();return;}engine.bind(bookId,roleName,x).then(()=>{toast('已为「'+roleName+'」改用「'+voiceLabel(x)+'」');render();}).catch(e=>{toast(e.message);render();});return;}
+if(a==='acceptsuggested'){const r=book().characters.find(r=>r.name===x);if(!r?.suggestedVoice)throw Error('没有可采用的匹配音色');engine.bind(bookId,x,r.suggestedVoice).catch(e=>toast(e.message));go('roles');return;}
 if(a==='bind'){engine.bind(bookId,roleName,x).catch(e=>toast(e.message));go('roles');return;}
-if(a==='trialrole'){const b=book(),r=b.characters.find(v=>v.name===x);if(!r?.voice){toast('该角色尚未分配音色');return;}const c=chapter();const line=(c.segments||[]).find(s=>s.speaker===x&&!s.skip&&!s.isAd)||(c.segments||[]).find(s=>!s.skip&&!s.isAd&&s.speaker!=='广告');const text=line?line.text.slice(0,120):('大家好，我是'+x+'，这是我的声音。');await busy(async()=>{const file=await engine.synthesize(text,r.voice,'自然朗读，不能增删原文。');await device.call('play',{id:file.id,title:'试听 · '+x});},'正在合成试听…');return;}
-if(a==='trial'){const text=value('trialText');await busy(async()=>{const file=await engine.synthesize(text,voiceId);voice().tested=true;voice().lastTrial=file.id;await engine.persist();await device.call('play',{id:file.id,title:'音色试音'});toast('克隆试音已生成并播放');},'MiMo 正在克隆合成试音…');return;}
-if(a==='preset'){await busy(async()=>{const f=await engine.synthesize('山里的风停了，故事才刚刚开始。','preset:'+x);await device.call('play',{id:f.id,title:'MiMo · '+x});},'正在合成预设试听…');return;}
-if(a==='trialvoice'){const v=engine.state.voices.find(v=>v.id===x);if(!v){toast('音色不存在');return;}if(v.sample){await device.call('play',{id:v.sample,title:'试听 · '+v.name});playingId=v.sample;playingBookId=null;playingChapterId=null;return;}await busy(async()=>{const f=await engine.synthesize('山里的风停了，故事才刚刚开始。',v.id);await device.call('play',{id:f.id,title:'试听 · '+v.name});},'正在合成试听…');return;}
-if(a==='play'){await device.call('play',{id:x,title:'Vocast 试听'});playingId=x;playingBookId=null;playingChapterId=null;return;}
-if(a==='repacecur'){engine.optimizePauses(bookId,chapterId).catch(e=>toast(e.message));toast('已开始优化句末停顿');go('tasks');return;}
-if(a==='playchapter'){const ch=chapter();if(!ch?.audio){await playStreamSeg(bookId,chapterId,0);return;}const p=await device.call('playbackState');if(p.id!==ch.audio){await playCurrentChapter();}else await device.call('playback',{op:p.playing?'pause':'resume'});return;}
-if(a==='prevchapter'){
-  const b=book();if(!b)return;const chapters=b.chapters||[];const idx=chapters.findIndex(ch=>ch.id===chapterId);
-  if(idx>0&&playablePrefix(chapters[idx-1]).length){
-    const prevTarget=chapters[idx-1];
-    const cleanRes=await engine.performAutoCleanup(b.id,prevTarget.id);
-    chapterId=prevTarget.id;page='listen';render();await playCurrentChapter();
-    if(cleanRes&&cleanRes.clearedCount>0&&cleanRes.freedMb>0){
-      toast('已切换上一章，自动释放缓存('+cleanRes.freedMb+'MB)');
-    }else{
-      toast('正在播放：'+prevTarget.title);
-    }
-  }else toast('没有可播放的上一章');return;
-}
-if(a==='nextchapter'){
-  const b=book();if(!b)return;const chapters=b.chapters||[];const idx=chapters.findIndex(ch=>ch.id===chapterId);
-  if(idx>=0&&idx<chapters.length-1&&playablePrefix(chapters[idx+1]).length){
-    const nextTarget=chapters[idx+1];
-    const cleanRes=await engine.performAutoCleanup(b.id,nextTarget.id);
-    chapterId=nextTarget.id;page='listen';render();await playCurrentChapter();
-    if(cleanRes&&cleanRes.clearedCount>0&&cleanRes.freedMb>0){
-      toast('已切换下一章，自动释放前章缓存('+cleanRes.freedMb+'MB)');
-    }else{
-      toast('正在播放：'+nextTarget.title);
-    }
-  }else toast('没有可播放的下一章');return;
-}
-
-if(a==='exportcur'){let bb=null,cc=null;try{bb=engine.book(bookId);cc=engine.chapter(bookId,chapterId);}catch(e){}if(!cc?.audio){toast('暂无可导出的音频');return;}const nm='[Vocast有声书]《'+bb.name+'》-'+cc.title;await device.call('export',{id:cc.audio,name:nm});toast('已导出：'+nm+'.wav');return;}
+if(a==='trialrole'){const b=book(),r=b.characters.find(v=>v.name===x);if(!r?.voice){toast('该角色尚未分配音色');return;}const c=chapter();const line=(c.segments||[]).find(s=>s.speaker===x&&!s.skip&&!s.isAd)||(c.segments||[]).find(s=>!s.skip&&!s.isAd&&s.speaker!=='广告');const text=line?line.text.slice(0,120):('大家好，我是'+x+'，这是我的声音。');await busy(async()=>{const file=await engine.synthesize(text,r.voice,'自然朗读，不能增删原文。');await startPreview(file.id,'试听 · '+x);},'正在合成试听…');return;}
+if(a==='trial'){const text=value('trialText');await busy(async()=>{const file=await engine.synthesize(text,voiceId);voice().tested=true;voice().lastTrial=file.id;await engine.persist();await startPreview(file.id,'音色试音');toast('克隆试音已生成并播放');},'MiMo 正在克隆合成试音…');return;}
+if(a==='preset'){await busy(async()=>{const f=await engine.synthesize('山里的风停了，故事才刚刚开始。','preset:'+x);await startPreview(f.id,'MiMo · '+x);},'正在合成预设试听…');return;}
+if(a==='trialvoice'){const v=engine.state.voices.find(v=>v.id===x);if(!v){toast('音色不存在');return;}if(v.sample){await startPreview(v.sample,'试听 · '+v.name);return;}await busy(async()=>{const f=await engine.synthesize('山里的风停了，故事才刚刚开始。',v.id);await startPreview(f.id,'试听 · '+v.name);},'正在合成试听…');return;}
+if(a==='play'){const cardName=el.closest('.vc-voice-card')?.querySelector('h3')?.textContent;const v=engine.state.voices.find(v=>v.sample===x);const r=bookId?engine.state.books.find(b=>b.id===bookId)?.characters.find(r=>r.candidate?.sample===x):null;await startPreview(x,(cardName||v?.name||r?.name||'音频')+' · 试听');return;}
+if(a==='repacecur'){if(chapter().pacingVersion===1){toast('本章已按当前规则优化停顿');return;}taskTab='active';engine.optimizePauses(bookId,chapterId).catch(e=>toast(e.message));toast('已开始优化句末停顿');go('tasks');return;}
+if(a==='playchapter'){const ch=chapter(),p=await device.call('playbackState');if(streamState&&streamState.bid===bookId&&streamState.cid===chapterId&&p.id===streamState.audioId&&!streamState.waiting){await device.call('playback',{op:p.playing?'pause':'resume'});syncDisplayedPlayback(await device.call('playbackState'));return;}if(!ch?.audio){await playStreamSeg(bookId,chapterId,0);return;}if(p.id!==ch.audio)await playCurrentChapter();else await device.call('playback',{op:p.playing?'pause':'resume'});syncDisplayedPlayback(await device.call('playbackState'));return;}
+if(a==='qualitypending'){const s=chapter().segments.find(s=>s.qualityStatus==='pending'&&!s.audio);if(s){pendingSeg=s.id;render();}return;}
+if(a==='resetsegprompt'){const s=chapter().segments.find(s=>String(s.id)===String(x)),role=book().characters.find(r=>r.name===s?.speaker),field=document.getElementById('ttsPrompt-'+x);if(field&&!engine.segmentBusy(bookId,chapterId,x)){field.value=engine.speechDirection(role?.voice,s.emotion,role?.description);segmentPromptDrafts.set(segmentAdvancedKey(book(),chapter(),s),field.value);toast('已恢复默认提示词，合成后生效');}return;}
+if(a==='regenerateseg'||a==='regenerateprompt'){const bid=bookId,cid=chapterId,target=chapter().segments.find(s=>String(s.id)===String(x)),panel=segmentPanel;if(!target||engine.segmentBusy(bid,cid,x)||target.skip||target.isAd||target.audio==='skip'||!book().characters.find(r=>r.name===target.speaker)?.voice)return;if(panel)panel.result='';let options={};if(a==='regenerateprompt'){const s=chapter().segments.find(s=>String(s.id)===String(x)),role=book().characters.find(r=>r.name===s?.speaker),prompt=value('ttsPrompt-'+x);options.prompt=prompt===engine.speechDirection(role?.voice,s.emotion,role?.description)?null:prompt;}const promise=engine.regenerateSegment(bid,cid,x,options);render();promise.then(ok=>{if(ok){toast('此句已重新合成');if(panel)panel.result='合成完成，已更新本句音频。';}}).catch(e=>{toast(e.message);if(panel)panel.result='合成失败：'+cleanErr(e)+'。可重试，原音频保留。';}).finally(()=>render());return;}
 if(a==='globalpolicy'){for(const k of['segSpeaker','policyMode','retries','speakerThreshold','taskParallel','ttsParallel','llmProtocol'])delete dropdownSel[k];openDropdown=null;go('policy');bookId=null;render();return;}
-if(a==='savepolicy'){const __pst=engine.state.settings;const p={mode:dropdownSel.policyMode||__pst.mode||'manual',usePresets:$('#usePresets').checked};engine.state.settings.retries=Number(dropdownSel.retries!==undefined?dropdownSel.retries:engine.state.settings.retries);const __thr=Number(dropdownSel.speakerThreshold);engine.state.settings.speakerThreshold=(dropdownSel.speakerThreshold===undefined)?(Number(__pst.speakerThreshold)>=0&&Number(__pst.speakerThreshold)<=1?Number(__pst.speakerThreshold):0.5):((__thr>=0&&__thr<=1)?__thr:0.5);const __tp=Number(dropdownSel.taskParallel);engine.state.settings.taskParallel=(dropdownSel.taskParallel===undefined)?([1,2,3].includes(Number(__pst.taskParallel))?Number(__pst.taskParallel):1):([1,2,3].includes(__tp)?__tp:1);const __np=Number(dropdownSel.ttsParallel);engine.state.settings.ttsParallel=(dropdownSel.ttsParallel===undefined)?([1,2,3,4].includes(Number(__pst.ttsParallel))?Number(__pst.ttsParallel):2):([1,2,3,4].includes(__np)?__np:2);if(dropdownSel.splitRule!==undefined)engine.state.settings.splitRule=dropdownSel.splitRule;engine.state.settings.splitCustom=value('splitCustom')||engine.state.settings.splitCustom||'';Object.assign(engine.state.settings,p);await engine.persist();const __wBids=[...new Set(engine.state.tasks.filter(t=>t.status==='waiting'&&(bookId?t.bookId===bookId:true)).map(t=>t.bookId))];for(const __bid of __wBids){await engine.resumeWaiting(__bid);}engine.run().catch(()=>{});toast('策略已保存');return;}
-if(a==='savellm'){const base=value('llmBase').trim().replace(/\/$/,'');if(!/^https:\/\//.test(base)||!value('llmModel').trim())throw Error('请填写 HTTPS 地址和模型 ID');await device.call('saveCredentials',{llmKey:value('llmKey'),llmBase:base});Object.assign(engine.state.settings,{llmBase:base,llmModel:value('llmModel').trim(),llmProtocol:dropdownSel.llmProtocol||engine.state.settings.llmProtocol});await engine.persist();configured=await device.call('load');go('models');return;}
-if(a==='savemimo'){await device.call('saveCredentials',{ttsKey:value('ttsKey')});configured=await device.call('load');go('models');return;}
-if(a==='testllm'){await busy(async()=>{const result=await engine.llm('只输出 JSON：{"ok":true}');if(result.ok!==true)throw Error('模型测试返回格式不符合预期');await engine.persist();toast('真实语言模型调用成功');},'正在验证真实语言模型调用…');return;}
-if(a==='testmimo'){await busy(async()=>{const f=await engine.synthesize('连接成功，现在可以开始制作有声书。','preset:白桦');await engine.persist();await device.call('play',{id:f.id,title:'MiMo 连接测试'});toast('真实合成成功，音频已播放');},'正在调用 MiMo 合成测试语音…');return;}
-if(a==='editseg'){editSegment=Number(x);delete dropdownSel.segSpeaker;openDropdown=null;go('editseg');return;}
-if(a==='saveseg'){const __seg=chapter().segments.find(s=>s.id===editSegment);await engine.correct(bookId,chapterId,editSegment,dropdownSel.segSpeaker||(__seg&&__seg.speaker),value('segmentEmotion'));const __b=book(),__c=chapter();const __act=[...new Set(__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='旁白'&&s.speaker!=='广告').map(s=>s.speaker))];const __ps=__c.segments.filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.confidence<engine.spkThr()||!__b.characters.some(r=>r.name===s.speaker)));const __pr=__b.characters.filter(r=>(__act.includes(r.name)||r.candidate)&&!r.voice);if(!__ps.length&&!__pr.length){engine.resumeWaiting(bookId).catch(e=>toast(e.message));taskTab='active';go('tasks');return;}go('annotated');return;}
+if(a==='savepolicy'){const __pst=engine.state.settings;const p={mode:dropdownSel.policyMode||__pst.mode||'manual',usePresets:$('#usePresets').checked};engine.state.settings.retries=Number(dropdownSel.retries!==undefined?dropdownSel.retries:engine.state.settings.retries);const __thr=Number(dropdownSel.speakerThreshold);engine.state.settings.speakerThreshold=(dropdownSel.speakerThreshold===undefined)?(Number(__pst.speakerThreshold)>=0&&Number(__pst.speakerThreshold)<=1?Number(__pst.speakerThreshold):0.5):((__thr>=0&&__thr<=1)?__thr:0.5);const __tp=Number(dropdownSel.taskParallel);engine.state.settings.taskParallel=(dropdownSel.taskParallel===undefined)?([1,2,3].includes(Number(__pst.taskParallel))?Number(__pst.taskParallel):1):([1,2,3].includes(__tp)?__tp:1);const __np=Number(dropdownSel.ttsParallel);engine.state.settings.ttsParallel=(dropdownSel.ttsParallel===undefined)?([1,2,3,4].includes(Number(__pst.ttsParallel))?Number(__pst.ttsParallel):2):([1,2,3,4].includes(__np)?__np:2);if(dropdownSel.splitRule!==undefined)engine.state.settings.splitRule=dropdownSel.splitRule;engine.state.settings.splitCustom=$('#splitCustom')?value('splitCustom'):engine.state.settings.splitCustom||'';Object.assign(engine.state.settings,p);await engine.persist();toast('策略已保存');return;}
+if(a==='savellm'){await saveLLMForm();toast('配置已保存');render();return;}
+if(a==='savemimo'){await saveTTSForm();toast('密钥已保存');render();return;}
+if(a==='testllm'){await busy(async()=>{await saveLLMForm();const config={base:engine.state.settings.llmBase,model:engine.state.settings.llmModel,protocol:engine.state.settings.llmProtocol};try{const result=await engine.llm('只输出 JSON：{"ok":true}');if(result.ok!==true)throw Error('模型测试返回格式不符合预期');connectionResult={...config,ok:true,at:Date.now()};toast('当前配置调用成功');}catch(e){connectionResult={...config,ok:false,error:e.message||String(e),at:Date.now()};throw e;}},'保存当前配置并实际测试…');return;}
+if(a==='testmimo'){await busy(async()=>{await saveTTSForm();try{const f=await engine.synthesize('连接成功，现在可以开始制作有声书。','preset:白桦');ttsConnectionResult={ok:true,at:Date.now()};await startPreview(f.id,'MiMo 连接测试');}catch(e){ttsConnectionResult={ok:false,error:cleanErr(e),at:Date.now()};throw e;}},'保存当前密钥并实际合成…');return;}
+
+if(a==='editseg'){editorReturn={bookId,chapterId,segmentId:Number(x),scroll:window.scrollY};editSegment=Number(x);delete dropdownSel.segSpeaker;openDropdown=null;go('editseg');return;}
+if(a==='saveseg'){const seg=chapter().segments.find(s=>s.id===editSegment);await engine.correct(bookId,chapterId,editSegment,dropdownSel.segSpeaker||seg.speaker,value('segmentEmotion'));page='annotated';render();restoreEditorPosition();toast('修正已保存；本句待重新合成，其他片段保留');return;}
 if(a==='addrole'){const name=value('newRole').trim(),description=value('newRoleDescription').trim();if(!name||!description)throw Error('请填写姓名和音色描述');if(book().characters.some(r=>r.name===name))throw Error('角色已存在');const emotion=value('segmentEmotion');book().characters.push({name,description:Vocast.cleanVoiceDescription(description),aliases:[],voice:null});await engine.persist();dropdownSel.segSpeaker=name;render();const __se=$('#segmentEmotion');if(__se)__se.value=emotion;return;}
-}catch(e){toast(e.message||String(e));}});
-$('#screen').addEventListener('change',e=>{if(e.target.dataset.shelfcheck){const id=e.target.dataset.shelfcheck;shelfSelected=e.target.checked?[...new Set([...shelfSelected,id])]:shelfSelected.filter(x=>x!==id);render();return;}if(e.target.dataset.check){const id=e.target.dataset.check;selected=e.target.checked?[...new Set([...selected,id])]:selected.filter(x=>x!==id);render();}if(e.target.id==='speedRange'){applySpeed(parseFloat(e.target.value));return;}if(e.target.id==='seek')seekDisplayedChapter('seek',Number(e.target.value)).catch(e=>toast(e.message));});
-$('#screen').addEventListener('input',e=>{if(e.target.id==='speedRange'){const __sl3=$('#speedVal');if(__sl3)__sl3.textContent=parseFloat(e.target.value)+'x';}if(candidate&&['designDescription','designText'].includes(e.target.id)){designDirty=true;const button=$('[data-act="acceptsample"]');if(button){button.disabled=true;button.textContent='内容已修改，请重新生成样本';}}});
+}catch(e){toast(cleanErr(e));}}
+$('#screen').addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(e.target.closest('.vc-error-detail')&&el?.classList.contains('vc-card-clickable'))return;if(el)handleAction(el,e);});
+$('#screen').addEventListener('toggle',e=>{if(e.target.hasAttribute('data-advanced-seg')&&e.target.isConnected&&page==='annotated'){const key=JSON.stringify([bookId,chapterId,e.target.dataset.advancedSeg]);if(e.target.open)segmentAdvancedOpen.add(key);else segmentAdvancedOpen.delete(key);}if(e.target.id==='import-catalog'&&importDraft)importDraft.catalogOpen=e.target.open;if(e.target.id==='import-manual'&&e.target.isConnected&&importDraft&&page==='splitpreview')importDraft.manualOpen=e.target.open;},true);
+$('#screen').addEventListener('change',e=>{if(e.target.id==='chapterSelectionRange'){const action=e.target.value;if(page!=='detail'||!multi||!action)return;handleAction({dataset:{act:action}},e);return;}if(e.target.dataset.shelfcheck){const id=e.target.dataset.shelfcheck;shelfSelected=e.target.checked?[...new Set([...shelfSelected,id])]:shelfSelected.filter(x=>x!==id);render();return;}if(e.target.dataset.check){const id=e.target.dataset.check;selected=e.target.checked?[...new Set([...selected,id])]:selected.filter(x=>x!==id);render();}if(e.target.id==='speedRange'){applySpeed(parseFloat(e.target.value));return;}if(e.target.id==='seek')seekDisplayedChapter('seek',Number(e.target.value)).catch(e=>toast(e.message));});
+$('#screen').addEventListener('input',e=>{if(e.target.id==='splitCustom'&&page==='splitpreview'&&importDraft){importDraft.customPattern=e.target.value;markImportRuleDirty();}if(e.target.id==='speedRange')syncSpeedUI(parseFloat(e.target.value),true);if((candidate||designJob?.running)&&['designDescription','designText'].includes(e.target.id)){designDirty=true;const button=$('[data-act="acceptsample"]');if(button){button.disabled=true;button.textContent='内容已修改，请重新生成样本';}}});
 if(document.getElementById('screen')){document.getElementById('screen').addEventListener('scroll',e=>{if(e&&e.target&&e.target.id==='transcriptPanel'){if(Date.now()<listenProgScrollUntil)return;listenUserHoldUntil=Date.now()+3000;}},true);}
-let __slimLastY=0;window.addEventListener('scroll',()=>{try{if(!['raw','annotated','listen'].includes(page))return;const __top=document.querySelector('.vc-slim-top');if(!__top)return;const __y=window.scrollY||document.documentElement.scrollTop||0;const __dy=__y-__slimLastY;__slimLastY=__y;if(__y<40){__top.classList.remove('vc-collapsed');return;}if(__dy>6)__top.classList.add('vc-collapsed');else if(__dy<-6)__top.classList.remove('vc-collapsed');}catch(e){}},true);
+let __slimLastY=0,__slimContext='',__slimOffset=0;
+window.addEventListener('scroll',event=>{try{
+ if(event.target!==document&&event.target!==window)return;
+ if(!['raw','annotated','listen'].includes(page)||hasModal())return;
+ const top=document.querySelector('.vc-slim-top');if(!top)return;
+ const y=Math.max(0,window.scrollY||document.documentElement.scrollTop||0);
+ const context=page+'|'+bookId+'|'+chapterId;
+ if(context!==__slimContext){__slimContext=context;__slimLastY=0;__slimOffset=0;}
+ const dy=y-__slimLastY;__slimLastY=y;
+ if(page==='listen'){if(y<40)top.classList.remove('vc-collapsed');else if(dy>6)top.classList.add('vc-collapsed');else if(dy<-6)top.classList.remove('vc-collapsed');return;}
+ const height=top.offsetHeight;
+ __slimOffset=y<16?0:Math.max(0,Math.min(height,__slimOffset+dy));
+ document.getElementById('app').style.setProperty('--reader-header-offset',-__slimOffset+'px');
+ top.inert=__slimOffset>=height;
+}catch(e){}},{passive:true});
 setInterval(async()=>{
   try{
     const p=await device.call('playbackState');
-    miniPlayingState=p;
+    miniPlayingState=p;updatePreview(p);updateSleep(p);
     if(p?.playing&&playingBookId&&playingChapterId&&engine){
       const b=engine.state.books.find(b=>b.id===playingBookId);
       const c=b?.chapters.find(c=>c.id===playingChapterId);
@@ -1025,16 +1582,17 @@ setInterval(async()=>{
     }
   }catch(ignored){}
 },1000);
-device.call('load').then(result=>{configured=result;engine=new Vocast.Engine(device,result.state);window.vocastEngine=engine;window.renderApp=render;window.__applyInitialNav=(nav)=>{try{if(nav!=='tasks_attention'||!engine)return;const hasPend=engine.state.tasks.some(t=>t.status==='waiting'||t.status==='failed');taskTab=hasPend?'attention':'active';if(page==='tasks')render();else go('tasks');}catch(__e){}};if(result&&result.initialNav)window.__applyInitialNav(result.initialNav);const lastStatus=new Map(engine.state.tasks.map(t=>[t.id,t.status]));
+device.call('load').then(result=>{configured=result;engine=new Vocast.Engine(device,result.state);window.vocastEngine=engine;queueMicrotask(()=>engine.refreshProductionNetwork().catch(()=>{}));window.renderApp=render;playbackPrompts=new VocastPlaybackPrompts.Controller({engine,call:(...args)=>device.call(...args),canSynthesize:()=>!!configured.ttsConfigured,isCurrent:item=>playingBookId===item.bid&&playingChapterId===item.cid&&playingId===item.audioId&&(item.kind==='waiting'?(!!streamState?.waiting&&!streamState.autoResumePaused||!!waitingForNextChapterId):!streamState&&!waitingForNextChapterId&&engine.state.books.find(b=>b.id===item.bid)?.chapters.at(-1)?.id===item.cid)});window.__applyInitialNav=(nav)=>{try{if(nav!=='tasks_attention'||!engine)return;const hasPend=engine.state.tasks.some(t=>t.status==='waiting'||t.status==='failed');taskTab=engine.state.tasks.some(t=>t.status==='waiting')?'attention':engine.state.tasks.some(t=>t.status==='failed')?'failed':'active';if(page==='tasks')render();else go('tasks');}catch(__e){}};if(result&&result.initialNav)window.__applyInitialNav(result.initialNav);const lastStatus=new Map(engine.state.tasks.map(t=>[t.id,t.status]));
 // 重启自续：paused 任务是"关软件/用户暂停"留下的，不需要确认，直接回队列继续
 try{const interrupted=engine.state.tasks.filter(t=>t.status==='paused');if(interrupted.length){const mx=Math.max(0,...engine.state.tasks.map(x=>x.prio||0));interrupted.sort((a,b)=>((b.prio||0)-(a.prio||0))||((a.created||a.createdAt||0)-(b.created||b.createdAt||0))).forEach((t,i)=>{t.pauseRequested=false;t.status='queued';t.phase='排队等待';t.prio=mx+interrupted.length-i;});engine.persist().then(()=>engine.kick()).catch(()=>{});}}catch(e){}
 engine.onChange(()=>{
+  playbackPrompts?.reconcile();
   syncProductionStatus().catch(()=>{});
   // 只在当前句已播完且等待新内容时续播；合并完成不能抢占正在播放的句子。
   try{
     if(streamState){
       const sb=engine.state.books.find(b=>b.id===streamState.bid),sc=sb?.chapters.find(c=>c.id===streamState.cid);
-      if(streamState.waiting){
+      if(streamState.waiting&&!streamState.autoResumePaused){
         const pre=streamPrefix(sc||{segments:[]});
         if(sc?.audio||pre.findIndex(s=>s.id===streamState.segId)+1<pre.length){window.onNativePlaybackAction('completion',0).catch(()=>{});}
         else if(page==='listen'&&bookId===streamState.bid&&chapterId===streamState.cid)render();
@@ -1062,6 +1620,10 @@ engine.onChange(()=>{
       toast("下一章制作失败，已停止自动播放");
     }
   }
-  for(const t of engine.state.tasks){if(['failed','waiting'].includes(t.status)&&lastStatus.get(t.id)!==t.status){const isFail=t.status==='failed';let bName='书籍',cTitle='';try{bName=engine.book(t.bookId)?.name||'书籍';}catch(e){}try{cTitle=engine.chapter(t.bookId,t.chapterId)?.title||'';}catch(e){}const title=isFail?'Vocast · 制作失败':'Vocast · 制作待确认';const msg=bName+' · '+cTitle+'：'+(t.message||(isFail?'遇到问题':'需要处理确认'));toast(cleanErr(t.message)||title);device.call('notify',{channel:'production',title,message:cleanErr(msg),type:isFail?'error':'info'}).catch(()=>{});}lastStatus.set(t.id,t.status);}if(page==='listen'){try{refreshListenNav();}catch(e){}}
-else if(!['llm','mimo','design','voicedetail','editseg','voiceimport','policy'].includes(page)){try{render();}catch(err){page='shelf';try{render();}catch(e2){toast(err.message||'页面渲染失败');}}}});try{render();}catch(err){page='shelf';try{render();}catch(e2){toast(err.message||'页面渲染失败');}}}).catch(e=>{$('#screen').innerHTML=`<main class="vc-main"><h1>无法读取书库</h1><p>${E(e.message)}</p><p style="margin-top:12px"><button class="vc-btn primary" data-act="reload">重新加载</button></p></main>`;});
+  for(const t of engine.state.tasks){if(['failed','waiting'].includes(t.status)&&lastStatus.get(t.id)!==t.status){const isFail=t.status==='failed';let bName='书籍',cTitle='';try{bName=engine.book(t.bookId)?.name||'书籍';}catch(e){}try{cTitle=engine.chapter(t.bookId,t.chapterId)?.title||'';}catch(e){}if(isFail&&page==='tasks'&&taskTab==='active')taskTab='failed';const title=isFail?'Vocast · 制作失败':'Vocast · 制作待确认';const msg=bName+' · '+cTitle+'：'+(t.message||(isFail?'遇到问题':'需要处理确认'));toast(cleanErr(t.message)||title);device.call('notify',{channel:'production',title,message:cleanErr(msg),type:isFail?'error':'info'}).catch(()=>{});}lastStatus.set(t.id,t.status);}if(page==='listen'){try{if(renderedListenSignature!==listenSignature())render();refreshListenNav();}catch(e){}}
+else if(!['llm','mimo','design','voicedetail','editseg','voiceimport','policy','voicepolicy','productionpolicy','importpolicy','quality'].includes(page)){try{render();}catch(err){page='shelf';try{render();}catch(e2){toast(err.message||'页面渲染失败');}}}});try{render();}catch(err){page='shelf';try{render();}catch(e2){toast(err.message||'页面渲染失败');}}}).catch(e=>{$('#screen').innerHTML=`<main class="vc-main"><h1>无法读取书库</h1><p>${E(e.message)}</p><p style="margin-top:12px"><button class="vc-btn primary" data-act="reload">重新加载</button></p></main>`;});
 })();
+
+
+
+

@@ -1,0 +1,42 @@
+/* The approved layout on factory Android WebViews without dynamic viewport units. */
+@supports not (appearance: none) {
+ #app .production-switch { -webkit-appearance:none; }
+}
+.vc-no-focus-visible #app :focus { outline:none; }
+.vc-no-focus-visible.vc-keyboard-navigation #app :focus { outline:2px solid var(--vc-accent);outline-offset:3px; }
+@supports not (height: 100dvh) {
+ #app .vc-dialog,#app .vc-modal-content { max-height:calc(100vh - 16px)!important; }
+ #app .vc-dialog.vc-player-sheet { max-height:calc(100vh - 12px)!important; }
+ #app .vc-dialog.vc-player-catalog { height:72vh;max-height:calc(100vh - 24px)!important; }
+ #app .vc-player-catalog-scroll { padding-bottom:calc(72vh - 220px); }
+ #app .production-dialog { max-height:calc(100vh - 48px)!important; }
+ #app .vc-main-listen .vc-transcript-panel { max-height:calc(100vh - 218px); }
+ #app main.vc-main-listen { height:100vh!important; }
+ #app .vc-main[data-page=raw] .vc-slim-top,#app .vc-main[data-page=annotated] .vc-slim-top { transform:translateY(var(--reader-header-offset,0px));transition:none; }
+ #app .vc-main[data-page=raw] .vc-slim-top:focus-within,#app .vc-main[data-page=annotated] .vc-slim-top:focus-within { transform:translateY(0); }
+}
+#app .vc-dialog.vc-reading-dialog { padding:24px;max-height:85vh;overflow-y:auto;border-radius:24px; }
+#app .vc-reading-dialog>h3 { margin:0 0 8px;font-size:22px; }
+#app .vc-reading-dialog>.vc-split { display:flex;margin-top:24px; }
+#app .vc-reading-dialog>.vc-split>button { width:100%;min-height:44px; }
+#app .vc-slim-top.vc-issue-header { gap:8px; }
+#app .vc-issue-header .vc-slim-titles h2 { font-size:16px; }
+#app.vc-has-player-sheet #toast { bottom:auto;top:calc(16px + env(safe-area-inset-top)); }
+.vc-no-flex-gap #app .vc-book-summary .vc-book-info { margin-left:10px; }
+.vc-no-flex-gap #app .vc-list-heading>*+* { margin-left:8px; }
+.vc-no-flex-gap #app .vc-slim-top .vc-slim-titles { margin-left:12px; }
+.vc-no-flex-gap #app .vc-preset-title svg { margin-right:8px; }
+.vc-no-flex-gap #app .vc-preview-strip>*+* { margin-left:8px; }
+.vc-no-flex-gap #app .vc-segment-heading>.vc-icon { margin-left:16px; }
+.vc-no-flex-gap #app .vc-segment-action>.od-field { margin-left:16px;margin-right:16px; }
+.vc-no-flex-gap #app .vc-chapter-manage-header>.vc-btn { margin-left:16px; }
+.vc-no-flex-gap #app .production-section.od-stack>*+*,
+.vc-no-flex-gap #app .production-options>*+*,
+.vc-no-flex-gap #app .production-dialog.od-stack>*+*,
+.vc-no-flex-gap #app .production-dialog .od-stack>*+* { margin-top:8px; }
+.vc-no-flex-gap #app .production-dialog header>.vc-icon { margin-left:16px; }
+@supports not selector(:has(body)) {
+ #app .vc-main[data-page=detail] .vc-chapter>button[data-act^="togglechapter:"] { min-height:52px;cursor:pointer; }
+ #app .vc-main[data-page=detail] .vc-chapter input { flex:none;min-width:24px;min-height:24px;margin:10px;cursor:pointer; }
+ #app .vc-chapter.vc-selected-chapter { background:var(--vc-soft);outline:1px solid var(--vc-accent);outline-offset:-1px;border-radius:8px; }
+}

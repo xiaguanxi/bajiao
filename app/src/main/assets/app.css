@@ -64,6 +64,22 @@ body {
     overflow-x: visible;
 }
 
+#app .vc-import-flow { max-width: 560px; margin: 0 auto; padding-bottom: 24px; }
+#app .vc-import-heading { margin-bottom: 24px; }
+#app .vc-import-heading h1 { font-size: clamp(1.65rem, 6vw, 2rem); line-height: 1.3; margin: 10px 0; }
+#app .vc-import-heading p { overflow-wrap: anywhere; }
+#app .vc-import-icon { display: inline-flex; padding: 14px; border-radius: 18px; background: var(--vc-soft); color: var(--vc-accent); margin-bottom: 12px; }
+#app .vc-import-icon svg { width: 28px; height: 28px; }
+#app .vc-import-error { border: 1px solid var(--vc-warn); background: var(--vc-warm); border-radius: 14px; padding: 16px; margin: 16px 0; overflow-wrap: anywhere; }
+#app .vc-import-error p { margin-bottom: 0; }
+#app .vc-import-progress { padding: 16px; border-radius: 14px; background: var(--vc-soft); margin-bottom: 16px; }
+#app .vc-import-actions { display: grid; gap: 12px; margin: 20px 0 12px; }
+#app .vc-import-actions .vc-btn { width: 100%; }
+#app .vc-import-chapters { padding-left: 24px; margin: 16px 0 0; }
+#app .vc-import-chapters li { padding: 8px 0; border-bottom: 1px solid var(--vc-line); overflow-wrap: anywhere; }
+#app .vc-import-manual { margin-top: 28px; border-top: 1px solid var(--vc-line); padding-top: 18px; }
+#app .vc-import-manual summary { font-weight: 600; cursor: pointer; padding: 8px 0; }
+
 #app .vc-main {
     padding: max(20px, env(safe-area-inset-top)) var(--vc-page-gutter) calc(var(--vc-nav-height) + 24px);
     min-height: 100vh;

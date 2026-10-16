@@ -2,7 +2,7 @@
 'use strict';
 class Scheduler{
  constructor(limit,modelLimit){this.limit=limit;this.modelLimit=modelLimit;this.active=0;this.models=new Map();this.queue=[];this.sequence=0;}
- acquire(model,priority=20,abort=()=>false){return new Promise((resolve,reject)=>{this.queue.push({model,priority,abort,resolve,reject,order:this.sequence++,queuedAt:Date.now()});this.wake();});}
+ acquire(model,priority=20,abort=()=>false){abort=typeof abort==='function'?abort:()=>false;return new Promise((resolve,reject)=>{this.queue.push({model,priority,abort,resolve,reject,order:this.sequence++,queuedAt:Date.now()});this.wake();});}
  wake(){
   clearTimeout(this.timer);this.queue.sort((a,b)=>b.priority-a.priority||a.order-b.order);
   for(let i=0;i<this.queue.length;){const job=this.queue[i];

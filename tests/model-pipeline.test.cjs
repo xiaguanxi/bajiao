@@ -20,3 +20,20 @@ test('all TTS models share a network budget, clones retain a separate limit',{ti
 test('scheduler promotes manual work ahead of queued warming and cancels before sending',async()=>{
  const s=new Scheduler(()=>1,()=>1),first=await s.acquire('m'),order=[];const warm=s.acquire('m',0).then(slot=>{order.push('warm');slot.release();});const manual=s.acquire('m',100).then(slot=>{order.push('manual');slot.release();});const cancelled=s.acquire('m',200,()=>true);await assert.rejects(cancelled,/暂停/);first.release();await Promise.all([warm,manual]);assert.deepEqual(order,['manual','warm']);
 });
+test('manual redo reaches the network scheduler ahead of an automatic clone already waiting',{timeout:5000},async()=>{
+ const e=new Engine({saveState:async()=>{}}),entered=gate(),release=gate(),order=[];e.io.request=async(_,body)=>{order.push(body.label);if(order.length===1){entered.resolve();await release.promise;}return {};};
+ const first=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'inflight'},null,{priority:20});await entered.promise;const automatic=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'automatic'},null,{priority:20});const manual=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'manual'},null,{priority:100});release.resolve();await Promise.all([first,automatic,manual]);assert.deepEqual(order,['inflight','manual','automatic']);
+});
+for(const edit of ['binding','delete','merge'])test(`pipeline discards stale in-flight audio after ${edit}`,{timeout:5000},async()=>{
+ const {e,b}=await setup(),c=b.chapters[0],entered=gate(),release=gate();e.synthesize=async()=>{entered.resolve();await release.promise;return {id:'stale.wav',duration:1};};const run=e.enqueue(b.id,[c.id]);await entered.promise;
+ if(edit==='binding')await e.bind(b.id,'旁白','preset:茉莉',false);
+ if(edit==='delete')await e.deleteBook(b.id);
+ if(edit==='merge'){b.characters.push({name:'新旁白',voice:'preset:茉莉',description:'女声'});await e.mergeRoles(b.id,'新旁白','旁白');}
+ release.resolve();await run;assert(!c.segments.some(s=>s.audio==='stale.wav'));assert.notEqual(c.audio,'stale.wav');
+});
+test('a role description edited during design cannot receive the old candidate',async()=>{
+ const {e,b}=await setup(),role={name:'角色',description:'男声'};b.characters.push(role);const release=gate();e.design=async()=>{await release.promise;return {id:'old',sample:'old.wav'};};const pending=e.ensureDesignCandidate(b,role);role.description='女声';release.resolve();assert.equal(await pending,null);assert.equal(role.candidate,undefined);
+});
+test('a role removed after annotation retains its original decision during automatic fallback',async()=>{
+ const {e,b}=await setup(),c=b.chapters[0];c.segments[0].speaker='已移除角色';c.segments[0].confidence=.24;e.analyze=async()=>c;e.synthesize=async()=>({id:'narration.wav',duration:1});await e.enqueue(b.id,[c.id]);const s=c.segments[0];assert.equal(s.speaker,'旁白');assert.equal(s.confidence,.24);assert.equal(s.annotationOriginal.speaker,'已移除角色');assert(s.annotationFallbackReason);
+});

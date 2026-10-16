@@ -9,15 +9,15 @@ test('known MiMo capabilities are explicit; generic and Anthropic requests stay 
  e.io.request=async()=>({stop_reason:'max_tokens',content:[]});await assert.rejects(e.llm('json'),e=>e instanceof LlmOutputError&&e.kind==='truncated');
 });
 test('batching reduces real novel prompt input and preserves old checkpoint sizing',async()=>{
- const text=new TextDecoder('gb18030').decode(fs.readFileSync('books/'+fs.readdirSync('books').find(f=>f.endsWith('.txt'))));const e=new Engine({saveState:async()=>{},features:{batching:true}}),b=await e.addBook('measure',text),c=b.chapters.find(c=>c.title.includes('0001'));let chars=0,calls=0;
- e.llm=async p=>{chars+=p.length;calls++;const batch=JSON.parse(p.split('本批片段：')[1]);return {lines:batch.map(s=>({...s,speaker:'旁白',emotion:'自然',confidence:1})),summary:'累积摘要'};};await e.analyze(b.id,c.id);assert.equal(calls,2);assert(chars<=18504*.75,`input chars ${chars}`);
+ const text=new TextDecoder('gb18030').decode(fs.readFileSync('books/'+fs.readdirSync('books').find(f=>f.endsWith('.txt'))));const e=new Engine({saveState:async()=>{},features:{batching:true,direction:false}}),b=await e.addBook('measure',text),c=b.chapters.find(c=>c.title.includes('0001'));let chars=0,calls=0;
+ e.llm=async p=>{chars+=p.length;calls++;const batch=JSON.parse(p.split('本批片段：')[1]);return {lines:batch.map(s=>({...s,speaker:'旁白',emotion:'自然',confidence:1})),summary:'累积摘要'};};await e.analyze(b.id,c.id);assert.equal(calls,2);assert(chars<18504,`input chars ${chars}`);
  const legacy=make(),book=await legacy.addBook('legacy','甲。'.repeat(95));book.chapters[0].analysisDraft={version:2,next:0,batchSize:45};await legacy.prepareAnnotations(book.id,book.chapters[0].id);assert.equal(book.chapters[0].analysisDraft.batchSize,45);
 });
 test('scene direction is gated, custom prompts win and staged edits invalidate identity',()=>{
- const e=make(),s={emotion:'没有生气',scene:'重逢',delivery:'担忧而克制'},role={voice:'preset:白桦',description:'低沉男声'};
- const old=e.speechDirection(role.voice,s.emotion,role.description,undefined,s);assert(!old.includes('重逢'));e.features.direction=true;
+ const e=make(),s={directionVersion:1,emotion:'没有生气',scene:'重逢',delivery:'担忧而克制'},role={voice:'preset:白桦',description:'低沉男声'};
+ e.features.direction=false;const old=e.speechDirection(role.voice,s.emotion,role.description,undefined,s);assert(!old.includes('重逢'));e.features.direction=true;
  const prompt=e.speechDirection(role.voice,s.emotion,role.description,undefined,s);assert(prompt.includes('重逢'));assert(prompt.includes('担忧而克制'));assert.equal(e.speechDirection(role.voice,s.emotion,role.description,' 精确自定义 ',s),' 精确自定义 ');
  const key=JSON.stringify(e.speechIdentity(s,role));s.delivery='温柔';assert.notEqual(JSON.stringify(e.speechIdentity(s,role)),key);
 });
 
-test('unaccepted batch optimization stays off; existing checkpoints keep their batch size',async()=>{const e=make(),b=await e.addBook('gates','甲。'.repeat(95)),c=b.chapters[0];await e.prepareAnnotations(b.id,c.id);assert.equal(c.analysisDraft.batchSize,45);c.analysisDraft.batchSize=90;await e.prepareAnnotations(b.id,c.id);assert.equal(c.analysisDraft.batchSize,90);assert.equal(e.features.direction,false);assert.equal(e.features.pipeline,false);assert.equal(e.features.cloneConcurrency,1);});
+test('director mode defaults on with 24-line batches; pipeline and clone concurrency stay unchanged',async()=>{const e=make(),b=await e.addBook('gates','甲。'.repeat(95)),c=b.chapters[0];await e.prepareAnnotations(b.id,c.id);assert.equal(c.analysisDraft.batchSize,24);assert.equal(e.features.direction,true);assert.equal(e.features.batching,false);assert.equal(e.features.pipeline,false);assert.equal(e.features.cloneConcurrency,1);});

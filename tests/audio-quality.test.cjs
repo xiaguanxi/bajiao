@@ -7,14 +7,152 @@ function wav(sequences){
  for(const {seed=1,seconds=2,gain=1,silence=false} of sequences){const pcm=Buffer.alloc(Math.round(seconds*rate)*2);if(!silence)for(let i=0;i<pcm.length/2;i++){const t=i/rate,syllable=Math.floor(t/.13),freq=170+(syllable*seed*113%1400),env=Math.sin(Math.PI*(t%.13)/.13)**2;const value=gain*env*(Math.sin(2*Math.PI*freq*t)+.4*Math.sin(2*Math.PI*freq*2.73*t));pcm.writeInt16LE(Math.round(value*7000),i*2);}parts.push(pcm);}
  const pcm=Buffer.concat(parts),head=Buffer.alloc(44);head.write('RIFF');head.writeUInt32LE(pcm.length+36,4);head.write('WAVEfmt ',8);head.writeUInt32LE(16,16);head.writeUInt16LE(1,20);head.writeUInt16LE(1,22);head.writeUInt32LE(rate,24);head.writeUInt32LE(rate*2,28);head.writeUInt16LE(2,32);head.writeUInt16LE(16,34);head.write('data',36);head.writeUInt32LE(pcm.length,40);return Buffer.concat([head,pcm]);
 }
+const crypto=require('node:crypto');
+const {repetitionCandidate,analyzeSpeech}=require('../app/src/main/assets/audio-quality.js');
 const text='前一秒，浮空山还是艳阳高照。',dup=wav([{seed:3},{silence:true,seconds:.6},{seed:3,gain:.8}]);
-test('adjacent complete acoustic repetition is removed even with changed amplitude',()=>{const r=cleanRepeatedSpeech(dup.toString('base64'),text);assert(r.removed);const fixed=waveInfo(Buffer.from(r.base64,'base64')),original=waveInfo(dup);assert(fixed.duration>1.9&&fixed.duration<2.5);assert(original.pcm.subarray(0,fixed.pcm.length).equals(fixed.pcm),'first rendition PCM is untouched');assert(!cleanRepeatedSpeech(r.base64,text).removed,'idempotent');});
-test('different sentences by the same voice are preserved',()=>{for(const seed of [4,5,7,9]){const data=wav([{seed:3},{silence:true,seconds:.5},{seed}]).toString('base64');assert.equal(cleanRepeatedSpeech(data,text).base64,data);}});
-test('intentional source repetition, short words, silence and unsupported files are preserved',()=>{assert(intentionalRepeat('回来！回来！'));assert(intentionalRepeat('哈哈哈哈'));for(const source of ['回来！回来！','啊','……'])assert(!cleanRepeatedSpeech(dup.toString('base64'),source).removed);assert(!cleanRepeatedSpeech(wav([{silence:true,seconds:6}]).toString('base64'),text).removed);assert(!cleanRepeatedSpeech('AA==',text).removed);});
-test('whole and fallback TTS paths run content validation before saving',async()=>{for(const forceSplit of [false,true]){let saved;const e=new Engine({saveAudio:async b64=>{saved=Buffer.from(b64,'base64');return {id:'fixed.wav',duration:waveInfo(saved).duration};},request:async()=>({choices:[{message:{audio:{data:dup.toString('base64')}}}]})});const f=await e.synthesize(text,'preset:白桦','自然',{forceSplit});assert(f.speechChecked);assert(f.repetitionRemoved);assert(waveInfo(saved).duration<2.5);}});
-function chapterEngine({mergeFails=false,editDuringRead=false}={}){
- const e=new Engine({saveState:async()=>{},readAudio:async()=>{if(editDuringRead)c.segments[0].text='已修改的原文。';return {base64:dup.toString('base64')};},saveAudio:async b64=>({id:'fixed.wav',duration:waveInfo(Buffer.from(b64,'base64')).duration}),mergeAudio:async()=>{if(mergeFails)throw Error('disk full');return {id:'fixed-chapter.wav',duration:2.2};}});
- const c={id:'c',text,segments:[{id:0,text,audio:'old.wav',durMs:4600}],audio:'old-chapter.wav',duration:4.6,lastPlayedPosition:1000,status:'ready'};e.state.books=[{id:'b',characters:[],chapters:[c]}];return {e,c};
+function memoryEngine(handler){
+ const stored=new Map(),calls=[],snapshots=[];
+ const e=new Engine({saveState:async value=>snapshots.push(JSON.parse(value)),
+  request:async(provider,body)=>{calls.push({provider,body});return handler(provider,body,calls);},
+  saveRawAudio:async data=>{const bytes=Buffer.from(data,'base64'),valid=analyzeSpeech(data,'甲').supported,id=crypto.createHash('sha256').update(bytes).digest('hex')+(valid?'.wav':'.raw');stored.set(id,bytes);return {id,duration:valid?waveInfo(bytes).duration:0,playable:valid};},
+  saveAudio:async data=>{const bytes=Buffer.from(data,'base64'),id=crypto.createHash('sha256').update(bytes).digest('hex')+'.wav';stored.set(id,bytes);return {id,duration:waveInfo(bytes).duration};},
+  readAudio:async id=>({base64:stored.get(id).toString('base64')}),
+  mergeAudio:async ids=>{const bytes=mergeWave(ids.map(id=>stored.get(id)));const id=crypto.createHash('sha256').update(bytes).digest('hex')+'.wav';stored.set(id,bytes);return {id,duration:waveInfo(bytes).duration};},sleep:async()=>{}});
+ e.state.settings.retries=0;return {e,stored,calls,snapshots};
 }
-test('existing chapter repairs once, preserves original references and deduplicates concurrent calls',async()=>{const {e,c}=chapterEngine();assert.deepEqual(await Promise.all([e.repairChapterAudio('b','c'),e.repairChapterAudio('b','c')]),[1,1]);assert.equal(c.originalAudio,'old-chapter.wav');assert.equal(c.segments[0].originalAudio,'old.wav');assert.equal(c.audio,'fixed-chapter.wav');assert.equal(c.lastPlayedPosition,1000);assert.equal(await e.repairChapterAudio('b','c'),0);assert(e.collectReferencedAudio().includes('old.wav'));});
-test('failed merge and concurrent edits never replace chapter audio',async()=>{const {e,c}=chapterEngine({mergeFails:true});await assert.rejects(e.repairChapterAudio('b','c'),/disk full/);assert.equal(c.audio,'old-chapter.wav');assert.equal(c.segments[0].audio,'old.wav');const other=chapterEngine({editDuringRead:true});assert.equal(await other.e.repairChapterAudio('b','c'),0);assert.equal(other.c.audio,'old-chapter.wav');});
+const audioReply=(data,finish_reason='stop')=>({choices:[{finish_reason,message:{audio:{data:data.toString('base64')}}}]});
+const textReply=content=>({choices:[{finish_reason:'stop',message:{content}}]});
+const normal=wav([{seed:2}]),silent=wav([{silence:true,seconds:5}]);
+async function chapter(e,texts=[text,'正常的一句。']){
+ const b=await e.addBook('本地测试',texts.join('')),c=b.chapters[0];
+ c.segments=texts.map((text,id)=>({id,text,speaker:'旁白',confidence:1}));
+ return {b,c};
+}
+test('local diagnostics never crop even with purported transcript evidence',()=>{
+ const b64=dup.toString('base64');
+ assert(repetitionCandidate(b64,text).suspected);
+ assert.deepEqual(cleanRepeatedSpeech(b64,text,{original:text+text,candidate:text}),{base64:b64,removed:false});
+});
+test('ordinary quiet and fading speech preserve all bytes with one TTS request',async()=>{
+ for(const gain of [1,.005,.001]){
+  const source=wav([{seed:2,gain}]),{e,calls,stored}=memoryEngine(provider=>{assert.equal(provider,'tts');return audioReply(source);});
+  const f=await e.synthesize(text,'preset:白桦');assert.equal(f.qualityStatus,'passed');assert(stored.get(f.id).equals(source));assert.equal(calls.length,1);assert.equal(f.generationVersion,3);
+ }
+});
+test('long pauses and suspected repetitions only warn, with no additional request',async()=>{
+ for(const source of [dup,wav([{seconds:1},{silence:true,seconds:4},{seed:4,seconds:1}])]){
+  const {e,stored,calls}=memoryEngine(()=>audioReply(source)),f=await e.synthesize(text,'preset:白桦');
+  assert.equal(f.qualityStatus,'passed_with_warnings');assert(f.qualityIssues.length);assert(stored.get(f.id).equals(source));assert.equal(calls.length,1);
+ }
+});
+test('intentional full and partial repetitions are preserved',async()=>{
+ for(const source of ['回来！回来！','回来！回来！求你了！','别走，别走，我还有话要说。']){
+  const {e,stored,calls}=memoryEngine(()=>audioReply(dup)),f=await e.synthesize(source,'preset:白桦');
+  assert(stored.get(f.id).equals(dup));assert(!f.repetitionRemoved);assert.equal(calls.length,1);
+ }
+ assert(intentionalRepeat('回来！回来！'));
+});
+test('all four retry/confirmation combinations bound quality requests',async()=>{
+ for(const auto of [true,false])for(const confirm of [true,false]){
+  const {e,calls}=memoryEngine(()=>audioReply(silent));Object.assign(e.state.settings,{qualityAutoRetry:auto,qualityConfirmRetry:confirm});
+  const {b,c}=await chapter(e,[text]);await e.enqueue(b.id,[c.id]);
+  assert.equal(calls.length,auto&&!confirm?2:1);assert.equal(c.segments[0].qualityStatus,'pending');assert(!c.audio);
+  const saved=JSON.parse(JSON.stringify(e.state)),restored=new Engine(e.io,saved);
+  assert.equal(restored.state.settings.qualityAutoRetry,auto);assert.equal(restored.state.settings.qualityConfirmRetry,confirm);
+ }
+});
+test('explicit truncation, invalid structure and empty return retry only once',async()=>{
+ for(const reply of [audioReply(normal,'length'),audioReply(Buffer.from('invalid')),audioReply(Buffer.alloc(0))]){
+  const {e,calls,stored}=memoryEngine(()=>reply);let draft={};
+  await assert.rejects(e.synthesize(text,'preset:白桦','自然',{onQuality:d=>{draft={...draft,...d};}}),/合成异常/);
+  assert.equal(calls.length,2);assert.equal(draft.qualityAttempts,1);assert(draft.rawAudioIds.every(id=>stored.has(id)));
+  if(!analyzeSpeech(reply.choices[0].message.audio.data,text).supported)assert.equal(draft.pendingRaw.playable,false);
+ }
+});
+test('a successful quality retry retains the first raw return',async()=>{
+ const {e,calls,stored}=memoryEngine((_,__,calls)=>audioReply(calls.length===1?silent:normal));
+ const f=await e.synthesize(text,'preset:白桦');assert.equal(f.qualityAttempts,1);assert.equal(calls.length,2);
+ assert.equal(f.rawAudioIds.length,2);assert(stored.get(f.rawAudioIds[0]).equals(silent));assert(stored.get(f.id).equals(normal));
+});
+test('pending sentence does not stop other sentences and ordinary resume never pays again',async()=>{
+ const {e,calls}=memoryEngine((_,body)=>audioReply(body.messages[1].content===text?silent:normal));
+ const {b,c}=await chapter(e);await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
+ assert.equal(t.status,'waiting');assert(!c.segments[0].audio);assert(c.segments[1].audio);assert(!c.audio);
+ const count=calls.length;await e.resume(t.id);await e.resumeWaiting(b.id);
+ assert.equal(calls.length,count);assert.equal(c.segments[0].qualityAttempts,1);
+ assert(e.collectReferencedAudio().includes(c.segments[0].speechDraft.rawAudioIds[0]));
+});
+test('confirmation can never be bypassed by resume or accepting a role',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(silent));e.state.settings.qualityConfirmRetry=true;
+ const {b,c}=await chapter(e,[text]);await e.enqueue(b.id,[c.id]);const count=calls.length;
+ await e.resume(e.state.tasks[0].id);await e.bind(b.id,'旁白','preset:白桦');
+ assert.equal(calls.length,count);assert.equal(c.segments[0].qualityAttempts,0);
+});
+test('manual retry affects exactly the selected sentence, leaving another pending',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(normal));const {b,c}=await chapter(e);
+ for(const s of c.segments){s.qualityStatus='pending';s.speechDraft={generationVersion:3,qualityAttempts:1};}
+ await e.regenerateSegment(b.id,c.id,0);
+ assert(c.segments[0].audio);assert(!c.segments[1].audio);assert(!c.audio);assert.equal(calls.length,1);
+ assert.equal(calls[0].body.messages[1].content,text);
+});
+test('manual retry never adds another quality retry',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(silent)),{b,c}=await chapter(e,[text]);
+ await assert.rejects(e.regenerateSegment(b.id,c.id,0),/合成异常/);
+ assert.equal(calls.length,1);assert.equal(c.segments[0].qualityStatus,'pending');assert(c.segments[0].speechDraft.pendingRaw);
+});
+test('manual failure preserves old playable references and diagnostics',async()=>{
+ const {e,calls,stored}=memoryEngine(()=>audioReply(silent)),{b,c}=await chapter(e,[text]);
+ const old=await e.io.saveAudio(normal.toString('base64'));c.segments[0].audio=old.id;c.audio='old-chapter.wav';c.status='ready';
+ await assert.rejects(e.regenerateSegment(b.id,c.id,0));assert.equal(c.segments[0].audio,old.id);assert.equal(c.audio,'old-chapter.wav');
+ assert(c.segments[0].retryError);assert.equal(calls.length,1);assert(c.segments[0].retryDraft.rawAudioIds.every(id=>stored.has(id)));
+});
+test('successful manual replacement stages the affected chapter and preserves other segments',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(normal)),{b,c}=await chapter(e);
+ const old=await e.io.saveAudio(dup.toString('base64'));c.segments.forEach(s=>s.audio=old.id);c.audio='old-chapter.wav';
+ const other=JSON.stringify(c.segments[1]);await e.regenerateSegment(b.id,c.id,0);
+ assert.notEqual(c.segments[0].audio,old.id);assert.notEqual(c.audio,'old-chapter.wav');assert.equal(c.status,'ready');assert.equal(JSON.stringify(c.segments[1]),other);assert.equal(calls.length,1);
+});
+test('failed chapter merge keeps the previous sentence and chapter references',async()=>{
+ const {e}=memoryEngine(()=>audioReply(normal)),{b,c}=await chapter(e,[text]);c.segments[0].audio='old.wav';c.audio='old-chapter.wav';
+ e.io.mergeAudio=async()=>{throw Error('disk full');};
+ await assert.rejects(e.regenerateSegment(b.id,c.id,0),/disk full/);assert.equal(c.audio,'old-chapter.wav');assert.equal(c.segments[0].audio,'old.wav');
+});
+test('duplicate manual submission sends one request and exposes its busy state',async()=>{
+ let release;const gate=new Promise(r=>release=r);const {e,calls}=memoryEngine(async()=>{await gate;return audioReply(normal);}),{b,c}=await chapter(e,[text]);
+ const first=e.regenerateSegment(b.id,c.id,0);await new Promise(r=>setTimeout(r,5));assert(e.segmentBusy(b.id,c.id,0));
+ assert.equal(await e.regenerateSegment(b.id,c.id,0),false);release();await first;assert.equal(calls.length,1);assert(!e.segmentBusy(b.id,c.id,0));
+});
+test('source edits during manual generation discard the stale result',async()=>{
+ let c;const {e}=memoryEngine(()=>{c.segments[0].text='编辑后的原文。';return audioReply(normal);}),context=await chapter(e,[text]);c=context.c;
+ assert.equal(await e.regenerateSegment(context.b.id,c.id,0),false);assert(!c.segments[0].audio);
+});
+test('legacy ASR pending draft reuses raw audio using local checks only',async()=>{
+ const {e,calls}=memoryEngine(()=>{throw Error('unexpected model request');}),{b,c}=await chapter(e,[text]);
+ const raw=await e.io.saveAudio(dup.toString('base64')),s=c.segments[0],role=b.characters[0];
+ s.qualityStatus='pending';s.speechDraft={key:JSON.stringify({text:s.text,speaker:s.speaker,emotion:s.emotion,voice:role.voice,description:role.description}),generationVersion:2,pendingRaw:{file:raw,text:s.text,finishReason:'stop'},rawAudioIds:[raw.id],qualityFailure:'unavailable'};
+ await e.enqueue(b.id,[c.id]);assert.equal(calls.length,0);assert.equal(s.audio,raw.id);assert.equal(s.qualityStatus,'passed_with_warnings');
+});
+test('pause after archiving resumes without re-synthesis',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(normal));let pause=true,draft={};
+ await assert.rejects(e.synthesize(text,'preset:白桦','自然',{shouldPause:()=>pause&&!!draft.pendingRaw,onQuality:d=>{draft={...draft,...d};}}),/暂停/);
+ pause=false;const file=await e.synthesize(text,'preset:白桦','自然',draft);assert(file.id);assert.equal(calls.length,1);
+});
+test('quality retry count survives a pause before the second request',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(silent));let pause=false,draft={};
+ await assert.rejects(e.synthesize(text,'preset:白桦','自然',{shouldPause:()=>pause,onQuality:d=>{draft={...draft,...d};if(d.qualityAttempts===1&&!d.pendingRaw)pause=true;}}),/暂停/);
+ assert.equal(calls.length,1);assert.equal(draft.qualityAttempts,1);
+ await assert.rejects(e.synthesize(text,'preset:白桦','自然',draft),/合成异常/);assert.equal(calls.length,2);
+});
+test('legacy repair and unsupported provider cannot touch audio or call a service',async()=>{
+ const e=new Engine({request:async()=>{throw Error('unexpected request');}});
+ assert.equal(await e.repairChapterAudio(),0);await assert.rejects(e.request('asr',{}),/无效模型/);assert.equal(e.transcribeAudio,undefined);
+});
+test('authentication, quotas and local persistence errors do not split or retry quality',async()=>{
+ for(const status of [401,403,402,429]){const {e,calls}=memoryEngine(()=>{throw new (require('../app/src/main/assets/core.js').ApiError)('HTTP '+status,status,false);});await assert.rejects(e.synthesize('甲。乙。','preset:白桦'));assert.equal(calls.length,1);}
+ const {e,calls}=memoryEngine(()=>audioReply(normal));e.io.saveRawAudio=async()=>{throw Error('disk full');};await assert.rejects(e.synthesize('甲。乙。','preset:白桦'),/disk full/);assert.equal(calls.length,1);
+});
+test('warnings propagate through split synthesis without extra calls',async()=>{
+ const {e,calls}=memoryEngine(()=>audioReply(dup));const f=await e.synthesize(text+text,'preset:白桦','自然',{forceSplit:true});
+ assert.equal(f.qualityStatus,'passed_with_warnings');assert(f.qualityIssues.includes('疑似重复'));assert.equal(calls.length,2);
+});
+module.exports={wav,memoryEngine,audioReply,textReply};

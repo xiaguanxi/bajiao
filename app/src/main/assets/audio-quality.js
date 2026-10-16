@@ -11,10 +11,6 @@ function decode(base64){
  if(typeof Buffer!=='undefined')return new Uint8Array(Buffer.from(base64,'base64'));
  const raw=atob(base64),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;
 }
-function encode(bytes){
- if(typeof Buffer!=='undefined')return Buffer.from(bytes).toString('base64');
- let raw='';for(let i=0;i<bytes.length;i+=16384)raw+=String.fromCharCode(...bytes.subarray(i,i+16384));return btoa(raw);
-}
 function wave(bytes){
  if(bytes.length<44)return null;
  const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),tag=at=>String.fromCharCode(...bytes.subarray(at,at+4));
@@ -23,8 +19,8 @@ function wave(bytes){
  for(let at=12;at+8<=bytes.length;){const n=v.getUint32(at+4,true);if(at+8+n>bytes.length)return null;if(tag(at)==='fmt '&&n>=16)fmt=at+8;if(tag(at)==='data')data={at:at+8,size:n};at+=8+n+(n%2);}
  if(fmt===null||!data||v.getUint16(fmt,true)!==1)return null;
  const channels=v.getUint16(fmt+2,true),rate=v.getUint32(fmt+4,true),align=v.getUint16(fmt+12,true),bits=v.getUint16(fmt+14,true);
- if(channels<1||channels>2||bits!==16||align!==channels*2||rate<8000||rate>96000||data.size%align)return null;
- return {v,fmt,data,channels,rate,align,frames:data.size/align,duration:data.size/align/rate};
+ if(channels<1||![8,16,24,32].includes(bits)||align!==channels*bits/8||rate<=0||rate>384000||v.getUint32(fmt+8,true)!==rate*align||!data.size||data.size%align)return null;
+ return {v,fmt,data,channels,rate,align,bits,frames:data.size/align,duration:data.size/align/rate};
 }
 const WINDOW=512,HOP=160,BANDS=24;
 const hann=Float64Array.from({length:WINDOW},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(WINDOW-1)));
@@ -47,13 +43,13 @@ function distance(rows,a,z,b,y){
  for(let i=1;i<=n;i++){const cur=new Float64Array(m+1).fill(Infinity),count=new Uint32Array(m+1);for(let j=Math.max(1,Math.floor((i-1)*m/n)-12);j<=Math.min(m,Math.floor(i*m/n)+12);j++){let cost=prev[j-1],num=steps[j-1];if(prev[j]+.1<cost){cost=prev[j]+.1;num=steps[j];}if(cur[j-1]+.1<cost){cost=cur[j-1]+.1;num=count[j-1];}let dot=0;for(let k=0;k<BANDS;k++)dot+=rows[a+i-1][k]*rows[b+j-1][k];cur[j]=cost+1-dot;count[j]=num+1;}prev=cur;steps=count;}
  return prev[m]/(steps[m]||1);
 }
-function cleanRepeatedSpeech(base64,text){
+function repetitionCandidate(base64,text){
  const unchanged={base64,removed:false};
  const letters=String(text||'').replace(/[\s\p{P}\p{S}]/gu,'');
  if(letters.length<6||intentionalRepeat(text))return unchanged;
  const bytes=decode(base64),w=wave(bytes);
  // Bounded work on the phone; a long/unsupported file is never silently cropped.
- if(!w||w.duration<2||w.duration>90||w.duration<Math.max(1,letters.length/280*60)*1.6)return unchanged;
+ if(!w||w.bits!==16||w.channels>2||w.rate<8000||w.rate>96000||w.duration<2||w.duration>90||w.duration<Math.max(1,letters.length/280*60)*1.6)return unchanged;
  const {rows,active}=features(w);let first=active.indexOf(true),last=active.lastIndexOf(true),gap=null,best=null;
  if(first<0)return unchanged;
  for(let i=first;i<=last;i++){
@@ -64,16 +60,37 @@ function cleanRepeatedSpeech(base64,text){
    const n=left-first,m=last-end+1;
    if(n<40||m<40||n/m<.8||n/m>1.25)continue;
    const score=distance(rows,first,left,end,last+1);
-   if(score<.30&&(!best||score<best.score))best={score,cutFrame:Math.round((start*HOP+WINDOW+800)*w.rate/8000)};
+   if(score<.30&&(!best||score<best.score)){
+    best={score};
+   }
   }
  }
  if(!best)return unchanged;
- const keep=Math.min(w.frames,best.cutFrame)*w.align;
- // Retain the first complete rendition and a short quiet tail. Preserve fmt/PCM bytes.
- const fmtSize=w.v.getUint32(w.fmt-4,true),headSize=28+fmtSize+(fmtSize%2),out=new Uint8Array(headSize+keep),v=new DataView(out.buffer);
- out.set(bytes.subarray(0,12));out.set(bytes.subarray(w.fmt-8,w.fmt+fmtSize),12);
- out.set([100,97,116,97],headSize-8);v.setUint32(headSize-4,keep,true);out.set(bytes.subarray(w.data.at,w.data.at+keep),headSize);v.setUint32(4,out.length-8,true);
- return {base64:encode(out),removed:true,score:best.score,duration:keep/w.align/w.rate};
+ return {...unchanged,suspected:true,score:best.score};
 }
-return {cleanRepeatedSpeech,intentionalRepeat};
+function normalizeTranscript(text){return String(text||'').normalize('NFKC').replace(/[\s\p{P}]/gu,'');}
+// Compatibility API: local evidence never authorizes a destructive crop.
+function cleanRepeatedSpeech(base64){return {base64,removed:false};}
+// Signal measurements are diagnostic only. Quiet speech is never silence to crop.
+function analyzeSpeech(base64,text,finishReason='stop'){
+ let w=null;try{w=wave(decode(base64));}catch(_){}
+ const issues=[],hardIssues=[];
+ if(finishReason==='length')hardIssues.push('输出被截断');
+ if(!w){hardIssues.push(base64?'音频结构损坏或无法解码':'空音频');return {issues:hardIssues,hardIssues,supported:false};}
+ let zeros=0,longest=0,peak=0;
+ for(let frame=0;frame<w.frames;frame++){
+  let zero=true;for(let ch=0;ch<w.channels;ch++){const at=w.data.at+frame*w.align+ch*w.bits/8;for(let k=0;k<w.bits/8;k++)if(w.v.getUint8(at+k)!==(w.bits===8?128:0))zero=false;}
+  if(!zero)peak=1;
+  zeros=zero?zeros+1:0;longest=Math.max(longest,zeros);
+ }
+ const letters=normalizeTranscript(text).length,estimate=Math.max(1,letters/280*60);
+ if(w.duration>Math.max(8,estimate*3+5))issues.push('时长异常');
+ if(letters>=6&&w.duration<Math.max(.25,letters/900*60))issues.push('疑似漏读');
+ if(longest/w.rate>3)issues.push('长静音');
+ if(peak===0)hardIssues.push('全静音');
+ const candidate=repetitionCandidate(base64,text);
+ if(candidate.removed||candidate.suspected)issues.push('疑似重复');
+ return {issues:[...hardIssues,...issues],hardIssues,supported:true,duration:w.duration};
+}
+return {cleanRepeatedSpeech,repetitionCandidate,analyzeSpeech,normalizeTranscript,intentionalRepeat};
 });

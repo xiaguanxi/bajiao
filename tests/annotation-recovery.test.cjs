@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const V=require('../app/src/main/assets/core.js');
-const io=()=>({saveState:async()=>{},features:{batching:true},mergeAudio:async()=>({id:'whole.wav',duration:10})});
+const io=()=>({saveState:async()=>{},features:{batching:true,direction:false},mergeAudio:async()=>({id:'whole.wav',duration:10})});
 const batch=prompt=>JSON.parse(prompt.split('本批片段：')[1]);
 const labels=lines=>({characters:[],lines:lines.map(s=>({id:s.id,speaker:'旁白',emotion:'自然',confidence:1}))});
 const setup=async(n=95)=>{const e=new V.Engine(io()),b=await e.addBook('逐句恢复',Array.from({length:n},(_,i)=>'原文'+i+'。').join(''));return {e,b,c:b.chapters[0]};};

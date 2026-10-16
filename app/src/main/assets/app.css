@@ -877,22 +877,7 @@ body {
     to { transform: translateY(0); }
 }
 
-@media (prefers-color-scheme: dark) {
-    html, body {
-        background: #181d1b;
-    }
-    body {
-        color-scheme: dark;
-    }
-    #app .vc-confirm-top-panel {
-        background: var(--vc-paper);
-        border-color: var(--vc-line);
-    }
-    #app .vc-confirm-top-badge {
-        background: #472625;
-        color: #f69d96;
-    }
-}
+
 
 @media (max-width: 360px) {
     html {
@@ -1444,11 +1429,7 @@ body {
 }
 #app .vc-dock .vc-player-tools{padding-top:2px;}
 #app .vc-dock .vc-player-progress{margin:0 0 4px}
-@media (prefers-color-scheme: dark) {
-  #app .vc-transcript-line.active .vc-transcript-text {
-    color: #d7e6d2;
-  }
-}
+
 
 /* ==========================================================================
    存储面板占比条与归档徽章 (Storage Ratio & Archive Badges)

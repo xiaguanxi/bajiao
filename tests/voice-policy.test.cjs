@@ -17,7 +17,7 @@ test('automatic design lets MiMo adapt preview; explicit preview stays verbatim'
 });
 test('negative, restrained and compound emotions remain natural-language directions',()=>{
  for(const style of ['不生气，但有些委屈','没有疲惫感，轻快而克制','Not angry, slightly sad; then reassuring']){
-  const direction=buildSpeechDirection(style,desc);assert(direction.includes(style));assert(direction.includes(desc));assert(!/\(Angry\)|\(tired\)|280/.test(direction));
+  const direction=buildSpeechDirection(style,desc);assert(direction.includes(style));assert(!direction.includes(desc));assert(!/\(Angry\)|\(tired\)|280/.test(direction));
  }
 });
 async function bookWithRoles(e,names=['沈砚','林晚']){const b=await e.addBook('小说','你好。');b.characters.push(...names.map(name=>({name,description:'清亮、不沙哑的青年女性',voice:null})));return b;}
@@ -62,11 +62,11 @@ test('resuming an already finished legacy chapter preserves every audio referenc
  e.state.tasks.push({id:'old-task',bookId:b.id,chapterId:c.id,status:'paused'});const before=JSON.stringify(b);e.io.request=async()=>{throw Error('old chapter must not call models');};e.io.mergeAudio=async()=>{throw Error('old chapter must not merge');};
  await e.resume('old-task');assert.equal(JSON.stringify(b),before);assert.equal(e.state.tasks[0].status,'done');
 });
-test('legacy split checkpoints retain their completed files without rechecking or repeating them',async()=>{
+test('unversioned split checkpoints cannot mix old audio with current prompt identity',async()=>{
  const e=engine(),b=await e.addBook('续做','甲。乙。'),c=b.chapters[0],s={id:0,text:'甲。乙。',speaker:'旁白',emotion:'自然',confidence:1};c.segments=[s];
  s.speechDraft={key:JSON.stringify({text:s.text,speaker:s.speaker,emotion:s.emotion,voice:b.characters[0].voice}),files:[{id:'saved-old.wav',duration:2}]};
- const texts=[];let merges=0;e.synthesizePart=async text=>{texts.push(text);return {id:'new.wav',duration:2,generationVersion:2,qualityStatus:'passed'};};e.io.mergeAudio=async ids=>{assert.deepEqual(ids,merges++?['merged.wav']:['saved-old.wav','new.wav']);return {id:'merged.wav',duration:4};};
- await e.enqueue(b.id,[c.id]);assert.deepEqual(texts,['乙。']);assert.equal(s.audio,'merged.wav');assert.equal(e.state.tasks[0].status,'done');
+ const texts=[];let merges=0;e.synthesizePart=async(text,model,ref,style,options)=>{texts.push(text);return {id:'new.wav',duration:2,generationVersion:2,qualityStatus:'passed',rawAudioIds:options.budget.rawAudioIds};};e.io.mergeAudio=async ids=>{assert.deepEqual(ids,['new.wav']);merges++;return {id:'merged.wav',duration:4};};
+ await e.enqueue(b.id,[c.id]);assert.deepEqual(texts,['甲。乙。']);assert.equal(s.audio,'new.wav');assert(s.rawAudioIds.includes('saved-old.wav'));assert.equal(e.state.tasks[0].status,'done');
 });
 test('new design candidates cannot silently occupy an identical reserved sample',async()=>{
  const e=engine(),b=await bookWithRoles(e);e.design=async()=>({id:Math.random().toString(),sample:'identical.wav'});

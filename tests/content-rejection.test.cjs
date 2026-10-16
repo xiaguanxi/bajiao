@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const V=require('../app/src/main/assets/core.js'),UX=require('../app/src/main/assets/ux.js');
-const io=()=>({saveState:async()=>{},mergeAudio:async()=>({id:'chapter.wav',duration:2})});
+const io=()=>({features:{direction:false},saveState:async()=>{},mergeAudio:async()=>({id:'chapter.wav',duration:2})});
 
 for(const response of [
  {base_resp:{status_code:1026,status_msg:'input new_sensitive (1026)'}},

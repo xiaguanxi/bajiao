@@ -12,7 +12,7 @@ for(const mode of ['manual','auto'])test(mode+': whole-context rejection isolate
  assert.equal(c.segments.length,95);assert.equal(V.normalize(c.segments.map(s=>s.text).join('')),V.normalize(c.text));assert(calls.some(ids=>ids.length===45));assert(calls.some(ids=>ids.length===5));assert(calls.some(ids=>ids.length===1&&ids[0]===48));
  assert.equal(c.segments.filter(s=>s.annotationStatus===(mode==='auto'?'fallback':'failed')).length,1);assert.equal(c.segments[48].annotationStatus,mode==='auto'?'fallback':'failed');assert.equal(new Set(spoken).size,spoken.length);
  for(const s of c.segments.filter(s=>s.id!==48))assert.equal(s.annotationStatus,'complete');
- if(mode==='auto'){assert.equal(t.status,'done');assert.equal(spoken.length,95);assert.equal(c.segments[48].speaker,'旁白');assert.equal(c.segments[48].confidence,1);}
+ if(mode==='auto'){assert.equal(t.status,'done');assert.equal(spoken.length,95);assert.equal(c.segments[48].speaker,'旁白');assert.equal(c.segments[48].confidence,0);}
  else{assert.equal(t.status,'waiting');assert.equal(t.phase,'标注待处理');assert.equal(t.done,94);assert.equal(spoken.length,94);const saved=c.segments.filter(s=>s.id!==48).map(s=>s.audio),count=calls.length;await e.correct(b.id,c.id,48,'旁白','自然');await e.resume(t.id);assert.equal(t.status,'done');assert.equal(calls.length,count);assert.equal(spoken.length,95);assert.deepEqual(c.segments.filter(s=>s.id!==48).map(s=>s.audio),saved);}
 });
 
@@ -44,7 +44,7 @@ test('manual correction during an in-flight annotation request wins over the mod
 
 test('automatic annotation uses narration for low-confidence known speakers as well as unknown speakers',async()=>{
  const {e,b,c}=await setup(2);e.state.settings.mode='auto';b.characters.push({name:'沈砚',voice:'preset:白桦'});c.segments=[{id:0,text:'原文0。',speaker:'沈砚',confidence:.1},{id:1,text:'原文1。',speaker:'未知角色',confidence:0}];
- await e.analyze(b.id,c.id);assert(c.segments.every(s=>s.speaker==='旁白'&&s.confidence===1&&s.annotationStatus==='fallback'));
+ await e.analyze(b.id,c.id);assert(c.segments.every(s=>s.speaker==='旁白'&&s.annotationOriginal&&s.annotationStatus==='fallback'));
 });
 
 test('simultaneous annotation entries share a job and saving failures never trigger model retries',async()=>{

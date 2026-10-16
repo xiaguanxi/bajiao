@@ -2,26 +2,27 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {Engine,units,splitBook,parseJson,normalize,styleTagOf,tagTextOf,isBitPart,isPunctOnly,punctSilenceMs,expectedSpeechSec,isAudioTooLong,splitChapters}=require('../app/src/main/assets/core.js');
 function io(){return {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};}
 test('sentence segmentation preserves every non-whitespace character including quotes',()=>{for(const t of ['甲说：“别走！”她停下。\n门开了。','"Hello." John said.','“未闭合的对白','a'.repeat(600),'甲「你好。」乙『再见！』'])assert.equal(normalize(units(t).map(x=>x.text).join('')),normalize(t));});
-test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,3);assert.throws(()=>splitBook('  '));});
+test('chapter headings and large chapters are safely split',()=>{assert.equal(splitBook('第一章 开始\n正文\n第二章 结束\n结尾').length,2);assert.equal(splitBook('a'.repeat(30000)).length,1);assert.throws(()=>splitBook('  '));});
 test('MiniMax thinking and code fence JSON are removed',()=>{assert.deepEqual(parseJson('<think>reason</think>```json\n{"ok":true}\n```'),{ok:true});assert.throws(()=>parseJson('hello'));});
-test('LLM duplicate identifiers cannot replace original text',async()=>{const e=new Engine(io()),b=await e.addBook('test','甲。乙。');e.llm=async()=>({characters:[],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:0,speaker:'旁白',emotion:'平静',confidence:1}]});await assert.rejects(e.analyze(b.id,b.chapters[0].id),/数量不匹配|重复/);assert.equal(b.chapters[0].segments.length,0);});
+test('LLM duplicate identifiers leave original sentences editable without replacing text',async()=>{const e=new Engine(io()),b=await e.addBook('test','甲。乙。');e.state.settings.mode='manual';e.llm=async()=>({characters:[],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:0,speaker:'旁白',emotion:'平静',confidence:1}]});await e.analyze(b.id,b.chapters[0].id);const c=b.chapters[0];assert.equal(normalize(c.segments.map(s=>s.text).join('')),normalize(c.text));assert(c.segments.every(s=>s.annotationStatus==='failed'));});
 test('invalid voice ids returned by LLM are rejected',async()=>{const e=new Engine(io()),b=await e.addBook('test','甲。');b.characters.push({name:'甲',description:'男声',voice:null});e.state.voices.push({id:'real',description:'男声',enabled:true});e.llm=async()=>({matches:[{name:'甲',voiceId:'hallucinated'}]});await e.matchCharacters(b.id,['甲']);assert.equal(b.characters[1].voice,null);});
-test('manual design pauses only blocked role and preserves completed narrator audio',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null},{id:1,text:'乙。',speaker:'乙',emotion:'平静',confidence:1,audio:null}];b.characters.push({name:'乙',description:'少年',voice:null});e.design=async()=>({id:'new',sample:'reference.wav',description:'少年',enabled:true});let calls=0;e.synthesize=async()=>({id:'audio-'+(++calls)});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(calls,1);assert(c.segments[0].audio);await e.accept(b.id,'乙');assert.equal(e.state.tasks[0].status,'done');assert.equal(calls,2);assert.equal(e.state.voices.length,1);});
+test('manual design pauses only blocked role and preserves completed narrator audio',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];e.state.settings.mode='manual';c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null},{id:1,text:'乙。',speaker:'乙',emotion:'平静',confidence:1,audio:null}];b.characters.push({name:'乙',description:'少年',voice:null});e.design=async()=>({id:'new',sample:'reference.wav',description:'少年',enabled:true});let calls=0;e.synthesize=async()=>({id:'audio-'+(++calls)});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(calls,1);assert(c.segments[0].audio);await e.accept(b.id,'乙');assert.equal(e.state.tasks[0].status,'done');assert.equal(calls,2);assert.equal(e.state.voices.length,1);});
 test('auto design saves reference and completes without confirmation',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];e.state.settings.mode='auto';b.characters.push({name:'甲',voice:null,description:'少年'});c.segments=[{id:0,text:'甲。',speaker:'甲',emotion:'平静',confidence:1}];e.design=async()=>({id:'voice',sample:'ref.wav'});e.synthesize=async()=>({id:'out.wav'});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'done');assert.equal(b.characters[1].voice,'voice');assert.equal(e.state.voices.length,1);});
-test('failed segment retries without resynthesizing finished segments',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2)throw Error('timeout');return {id:text};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'failed');await e.resume(e.state.tasks[0].id);assert.equal(e.state.tasks[0].status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
+test('failed segment retries without resynthesizing finished segments',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2)throw Error('音色不存在');return {id:text};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'failed');await e.resume(e.state.tasks[0].id);assert.equal(e.state.tasks[0].status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
+test('exhausted network request fails visibly and keeps finished segments for manual resume',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2){const err=Error('timeout');err.retryable=true;throw err;}return {id:text};};await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];assert.equal(t.status,'failed');assert.equal(t.error.retryable,true);assert.equal(t.nextRetryAt,undefined);assert.equal(c.segments[0].audio,'甲。');await e.resume(t.id);assert.equal(t.status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
 test('process interruption becomes paused on reload',()=>{const e=new Engine(io());e.state.tasks.push({status:'running'});const other=new Engine(io(),JSON.parse(JSON.stringify(e.state)));assert.equal(other.state.tasks[0].status,'paused');});
-test('uncertain attribution requires correction even with an existing voice',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:.4,emotion:'平静'}];e.synthesize=async()=>{throw Error('must not synthesize')};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');});
-test('correcting a completed segment invalidates chapter output only',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.audio='old.wav';c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静',audio:'a'+x.id}));await e.correct(b.id,c.id,1,'旁白','紧张');assert.equal(c.audio,null);assert.equal(c.segments[0].audio,'a0');assert.equal(c.segments[1].audio,null);});
-test('sample import derives acoustic description and short name and rejects unsupported formats',async()=>{const e=new Engine(io());const v=await e.importVoice({name:'低沉.温润.wav',id:'x',format:'wav',size:100});assert.equal(v.description,'声音低沉、温润');assert.equal(v.name,'低沉声音');await assert.rejects(e.importVoice({format:'m4a'}));await assert.rejects(e.importVoice({format:'wav',size:8000000}));});
+test('uncertain attribution requires correction even with an existing voice',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];e.state.settings.mode='manual';c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:.4,emotion:'平静'}];e.synthesize=async()=>{throw Error('must not synthesize')};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');});
+test('correcting a completed segment invalidates chapter output only',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.audio='old.wav';c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静',audio:'a'+x.id}));await e.correct(b.id,c.id,1,'旁白','紧张');assert.equal(c.audio,'old.wav');assert.equal(c.audioStale,true);assert.equal(c.originalAudio,'old.wav');assert.equal(c.segments[0].audio,'a0');assert.equal(c.segments[1].audio,null);});
+test('sample import derives acoustic description and short name and rejects unsupported formats',async()=>{const e=new Engine(io());const v=await e.importVoice({name:'低沉.温润.wav',id:'x',format:'wav',size:100});assert.equal(v.description,'低沉.温润');assert.equal(v.name,'低沉声音');await assert.rejects(e.importVoice({format:'m4a'}));await assert.rejects(e.importVoice({format:'wav',size:8000000}));});
 test('persist serializes snapshots to prevent stale overwrite',async()=>{const seen=[];const e=new Engine({...io(),saveState:async text=>{await new Promise(r=>setTimeout(r,5));seen.push(JSON.parse(text).settings.mode);}});e.state.settings.mode='manual';const a=e.persist();e.state.settings.mode='auto';const b=e.persist();await Promise.all([a,b]);assert.deepEqual(seen,['manual','auto']);});
 test('nonstandard numeric heading without chapter suffix is recognized',()=>{const {chapterWarnings}=require('../app/src/main/assets/core');const c=splitBook('第0055章 前章\n甲\n第0056 云腾致雨\n乙\n第0057章 后章\n丙');assert.equal(c.length,3);assert.equal(c[1].text,'乙');assert.deepEqual(chapterWarnings(c),[]);assert.equal(chapterWarnings([...c,c[1]]).length,1);});
 test('narrative cannot be attributed to a character even when the model does so',async()=>{const e=new Engine(io()),b=await e.addBook('t','陆涯心想，还是回家吧。\n“走了。”');e.llm=async()=>({characters:[{name:'陆涯',description:'青年男声'}],lines:[{id:0,speaker:'陆涯',emotion:'平静',confidence:.99},{id:1,speaker:'陆涯',emotion:'平静',confidence:.99}]});await e.analyze(b.id,b.chapters[0].id);assert.equal(b.chapters[0].segments[0].speaker,'旁白');assert.equal(b.chapters[0].segments[1].speaker,'陆涯');});
 test('incremental persistence writes only changed chapter and retries failed snapshots',async()=>{const writes=[];let failure=false;const e=new Engine({...io(),saveSnapshot:async(header,chapters)=>{if(failure){failure=false;throw Error('disk failure');}writes.push({header:JSON.parse(header),chapters:JSON.parse(chapters)});}}),b=await e.addBook('t','第一章\n甲。\n第二章\n乙。');assert.equal(writes[0].chapters.length,2);await e.persist();assert.equal(writes[1].chapters.length,0);b.chapters[1].summary='changed';e.touch(b.chapters[1]);failure=true;await assert.rejects(e.persist());await e.persist();assert.equal(writes.at(-1).chapters.length,1);assert.equal(writes.at(-1).chapters[0].summary,'changed');assert.deepEqual(writes.at(-1).header.books[0].chapters.map(c=>c.id),[b.chapters[0].id,b.chapters[1].id]);});
-test('invented role names are not accepted even with high model confidence',async()=>{const e=new Engine(io()),b=await e.addBook('t','双胞胎女娃来了。\n“你好。”');e.llm=async()=>({characters:[{name:'双胞胎女娃A',description:'女孩'}],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:1,speaker:'双胞胎女娃A',emotion:'平静',confidence:1}]});await e.analyze(b.id,b.chapters[0].id);assert(!b.characters.some(c=>c.name==='双胞胎女娃A'));assert.equal(b.chapters[0].segments[1].speaker,'未知角色');assert.equal(b.chapters[0].segments[1].confidence,0);});
-test('pause between analysis batches resumes from saved draft without repeating calls',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(95));let paused=false,calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines[0].id);paused=true;return {characters:[],lines:lines.map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id,()=>paused);assert.equal(b.chapters[0].segments.length,0);assert.equal(b.chapters[0].analysisDraft.next,45);await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[0,45,90]);assert.equal(b.chapters[0].segments.length,95);assert.equal(b.chapters[0].analysisDraft,undefined);});
+test('invented role names are not accepted even with high model confidence',async()=>{const e=new Engine(io()),b=await e.addBook('t','双胞胎女娃来了。\n“你好。”');e.state.settings.mode='manual';e.llm=async()=>({characters:[{name:'双胞胎女娃A',description:'女孩'}],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:1,speaker:'双胞胎女娃A',emotion:'平静',confidence:1}]});await e.analyze(b.id,b.chapters[0].id);assert(!b.characters.some(c=>c.name==='双胞胎女娃A'));assert.equal(b.chapters[0].segments[1].speaker,'未知角色');assert.equal(b.chapters[0].segments[1].confidence,0);});
+test('pause between analysis batches resumes from saved draft without repeating calls',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(95));let paused=false,calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines[0].id);paused=true;return {characters:[],lines:lines.map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id,()=>paused);assert.equal(b.chapters[0].segments.length,95);assert.equal(b.chapters[0].segments.filter(s=>s.annotationStatus==='complete').length,45);assert.equal(b.chapters[0].analysisDraft.next,45);await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[0,45,90]);assert.equal(b.chapters[0].segments.length,95);assert.equal(b.chapters[0].analysisDraft,undefined);});
 test('editing during synthesis discards stale audio and permits a clean retry',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'旧情绪',confidence:1}];e.synthesize=async()=>{await e.correct(b.id,c.id,0,'旁白','新情绪');return {id:'stale.wav'};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(c.segments[0].audio,null);e.synthesize=async()=>({id:'fresh.wav'});await e.resume(e.state.tasks[0].id);assert.equal(c.segments[0].audio,'fresh.wav');assert.equal(e.state.tasks[0].status,'done');});
-test('changing a bound voice invalidates that role across chapters only',async()=>{const e=new Engine(io()),b=await e.addBook('t','第一章\n甲。\n第二章\n乙。');b.characters.push({name:'角色',voice:'preset:白桦'});for(const c of b.chapters){c.audio='chapter.wav';c.segments=[{id:0,speaker:'角色',audio:'role.wav'},{id:1,speaker:'旁白',audio:'narrator.wav'}];e.state.tasks.push({id:c.id,bookId:b.id,chapterId:c.id,status:'done',done:2});}await e.bind(b.id,'角色','preset:茉莉');for(const c of b.chapters){assert.equal(c.audio,null);assert.equal(c.segments[0].audio,null);assert.equal(c.segments[1].audio,'narrator.wav');}assert(e.state.tasks.every(t=>t.status==='paused'&&t.done===1));});
-test('malformed batch is retried with fewer lines without corrupting source',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(50));let calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines.length);return {characters:[],lines:(calls.length===1?lines.slice(1):lines).map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[45,22,22,6]);assert.equal(b.chapters[0].segments.length,50);assert.equal(b.chapters[0].analysisIssues.length,1);});
+test('changing a bound voice preserves all completed chapter audio and tasks',async()=>{const e=new Engine(io()),b=await e.addBook('t','第一章\n甲。\n第二章\n乙。');b.characters.push({name:'角色',voice:'preset:白桦'});for(const c of b.chapters){c.audio='chapter.wav';c.segments=[{id:0,speaker:'角色',audio:'role.wav'},{id:1,speaker:'旁白',audio:'narrator.wav'}];e.state.tasks.push({id:c.id,bookId:b.id,chapterId:c.id,status:'done',done:2});}const chapters=JSON.stringify(b.chapters),tasks=JSON.stringify(e.state.tasks);await e.bind(b.id,'角色','preset:茉莉');assert.equal(b.characters[1].voice,'preset:茉莉');assert.equal(JSON.stringify(b.chapters),chapters);assert.equal(JSON.stringify(e.state.tasks),tasks);});
+test('malformed batch is retried with fewer lines without corrupting source',async()=>{const e=new Engine(io()),b=await e.addBook('t','一句话。'.repeat(50));let calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines.length);return {characters:[],lines:(calls.length===1?lines.slice(1):lines).map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[45,1,5]);assert.equal(b.chapters[0].segments.length,50);assert.equal(b.chapters[0].analysisIssues.length,1);});
 test('lazy chapter metadata saves without overwriting body and shared loads deduplicate',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。');const original=JSON.parse(JSON.stringify(b.chapters[0]));b.chapters[0]={id:original.id,title:original.title,textLength:2,segmentCount:0,unloaded:true,segments:[]};let reads=0,writes=[];const lazy=new Engine({...io(),loadChapter:async()=>{reads++;return original;},saveSnapshot:async(h,c)=>writes.push(JSON.parse(c))},e.state);await lazy.persist();assert.equal(writes[0].length,0);await Promise.all([lazy.ensureChapter(b.id,original.id),lazy.ensureChapter(b.id,original.id)]);assert.equal(reads,1);assert.equal(lazy.chapter(b.id,original.id).text,'甲。');assert.equal(lazy.chapter(b.id,original.id).unloaded,undefined);});
 test('model attribution is trusted; explicit speech cue still applies',async()=>{const e=new Engine(io()),b=await e.addBook('t','暮雨神色慌张。\n“喂。”\n霏霏说道：\n“你好。”');b.characters.push({name:'双胞胎女娃',aliases:[]});e.llm=async()=>({characters:[{name:'暮雨',description:'女孩'},{name:'霏霏',description:'女孩'}],lines:units(b.chapters[0].text).map(x=>({id:x.id,speaker:x.id%2?'双胞胎女娃':'旁白',emotion:'自然',confidence:.99}))});await e.analyze(b.id,b.chapters[0].id);assert.equal(b.chapters[0].segments[1].speaker,'双胞胎女娃');assert.equal(b.chapters[0].segments[3].speaker,'霏霏');});
 test('dialogue continuation keeps model speaker without heuristic override',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲说道：\n“来了。”\n乙点点头。\n“坐吧。”');b.characters.push({name:'甲',description:'男声',voice:null},{name:'乙',description:'男声',voice:null});e.llm=async()=>({characters:[],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:1,speaker:'甲',emotion:'平静',confidence:.9},{id:2,speaker:'旁白',emotion:'平静',confidence:1},{id:3,speaker:'甲',emotion:'平静',confidence:.9}]});await e.analyze(b.id,b.chapters[0].id);assert.equal(b.chapters[0].segments[3].speaker,'甲');assert.equal(b.chapters[0].segments[3].confidence,.9);});
@@ -29,7 +30,7 @@ test('resetChapters clears annotation audio and task records while keeping text'
 test('segment timestamps prefer measured durations over estimates',()=>{const{computeSegmentTimestamps}=require('../app/src/main/assets/core.js');const segs=computeSegmentTimestamps([{id:0,text:'x',speaker:'p',durMs:1000,audio:'a'},{id:1,text:'yyyyyyyy',speaker:'p',durMs:3000,audio:'b'}],4);assert.equal(segs[0].startMs,0);assert.equal(segs[0].endMs,1000);assert.equal(segs[1].startMs,1000);assert.equal(segs[1].endMs,4000);});
 test('calibrateDurations fills missing per-sentence durations',async()=>{const{Engine}=require('../app/src/main/assets/core.js');let got=null;const io2={saveState:async()=>{},audioDurations:async ids=>{got=ids;return {[ids[0]]:1234}}};const e=new Engine(io2);const b={id:'b',chapters:[{id:'c',segments:[{id:0,text:'x',audio:'a.wav'},{id:1,text:'y',audio:'skip'}]}]};e.state.books.push(b);const n=await e.calibrateDurations('b','c');assert.equal(n,1);assert.equal(b.chapters[0].segments[0].durMs,1234);assert.deepEqual(got,['a.wav']);});
 test('auto mode adopts new design without waiting',async()=>{const{Engine}=require('../app/src/main/assets/core.js');const io2={saveState:async()=>{},mergeAudio:async ids=>({id:'m.wav',duration:ids.length}),saveAudio:async()=>({id:'s.wav'})};const e=new Engine(io2);e.state.settings.mode='auto';const b=await e.addBook('t','X');const c=b.chapters[0];c.segments=[{id:0,text:'X',speaker:'R',emotion:'E',confidence:1}];b.characters.push({name:'R',voice:null,description:'D'});e.design=async()=>({id:'v1',sample:'r.wav'});e.synthesize=async()=>({id:'o.wav',duration:1});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'done');assert.equal(b.characters.find(r=>r.name==='R').voice,'v1');});
-test('speaker threshold defaults to 0.5 and gates synthesis',async()=>{const e=new Engine(io());assert.equal(e.spkThr(),0.5);const b=await e.addBook('t','甲。');b.characters.push({name:'甲',description:'男声',voice:'preset:白桦'});const mk=(text,conf)=>({id:0,text,speaker:'甲',confidence:conf,emotion:'平静',audio:null});b.chapters[0].segments=[mk('甲。',0.6)];e.synthesize=async()=>({id:'out.wav'});await e.enqueue(b.id,[b.chapters[0].id]);assert.equal(e.state.tasks[0].status,'done');e.state.settings.speakerThreshold=0.8;const c2={id:'c2',title:'乙章',text:'乙。',status:'raw',segments:[mk('乙。',0.6)]};b.chapters.push(c2);await e.enqueue(b.id,[c2.id]);assert.equal(e.state.tasks[1].status,'waiting');});
+test('speaker threshold defaults to 0.5 and gates synthesis',async()=>{const e=new Engine(io());e.state.settings.mode='manual';assert.equal(e.spkThr(),0.5);const b=await e.addBook('t','甲。');b.characters.push({name:'甲',description:'男声',voice:'preset:白桦'});const mk=(text,conf)=>({id:0,text,speaker:'甲',confidence:conf,emotion:'平静',audio:null});b.chapters[0].segments=[mk('甲。',0.6)];e.synthesize=async()=>({id:'out.wav'});await e.enqueue(b.id,[b.chapters[0].id]);assert.equal(e.state.tasks[0].status,'done');e.state.settings.speakerThreshold=0.8;const c2={id:'c2',title:'乙章',text:'乙。',status:'raw',segments:[mk('乙。',0.6)]};b.chapters.push(c2);await e.enqueue(b.id,[c2.id]);assert.equal(e.state.tasks[1].status,'waiting');});
 test('invalid speaker threshold falls back to 0.5',()=>{const e=new Engine(io(),{version:1,books:[],voices:[],tasks:[],settings:{speakerThreshold:9},read:{},usage:[]});assert.equal(e.spkThr(),0.5);});
 test('analyze prompt carries full-chapter context and inference rules',async()=>{const e=new Engine(io()),b=await e.addBook('t','沈砚推开木门。\n“你终于来了。”');let prompt='';e.llm=async p=>{prompt=p;const lines=JSON.parse(p.split('本批片段：')[1]);return {characters:[],lines:lines.map(x=>({id:x.id,speaker:'旁白',emotion:'平静',confidence:0.9})),summary:''};};await e.analyze(b.id,b.chapters[0].id);for(const k of ['本章完整上下文','前文摘要','对话轮次','本章前文已判定','纯动作描写'])assert(prompt.includes(k),'prompt 缺 '+k);});
 
@@ -94,6 +95,8 @@ test('updatePlaybackProgress saves position, detects completion, and triggers au
  c2.audio = 'ch2_finish.wav';
  c2.duration = 100;
  res = await e.updatePlaybackProgress(b.id, c2.id, 99000, 100000);
+ assert.equal(c2.audio, 'ch2_finish.wav', 'never delete while playback is still running');
+ res = await e.updatePlaybackProgress(b.id, c2.id, 100000, 100000, true);
  assert.equal(res.listened, true);
  assert.equal(c2.audio, null);
  assert.equal(c2.audioCleared, true);
@@ -174,7 +177,7 @@ test('removed task stops in-flight work without resurrection', async () => {
   assert.equal(e.state.tasks.length, 0);
 });
 
-test('auto voice reuse matches gender/age/features and skips used voices', async () => {
+test('major roles never use lexical automatic reuse', async () => {
   const e = new Engine(io()), b = await e.addBook('t', '甲。');
   b.characters.push(
     { name: '陆涯', description: '二十一岁青年男子，声音清朗沉稳', aliases: [], voice: null },
@@ -186,8 +189,8 @@ test('auto voice reuse matches gender/age/features and skips used voices', async
     { id: 'v1', description: '二十一岁的青年男子，声音清朗随性', enabled: true },
     { id: 'v-used', description: '二十二岁青年男子，声音洪亮有力', enabled: true },
     { id: 'v-girl', description: '六七岁的小女孩，奶声奶气，声音清亮', enabled: true });
-  assert.equal(e.autoVoiceFor(b.id, '陆涯'), 'v1');
-  assert.equal(e.autoVoiceFor(b.id, '小女孩'), 'v-girl');
+  assert.equal(e.autoVoiceFor(b.id, '陆涯'), null);
+  assert.equal(e.autoVoiceFor(b.id, '小女孩'), null);
   assert.equal(e.autoVoiceFor(b.id, '老妇'), null);
   assert.equal(e.autoVoiceFor(b.id, '老汉'), null);
 });
@@ -299,37 +302,32 @@ test('parallel tasks share one global TTS budget', async () => {
   assert(e.state.tasks.every(t => t.status === 'done'));
 });
 
-test('emotion maps to MiMo doc style tag at assistant text head',()=>{
-  assert.equal(styleTagOf('高兴'),'Happy');
-  assert.equal(styleTagOf('平静'),'Calm');
-  assert.equal(styleTagOf('愤怒地吼道'),'Angry');
-  assert.equal(styleTagOf('自然朗读'),'');
-  assert.equal(tagTextOf('你好。','高兴'),'(Happy)你好。');
-  assert.equal(tagTextOf('你好。','自然朗读'),'你好。');
+test('free-form direction never injects emotion tags into source text',()=>{
+ for(const emotion of ['高兴','不生气，保持温柔','冷静但悲伤','没有疲惫感','又哭又笑']){assert.equal(styleTagOf(emotion),'');assert.equal(tagTextOf('你好。',emotion),'你好。');}
 });
 test('synthesize prefers whole-segment single call with pace hint',async()=>{
   const e=new Engine(io());
   e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
   const calls=[];
   const origRequest=e.request.bind(e);
-  e.request=async(prov,body)=>{calls.push(body);return {choices:[{message:{audio:{data:'AAA'}}}]}};
+  e.request=async(prov,body)=>{calls.push(body);return {choices:[{message:{audio:{data:require('./wav-fixture.cjs')()}}}]}};
   e.io.saveAudio=async()=>({id:'one.wav'});
   const out=await e.synthesize('甲说你好。今天天气不错。','v1','平静');
   assert.equal(out.id,'one.wav');
   assert.equal(calls.length,1);
-  assert.equal(calls[0].messages[1].content,'(Calm)甲说你好。今天天气不错。');
-  assert.match(calls[0].messages[0].content,/280/);
+  assert.equal(calls[0].messages[1].content,'甲说你好。今天天气不错。');
+  assert.doesNotMatch(calls[0].messages[0].content,/280/);assert.match(calls[0].messages[0].content,/平静/);
 });
 test('whole-segment failure falls back to split synthesis',async()=>{
   const e=new Engine(io());
   e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
   let n=0;const bodies=[];
-  e.request=async(prov,body)=>{n++;bodies.push(body);if(n===1)throw Object.assign(Error('too long'),{retryable:false});return {choices:[{message:{audio:{data:'AAA'}}}]}};
+  e.request=async(prov,body)=>{n++;bodies.push(body);if(n===1)throw Object.assign(Error('too long'),{retryable:false});return {choices:[{message:{audio:{data:require('./wav-fixture.cjs')()}}}]}};
   let k=0;e.io.saveAudio=async()=>({id:'p'+(k++)+'.wav'});
   const out=await e.synthesize('甲。乙。','v1','高兴');
   assert.equal(out.id,'merged.wav');
   assert(n>=3);
-  assert(bodies.slice(1).every(b=>b.messages[1].content.startsWith('(Happy)')));
+  assert.deepEqual(bodies.slice(1).map(b=>b.messages[1].content),['甲。','乙。']);
 });
 
 test('whole-segment success discards stale split drafts without duplication',async()=>{
@@ -337,7 +335,7 @@ test('whole-segment success discards stale split drafts without duplication',asy
   e.state.voices.push({id:'v1',sample:'s.wav',format:'wav',enabled:true});
   let merges=0;
   e.io.mergeAudio=async()=>{merges++;return {id:'m.wav'};};
-  e.request=async()=>({choices:[{message:{audio:{data:'AAA'}}}]});
+  e.request=async()=>({choices:[{message:{audio:{data:require('./wav-fixture.cjs')()}}}]});
   e.io.saveAudio=async()=>({id:'one.wav'});
   const out=await e.synthesize('甲。乙。','v1','平静',{files:[{id:'stale.wav'}]});
   assert.equal(out.id,'one.wav');
@@ -404,22 +402,14 @@ test('punct-only line skips TTS and uses silence of reasonable length',async()=>
   assert.equal(e.state.tasks[0].status,'done');
 });
 
-test('overlong single-sentence audio is retried then skipped, not merged',async()=>{
-  assert(isAudioTooLong('甲。',60));
-  assert(!isAudioTooLong('甲。',2));
-  assert(!isAudioTooLong('甲'.repeat(100),20));
-  const e=new Engine({...io(),silence:async()=>{throw Error('no silence');}});
-  const b=await e.addBook('t','甲。'),c=b.chapters[0];
-  c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null}];
-  let calls=0;
-  e.synthesize=async()=>{calls++;return {id:'bad.wav',duration:60};};
-  await e.enqueue(b.id,[c.id]);
-  assert(calls>=2,'坏音频应重试');
-  assert.equal(c.segments[0].audio,'skip','两次都坏应跳过该句');
-  assert.equal(e.state.tasks[0].status,'done','整章不应因一句坏音频失败');
+test('legacy long audio is preserved when resuming a partially completed chapter',async()=>{
+ const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];
+ c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:1,audio:'legacy.wav',durMs:60000},{id:1,text:'乙。',speaker:'旁白',confidence:1}];
+ const calls=[];e.synthesize=async text=>{calls.push(text);return {id:'new.wav',duration:1};};
+ await e.enqueue(b.id,[c.id]);assert.deepEqual(calls,['乙。']);assert.equal(c.segments[0].audio,'legacy.wav');assert.equal(c.segments[0].durMs,60000);assert.equal(e.state.tasks[0].status,'done');
 });
 
-test('param-incorrect-skipped: single TTS rejection skips sentence, chapter still completes',async()=>{
+test('rejected sentence remains pending while other sentences are produced',async()=>{
   const {Engine, ApiError} = require('../app/src/main/assets/core.js');
   const adapter = {saveState:async()=>{},request:async()=>{throw Error('Unexpected request')},mergeAudio:async ids=>({id:'merged.wav',duration:ids.length}),saveAudio:async()=>({id:'sample.wav'}),readAudio:async()=>({base64:'AA=='})};
   const e = new Engine(adapter);
@@ -431,11 +421,11 @@ test('param-incorrect-skipped: single TTS rejection skips sentence, chapter stil
   };
   await e.enqueue(b.id,[c.id]);
   const t = e.state.tasks[0];
-  assert.equal(t.status, 'done', '整章应完成而非失败, message=' + t.message);
-  assert.equal(c.segments[1].audio, 'skip', '坏句应跳过');
+  assert.equal(t.status, 'waiting', '缺句不能标记完成');
+  assert.equal(c.segments[1].audio, null);assert.equal(c.segments[1].qualityStatus,'pending');
   assert.ok(c.segments[0].audio && c.segments[2].audio, '好句应正常合成');
-  assert.match(t.message || '', /跳过/, '应告知用户有跳过');
-  assert.equal(c.audio, 'merged.wav', '整章应合并');
+  assert.match(t.message || '', /待处理/);
+  assert(!c.audio,'缺句不能合并');
 });
 
 test('llm-tts-pipeline-split: next task annotates while previous synthesizes', async () => {

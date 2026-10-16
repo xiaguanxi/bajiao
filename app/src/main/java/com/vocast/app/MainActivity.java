@@ -4,6 +4,9 @@ import android.os.*;
 import android.content.*;
 import android.database.Cursor;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.provider.OpenableColumns;
 import android.util.*;
 import android.util.Base64;
@@ -20,6 +23,18 @@ public class MainActivity extends Activity {
     private final ExecutorService executor=Executors.newFixedThreadPool(3);
     private SecretStore vault;private AudioFiles audio;private AtomicFile store;private SnapshotStore snapshots;
     private String pendingId,pickKind,exportFile,pendingNav;
+    private ConnectivityManager connectivity;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private String productionNetworkState(){
+        try {
+            ConnectivityManager cm=getSystemService(ConnectivityManager.class);
+            NetworkCapabilities caps=cm.getNetworkCapabilities(cm.getActiveNetwork());
+            if(caps==null||!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))return "offline";
+            return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)?"wifi":"other";
+        } catch(Exception ignored){return "unknown";}
+    }
+    private void publishNetworkState(){runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.onNativeNetworkChange&&window.onNativeNetworkChange("+JSONObject.quote(productionNetworkState())+")",null);});}
+    private final Map<String,byte[]> importBytes=new ConcurrentHashMap<>();
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String nav=intent!=null?intent.getStringExtra("nav"):null;if(nav!=null){pendingNav=nav;forwardNav(nav);}}
     private void forwardNav(String nav){if(web==null||nav==null)return;final String js="window.__applyInitialNav&&window.__applyInitialNav('"+nav.replace("'","")+"')";web.post(()->{if(web!=null)web.evaluateJavascript(js,null);});}
     @Override public void onCreate(Bundle state){super.onCreate(state);vault=new SecretStore(this);audio=new AudioFiles(new File(getFilesDir(),"audio"));store=new AtomicFile(new File(getFilesDir(),"state.json"));snapshots=new SnapshotStore(getFilesDir());
@@ -28,6 +43,13 @@ public class MainActivity extends Activity {
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
         web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.vocast.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
         web.addJavascriptInterface(new Bridge(),"Native");web.loadUrl("https://app.vocast.local/index.html");
+        connectivity=getSystemService(ConnectivityManager.class);
+        networkCallback=new ConnectivityManager.NetworkCallback(){
+            @Override public void onAvailable(Network network){publishNetworkState();}
+            @Override public void onLost(Network network){publishNetworkState();}
+            @Override public void onCapabilitiesChanged(Network network,NetworkCapabilities caps){publishNetworkState();}
+        };
+        connectivity.registerDefaultNetworkCallback(networkCallback);
         PlaybackService.setEventListener((act, val, audioId) -> {
             if (web != null) {
                 web.post(() -> {
@@ -44,14 +66,17 @@ public class MainActivity extends Activity {
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
             executor.execute(()->{try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
-                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
+                    case "networkState":result=productionNetworkState();break;
+                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
+                    case "decodeBook":{byte[] bytes=importBytes.get(p.getString("token"));if(bytes==null)throw new IOException("导入草稿已过期，请重新选择文件");String encoding=p.optString("encoding",BookImporter.encoding(bytes));if(!Arrays.asList("UTF-8","GB18030","UTF-16").contains(encoding))throw new IOException("请选择 UTF-8、GB18030 或 UTF-16");result=decodedBook(bytes,encoding);break;}
                     case "loadChapter":result=snapshots.loadChapter(p.getString("id"));break;
                     case "saveSnapshot":snapshots.save(p.getString("header"),p.getString("chapters"));result=true;break;
                     case "saveState":saveState(p.getString("text"));result=true;break;
                     case "saveCredentials":vault.save(p);result=true;break;
                     case "request":result=request(p);break;
+                    case "saveRawAudio":result=audio.saveRaw(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
                     case "saveAudio":result=audio.save(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
-                    case "readAudio":result=new JSONObject().put("base64",Base64.encodeToString(AudioFiles.read(audio.get(p.getString("id")),8*1024*1024),Base64.NO_WRAP));break;
+                    case "readAudio":result=new JSONObject().put("base64",Base64.encodeToString(AudioFiles.read(audio.getRaw(p.getString("id")),8*1024*1024),Base64.NO_WRAP));break;
                     case "mergeAudio":{List<String> ids=new ArrayList<>();JSONArray a=p.getJSONArray("ids");for(int i=0;i<a.length();i++)ids.add(a.getString(i));JSONArray pauses=p.optJSONArray("pauses");int[] gaps=null;if(pauses!=null&&pauses.length()>0){gaps=new int[pauses.length()];for(int i=0;i<gaps.length;i++)gaps[i]=pauses.getInt(i);}result=audio.merge(ids,gaps);break;}
                     case "silence":result=audio.silence(p.optInt("ms",500),p.optString("ref",""));break;
                     case "pick":runOnUiThread(()->pick(id,p.optString("kind")));return;
@@ -62,6 +87,7 @@ public class MainActivity extends Activity {
                     case "audioStats":{result=audio.getStats();break;}
                     case "cleanupAudio":{Set<String> keepSet=new HashSet<>();if(p.has("keepIds")){JSONArray a=p.getJSONArray("keepIds");for(int i=0;i<a.length();i++)keepSet.add(a.getString(i));}result=audio.cleanup(keepSet);break;}
                     case "playback":{String op=p.optString("op");if(!Arrays.asList("pause","resume","toggle","stop","seek","speed","sleep","prev","next","rewind","fast_forward").contains(op))throw new Exception("无效播放操作");Intent i=new Intent(MainActivity.this,PlaybackService.class).setAction(op).putExtra("value",p.optDouble("value"));startService(i);result=true;break;}
+                    case "playbackPrompt":{Intent i=new Intent(MainActivity.this,PlaybackService.class).setAction(PlaybackService.ACTION_PROMPT).putExtra("op",p.optString("op")).putExtra("token",p.optString("token")).putExtra("expectedAudioId",p.optString("expectedAudioId"));if(p.optString("op").equals("ready"))i.putExtra("path",audio.get(p.getString("id")).getAbsolutePath());startService(i);result=true;break;}
                     case "playbackState":result=PlaybackService.status();break;
                     case "productionStatus":{
                         boolean active=p.optBoolean("active",false);
@@ -111,25 +137,35 @@ public class MainActivity extends Activity {
                     }
                     default:throw new Exception("不支持的操作");
                 }reply(id,result,null);
-            }catch(Exception e){JSONObject error=new JSONObject();try{error.put("message",safeError(e)).put("status",e instanceof HttpFailure?((HttpFailure)e).status:0).put("retryable",e instanceof HttpFailure&&((HttpFailure)e).retryable);}catch(Exception ignored){}reply(id,null,error);}});
+            }catch(Exception e){JSONObject error=new JSONObject();try{error.put("code",e instanceof SnapshotStore.StorageException?((SnapshotStore.StorageException)e).code:e instanceof HttpFailure?((HttpFailure)e).code:"NATIVE_ERROR").put("message",safeError(e)).put("status",e instanceof HttpFailure?((HttpFailure)e).status:0).put("retryable",e instanceof HttpFailure&&((HttpFailure)e).retryable);}catch(Exception ignored){}reply(id,null,error);}});
         }
     }
     private synchronized void saveState(String text) throws Exception {if(text.length()>16*1024*1024)throw new Exception("书库数据过大");new JSONObject(text);FileOutputStream out=null;try{out=store.startWrite();out.write(text.getBytes(StandardCharsets.UTF_8));store.finishWrite(out);}catch(Exception e){if(out!=null)store.failWrite(out);throw e;}}
     private JSONObject request(JSONObject p) throws Exception {
         String provider=p.getString("provider");JSONObject st=p.getJSONObject("settings"),body=p.getJSONObject("body"),keys=vault.read();boolean tts=provider.equals("tts");if(!tts&&!provider.equals("llm"))throw new Exception("无效模型类型");String base=tts?"https://api.xiaomimimo.com/v1":st.optString("llmBase","https://api.minimax.cn/v1").replaceAll("/+$","");URL baseUrl=new URL(base);if(!baseUrl.getProtocol().equals("https")||baseUrl.getUserInfo()!=null||baseUrl.getQuery()!=null||baseUrl.getRef()!=null)throw new Exception("模型地址必须是 HTTPS Base URL");String key=keys.optString(tts?"ttsKey":"llmKey");if(key.isEmpty())throw new Exception("请先配置"+(tts?"MiMo":"语言模型")+" API Key");if(!tts&&!base.equals(keys.optString("llmBase","https://api.minimax.cn/v1")))throw new Exception("模型地址已改变，请在配置页保存以确认密钥对应的服务");boolean anthropic=!tts&&st.optString("llmProtocol").equals("anthropic");String suffix=anthropic?(base.endsWith("/v1")?"/messages":"/v1/messages"):"/chat/completions";
         HttpURLConnection conn=(HttpURLConnection)new URL(base+suffix).openConnection();conn.setInstanceFollowRedirects(false);conn.setRequestMethod("POST");conn.setConnectTimeout(30000);conn.setReadTimeout(240000);conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Authorization","Bearer "+key);if(anthropic){conn.setRequestProperty("x-api-key",key);conn.setRequestProperty("anthropic-version","2023-06-01");}
-        try{byte[] raw=body.toString().getBytes(StandardCharsets.UTF_8);conn.setFixedLengthStreamingMode(raw.length);try(OutputStream out=conn.getOutputStream()){out.write(raw);}int code=conn.getResponseCode();InputStream in=code>=200&&code<300?conn.getInputStream():conn.getErrorStream();String response=in==null?"":new String(AudioFiles.read(in,40*1024*1024),StandardCharsets.UTF_8);if(code<200||code>=300){String message="HTTP "+code;try{JSONObject err=new JSONObject(response);message=err.optJSONObject("error")!=null?err.getJSONObject("error").optString("message",message):err.optString("message",message);}catch(Exception ignored){}message=message.replace(key,"[已隐藏]");throw new HttpFailure(message,code,code==429||code>=500);}return new JSONObject(response);}catch(SocketTimeoutException e){throw new HttpFailure("请求超时，已完成音频会保留",408,true);}catch(IOException e){if("文件超过允许大小".equals(e.getMessage())||e instanceof java.net.ProtocolException||e instanceof javax.net.ssl.SSLHandshakeException)throw e;throw new HttpFailure("网络连接中断，已完成进度会保留",0,true);}finally{conn.disconnect();}
+        try{byte[] raw=body.toString().getBytes(StandardCharsets.UTF_8);conn.setFixedLengthStreamingMode(raw.length);try(OutputStream out=conn.getOutputStream()){out.write(raw);}int code=conn.getResponseCode();InputStream in=code>=200&&code<300?conn.getInputStream():conn.getErrorStream();String response=in==null?"":new String(AudioFiles.read(in,40*1024*1024),StandardCharsets.UTF_8);if(code<200||code>=300){String message="HTTP "+code,serviceCode="";try{JSONObject err=new JSONObject(response),detail=err.optJSONObject("error"),baseResp=err.optJSONObject("base_resp");if(detail!=null){message=detail.optString("message",message);serviceCode=detail.optString("code","");}else if(baseResp!=null){message=baseResp.optString("status_msg",message);serviceCode=baseResp.optString("status_code","");}else{message=err.optString("message",message);serviceCode=err.optString("code","");}}catch(Exception ignored){}message=message.replace(key,"[已隐藏]");throw new HttpFailure(message,code,code==429||code>=500,serviceCode);}return new JSONObject(response);}catch(SocketTimeoutException e){throw new HttpFailure("请求超时，已完成音频会保留",408,true);}catch(IOException e){if("文件超过允许大小".equals(e.getMessage())||e instanceof java.net.ProtocolException||e instanceof javax.net.ssl.SSLHandshakeException)throw e;throw new HttpFailure("网络连接中断，已完成进度会保留",0,true);}finally{conn.disconnect();}
     }
-    static class HttpFailure extends Exception{final int status;final boolean retryable;HttpFailure(String m,int s,boolean r){super(m);status=s;retryable=r;}}
+    static class HttpFailure extends Exception{final int status;final boolean retryable;final String code;HttpFailure(String m,int s,boolean r){this(m,s,r,"");}HttpFailure(String m,int s,boolean r,String c){super(m);status=s;retryable=r;code=c;}}
     private String safeError(Exception e){String m=e.getMessage();if(m==null)m="操作失败，请重试";try{JSONObject k=vault.read();for(String n:new String[]{"llmKey","ttsKey"})if(!k.optString(n).isEmpty())m=m.replace(k.getString(n),"[已隐藏]");}catch(Exception ignored){}m=m.replaceAll("/data/\\S+","[应用数据文件]");return m.length()>500?m.substring(0,500):m;}
     private void reply(String id,Object result,JSONObject error){try{JSONObject value=new JSONObject().put("id",id).put("result",result==null?JSONObject.NULL:result).put("error",error==null?JSONObject.NULL:error);runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.nativeResult("+value+")",null);});}catch(Exception ignored){}}
     private void pick(String id,String kind){if(pendingId!=null){reply(id,null,error("另一个文件选择操作尚未完成"));return;}pendingId=id;pickKind=kind;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,kind.equals("voice")?new String[]{"audio/wav","audio/x-wav","audio/mpeg"}:new String[]{"text/plain","application/epub+zip"});i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,kind.equals("voice"));startActivityForResult(i,100);}
     private void export(String id,JSONObject p){if(pendingId!=null){reply(id,null,error("请先完成当前文件操作"));return;}pendingId=id;exportFile=p.optString("id");Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/wav").putExtra(Intent.EXTRA_TITLE,p.optString("name","Vocast")+".wav");startActivityForResult(i,101);}
+    static JSONObject decodedBook(byte[] bytes,String encoding)throws Exception{String text=BookImporter.text(bytes,encoding);int damaged=0,first=-1;for(int i=0;i<text.length();i++)if(text.charAt(i)=='\ufffd'){damaged++;if(first<0)first=i;}return new JSONObject().put("text",text).put("encoding",encoding).put("damagedCount",damaged).put("firstDamagedAt",first).put("encodingConfidence",damaged==0?"高":damaged<=Math.max(1,text.length()/200)?"存在少量损坏字节":"低");}
     static JSONObject error(String m){try{return new JSONObject().put("message",m);}catch(Exception e){return new JSONObject();}}
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=100&&request!=101)return;String id=pendingId;pendingId=null;if(id==null)return;if(result!=RESULT_OK||data==null){reply(id,null,error("已取消选择"));return;}final String kind=pickKind,export=exportFile;executor.execute(()->{try{if(request==101){try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out==null)throw new IOException("无法写入目标文件");try(InputStream in=new FileInputStream(audio.get(export))){byte[] b=new byte[16384];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}reply(id,true,null);return;}
-            List<Uri> uris=new ArrayList<>();if(data.getClipData()!=null){for(int j=0;j<data.getClipData().getItemCount();j++)uris.add(data.getClipData().getItemAt(j).getUri());}else if(data.getData()!=null)uris.add(data.getData());JSONArray files=new JSONArray();for(Uri uri:uris){String name="导入文件";try(Cursor cur=getContentResolver().query(uri,null,null,null,null)){if(cur!=null&&cur.moveToFirst()){int c=cur.getColumnIndex(OpenableColumns.DISPLAY_NAME);if(c>=0)name=cur.getString(c);}}try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException("无法读取文件");byte[] bytes=AudioFiles.read(in,kind.equals("voice")?7500000:40*1024*1024);if(kind.equals("voice")){String ext=name.toLowerCase(Locale.ROOT).endsWith(".mp3")?"mp3":"wav";JSONObject f=audio.save(bytes,ext);f.put("name",name);files.put(f);}else{String text=name.toLowerCase(Locale.ROOT).endsWith(".epub")?BookImporter.epub(bytes):BookImporter.text(bytes);files.put(new JSONObject().put("name",name).put("text",text));}}}reply(id,files,null);
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=100&&request!=101)return;String id=pendingId;pendingId=null;if(id==null)return;if(result!=RESULT_OK||data==null){reply(id,request==100?new JSONArray():false,null);return;}final String kind=pickKind,export=exportFile;executor.execute(()->{try{if(request==101){try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out==null)throw new IOException("无法写入目标文件");try(InputStream in=new FileInputStream(audio.get(export))){byte[] b=new byte[16384];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}reply(id,true,null);return;}
+            List<Uri> uris=new ArrayList<>();if(data.getClipData()!=null){for(int j=0;j<data.getClipData().getItemCount();j++)uris.add(data.getClipData().getItemAt(j).getUri());}else if(data.getData()!=null)uris.add(data.getData());JSONArray files=new JSONArray();for(Uri uri:uris){String name="导入文件";try(Cursor cur=getContentResolver().query(uri,null,null,null,null)){if(cur!=null&&cur.moveToFirst()){int c=cur.getColumnIndex(OpenableColumns.DISPLAY_NAME);if(c>=0)name=cur.getString(c);}}try(InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new IOException("无法读取文件");byte[] bytes=AudioFiles.read(in,kind.equals("voice")?7500000:40*1024*1024);if(kind.equals("voice")){String ext=name.toLowerCase(Locale.ROOT).endsWith(".mp3")?"mp3":"wav";if(ext.equals("mp3"))validateMp3Reference(bytes);JSONObject f=audio.save(bytes,ext);f.put("name",name);files.put(f);}else{try{JSONObject f;if(name.toLowerCase(Locale.ROOT).endsWith(".epub"))f=new JSONObject().put("text",BookImporter.epub(bytes));else{String token=UUID.randomUUID().toString();importBytes.clear();importBytes.put(token,bytes);f=decodedBook(bytes,BookImporter.encoding(bytes)).put("token",token);}files.put(f.put("name",name));}catch(Exception bookError){files.put(new JSONObject().put("name",name).put("text","").put("error",safeError(bookError)).put("code","BOOK_IMPORT_FAILED"));}}}}reply(id,files,null);
         }catch(Exception e){reply(id,null,error(safeError(e)));}});}
+    private void validateMp3Reference(byte[] bytes) throws Exception {
+        File temp=File.createTempFile("reference-",".mp3",getCacheDir());
+        android.media.MediaPlayer probe=new android.media.MediaPlayer();
+        try {
+            try(FileOutputStream out=new FileOutputStream(temp)){out.write(bytes);}
+            probe.setDataSource(temp.getAbsolutePath());probe.prepare();
+            if(probe.getDuration()<=0)throw new IOException("参考 MP3 无法解码或没有有效时长");
+        } finally {probe.release();if(!temp.delete())temp.deleteOnExit();}
+    }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack&&window.appBack()",null);}
     @Override protected void onStop(){super.onStop();if(web!=null)web.evaluateJavascript("window.appBackground&&window.appBackground()",null);}
-    @Override protected void onDestroy(){super.onDestroy();try{stopService(new Intent(this,ProductionService.class));}catch(Exception ignored){}PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}executor.shutdown();}
+    @Override protected void onDestroy(){super.onDestroy();if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);try{stopService(new Intent(this,ProductionService.class));}catch(Exception ignored){}PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}executor.shutdown();}
 }

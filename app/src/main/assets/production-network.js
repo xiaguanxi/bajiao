@@ -1,0 +1,24 @@
+/* Shared network policy for chapter workers, resumes and segment remakes. */
+(()=>{'use strict';
+const P=Vocast.Engine.prototype,key=(bid,cid)=>JSON.stringify([bid,cid]);
+function state(){if(['wifi','other','offline','unknown'].includes(window.productionNativeNetwork))return window.productionNativeNetwork;if(navigator.onLine===false)return 'offline';const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;return c?.type==='wifi'?'wifi':c?.type&&c.type!=='unknown'&&c.type!=='none'?'other':c?.type==='none'?'offline':'unknown';}
+P.productionNetworkState=state;
+P.productionNetworkMessage=function(){const n=state();return n==='offline'?'当前无网络，连接后继续':n==='unknown'?'无法确认 Wi-Fi，等待连接或手动允许本次制作':'仅 Wi-Fi 下制作已开启，等待 Wi-Fi';};
+P.productionNetworkAllowed=function(t){const n=state();return n!=='offline'&&(!this.state.settings.wifiOnlyProduction||n==='wifi'||!!this._productionGrants?.has(t?.id));};
+P.grantProductionScope=function(items){this._productionPending||(this._productionPending=new Map());for(const x of items)this._productionPending.set(key(x.bookId,x.chapterId),Date.now()+60000);};
+function consume(e,t){const k=key(t.bookId,t.chapterId);if((e._productionPending?.get(k)||0)>Date.now()){e._productionGrants||(e._productionGrants=new Set());e._productionGrants.add(t.id);e._productionPending.delete(k);}}
+P.productionNetworkCheck=async function(t){if(t.pauseRequested||t.status==='cancelled'||(t.persisted!==false&&!this.state.tasks.includes(t)))throw Error('任务已暂停');if(this.productionNetworkAllowed(t))return;const error=Error('任务已暂停');error.networkWait=true;t.networkWaiting=true;t.phase='等待制作网络';t.message=this.productionNetworkMessage();if(t.persisted!==false)await this.persist();throw error;};
+function scoped(e,t){let proxy;const io=new Proxy(e.io,{get(target,p){const v=Reflect.get(target,p);if(p==='request'&&typeof v==='function')return async(...args)=>{await e.productionNetworkCheck(t);return v.apply(target,args);};return typeof v==='function'?v.bind(target):v;}});proxy=new Proxy(e,{get(target,p){if(p==='io')return io;const v=Reflect.get(target,p);if(['analyze','llm','design','synthesize','performRequest'].includes(p)&&typeof v==='function')return async(...args)=>{await e.productionNetworkCheck(t);return v.apply(proxy,args);};return v;},set(target,p,v){Reflect.set(target,p,v);return true;}});return proxy;}
+for(const name of ['work','workSynth']){const original=P[name];P[name]=async function(t){await this.productionNetworkCheck(t);return original.call(scoped(this,t),t);};}
+const enqueue=P.enqueue;P.enqueue=function(bid,cids){const ids=Array.isArray(cids)?cids:[cids];const promise=enqueue.call(this,bid,cids);for(const t of this.state.tasks.filter(t=>t.bookId===bid&&ids.includes(t.chapterId)&&!['done','cancelled'].includes(t.status)))consume(this,t);return promise;};
+const resume=P.resumeTasks;P.resumeTasks=function(ids,...args){for(const t of this.state.tasks.filter(t=>ids.includes(t.id))){consume(this,t);t.networkWaiting=false;}return resume.call(this,ids,...args);};
+const pause=P.pause;P.pause=function(id){const t=this.state.tasks.find(t=>t.id===id);if(t)t.networkWaiting=false;this._productionGrants?.delete(id);return pause.call(this,id);};
+const finish=P.finishTaskRun;P.finishTaskRun=async function(t){await finish.call(this,t);if(['done','cancelled'].includes(t.status))this._productionGrants?.delete(t.id);};
+const regenerate=P.regenerateSegment;
+P.regenerateSegment=async function(bid,cid,...args){const t={id:'segment:'+key(bid,cid)+':'+args[0],bookId:bid,chapterId:cid,persisted:false};consume(this,t);try{await this.productionNetworkCheck(t);return await regenerate.call(scoped(this,t),bid,cid,...args);}catch(e){if(e.networkWait)throw Error(this.productionNetworkMessage()+'；请重试并选择本次允许');throw e;}finally{this._productionGrants?.delete(t.id);}};
+P.refreshProductionNetwork=async function(){let changed=false;for(const t of this.state.tasks){if(t.networkWaiting&&t.status==='waiting'&&!t.pauseRequested&&this.productionNetworkAllowed(t)){t.networkWaiting=false;t.status='queued';t.phase='排队等待';t.message='';changed=true;}}if(changed){await this.persist();this.kick().catch(()=>{});}this.listeners.forEach(fn=>fn());};
+let last=state();function update(){const e=window.vocastEngine,n=state();if(!e)return;if(n!==last){e._productionGrants?.clear();e._productionPending?.clear();last=n;}e.refreshProductionNetwork().catch(()=>{});window.dispatchEvent(new Event('productionnetworkchange'));}
+window.onNativeNetworkChange=function(n){window.productionNativeNetwork=n;update();};
+if(window.Native)device.call('networkState').then(window.onNativeNetworkChange).catch(()=>{});
+window.addEventListener('online',update);window.addEventListener('offline',update);(navigator.connection||navigator.mozConnection||navigator.webkitConnection)?.addEventListener?.('change',update);
+})();

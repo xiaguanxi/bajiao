@@ -18,7 +18,7 @@ class Controller{
    const stale=()=>this.source(bid,kind)?.key!==source.key;
    if(!await this.engine._acquireTtsSlot(stale))return null;
    try{
-    const file=await this.engine.synthesize(TEXT[kind],source.voice,'温和亲切，语气自然，清晰简短地提示听众',{voiceDescription:source.description,shouldPause:stale});
+    const file=await this.engine.synthesize(TEXT[kind],source.voice,'温和亲切，语气自然，清晰简短地提示听众',{priority:0,voiceDescription:source.description,shouldPause:stale});
     if(stale())return null;
     source.b.playbackPrompts={...source.b.playbackPrompts,[kind]:{key:source.key,file}};
     await this.engine.persist();return file;

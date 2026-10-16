@@ -21,6 +21,7 @@ import java.util.concurrent.*;
 public class MainActivity extends Activity {
     private WebView web;
     private final ExecutorService executor=Executors.newFixedThreadPool(3);
+    private final ExecutorService networkExecutor=Executors.newFixedThreadPool(5);
     private SecretStore vault;private AudioFiles audio;private AtomicFile store;private SnapshotStore snapshots;
     private String pendingId,pickKind,exportFile,pendingNav;
     private ConnectivityManager connectivity;
@@ -64,7 +65,7 @@ public class MainActivity extends Activity {
     class Bridge {
         @JavascriptInterface public void call(String id,String action,String json){
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
-            executor.execute(()->{try{JSONObject p=new JSONObject(json);Object result;
+            ("request".equals(action)?networkExecutor:executor).execute(()->{try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
                     case "networkState":result=productionNetworkState();break;
                     case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
@@ -167,5 +168,5 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack&&window.appBack()",null);}
     @Override protected void onStop(){super.onStop();if(web!=null)web.evaluateJavascript("window.appBackground&&window.appBackground()",null);}
-    @Override protected void onDestroy(){super.onDestroy();if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);try{stopService(new Intent(this,ProductionService.class));}catch(Exception ignored){}PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}executor.shutdown();}
+    @Override protected void onDestroy(){super.onDestroy();if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);try{stopService(new Intent(this,ProductionService.class));}catch(Exception ignored){}PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}networkExecutor.shutdown();executor.shutdown();}
 }

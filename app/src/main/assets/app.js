@@ -441,7 +441,7 @@ async function checkAutoProduceUpcoming(bid, cid){
     if(!upcoming.audio){
       const alreadyInQueue = engine.state.tasks.some(t => t.bookId === b.id && t.chapterId === upcoming.id && (t.status === "running" || t.status === "queued"));
       if(!alreadyInQueue){
-        engine.enqueue(b.id, [upcoming.id]).catch(e => { console.warn("Auto enqueue failed", e); });
+        engine.enqueue(b.id, [upcoming.id],{source:'auto'}).catch(e => { console.warn("Auto enqueue failed", e); });
       }
     }
   }

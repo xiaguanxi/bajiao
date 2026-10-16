@@ -105,15 +105,15 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     const prevBtn = page.locator('[data-act="prevchapter"]');
     const playBtn = page.locator('[data-act="playchapter"]');
     const nextBtn = page.locator('[data-act="nextchapter"]');
-    const catalogBtn = page.locator('.vc-ctlbar [data-act="back"]');
+    const catalogBtn = page.locator('.vc-ctlbar [data-act="playercatalog"]');
 
     assert.equal(await speedBtn.count(), 1, '应渲染倍速按钮');
     assert.equal(await prevBtn.count(), 1, '应渲染上一集按钮');
     assert.equal(await playBtn.count(), 1, '应渲染播放/暂停主按钮');
     assert.equal(await nextBtn.count(), 1, '应渲染下一集按钮');
     assert.equal(await catalogBtn.count(), 1, '应渲染回目录按钮');
-    assert.equal(await page.locator('[data-act="seekback"]').count(), 0, '旧快退按钮应删除');
-    assert.equal(await page.locator('[data-act="seeknext"]').count(), 0, '旧快进按钮应删除');
+    assert.equal(await page.locator('[data-act="seekback"]').count(), 1, '听书页应有后退15秒入口');
+    assert.equal(await page.locator('[data-act="seekforward"]').count(), 1, '听书页应有快进15秒入口');
 
     // 第1章上一集应为 disabled，下一集有音频因此可用
     assert.ok(await prevBtn.getAttribute('disabled') !== null, '第1章上一集应被禁用');
@@ -139,7 +139,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await page.evaluate(() => window.onNativePlaybackAction('next', 0));
     await page.waitForTimeout(150);
 
-    const headingText = await page.locator('h3').first().textContent();
+    const headingText = await page.locator('.vc-slim-titles h2').textContent();
     assert.equal(headingText, state.books[0].chapters[1].title, `应切换到第2章，实际为: ${headingText}`);
 
     const playNext = playCalls[playCalls.length - 1];
@@ -161,7 +161,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await page.evaluate(() => window.onNativePlaybackAction('prev', 0));
     await page.waitForTimeout(150);
 
-    const backHeading = await page.locator('h3').first().textContent();
+    const backHeading = await page.locator('.vc-slim-titles h2').textContent();
     assert.equal(backHeading, state.books[0].chapters[0].title, `应切换回第1章，实际为: ${backHeading}`);
     const playBack = playCalls[playCalls.length - 1];
     assert.equal(playBack.id, 'audio_ch_001', '应重新播放第1章音频');
@@ -172,11 +172,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await click('back');
     await page.getByRole('heading', { name: '我的书架' }).waitFor({ timeout: 3000 });
     await click('go:settings');
-    await click('globalpolicy');
+    await click('go:voicepolicy');
     await page.evaluate(() => window.onNativePlaybackAction('next', 0));
     await page.waitForTimeout(150);
     assert.equal(playCalls.at(-1).id, 'audio_ch_002', 'System next uses playback book even after global settings clears the browsing book');
-    assert.equal(await page.getByRole('heading', { name: '音色策略' }).count(), 1, 'Background media control keeps current settings page');
+    assert.equal(await page.getByRole('heading', { name: '音色分配' }).count(), 1, 'Background media control keeps current settings page');
 
     if (errors.length) {
       throw new Error('页面执行中产生错误: ' + errors.join('; '));

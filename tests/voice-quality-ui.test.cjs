@@ -1,0 +1,44 @@
+const fs=require('node:fs'),http=require('node:http'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {makeState}=require('../app/src/main/assets/core.js');
+const bytes=Buffer.alloc(44+16000);bytes.write('RIFF');bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVEfmt ',8);bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);bytes.writeUInt32LE(8000,24);bytes.writeUInt32LE(16000,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);bytes.write('data',36);bytes.writeUInt32LE(16000,40);for(let i=0;i<8000;i++)bytes.writeInt16LE(Math.round(1000*Math.sin(i)),44+i*2);
+(async()=>{
+ const root=path.resolve('app/src/main/assets'),server=http.createServer((req,res)=>{const f=path.resolve(root,'.'+(req.url==='/'?'/index.html':req.url.split('?')[0]));if(!f.startsWith(root+path.sep)||!fs.existsSync(f))return res.writeHead(404).end();res.setHeader('Content-Type',f.endsWith('.js')?'application/javascript':f.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(f));});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:412,height:915}}),errors=[],calls=[];page.on('pageerror',e=>errors.push(e.message));const state=makeState();state.settings.autoProduceUpcoming=false;
+  const legacy={id:'legacy',title:'第一章 旧成品',text:'你好。',audio:'old-chapter.wav',duration:12,status:'ready',segments:[{id:0,text:'你好。',speaker:'旁白',confidence:1,audio:'old-line.wav',durMs:12000}]};
+  const pending={id:'pending',title:'第二章 待处理',text:'甲。乙。',status:'waiting',segments:[{id:0,text:'甲。',speaker:'旁白',confidence:1,audio:'passed.wav',generationVersion:2,qualityStatus:'passed'},{id:1,text:'乙。',speaker:'旁白',confidence:1,qualityStatus:'pending',failReason:'合成输出被截断，请重新合成此句',speechDraft:{generationVersion:3,qualityAttempts:0,pendingRaw:{file:{id:'raw-return.wav'}},rawAudioIds:['raw-return.wav']}}]};
+  state.books=[{id:'b',name:'音频保护测试',characters:[{name:'旁白',voice:'preset:白桦',description:'纪录片旁白，natural warmth'}],chapters:[legacy,pending]}];state.tasks=[{id:'t',bookId:'b',chapterId:'pending',status:'waiting',phase:'音频待处理',done:1,total:2}];
+  await page.exposeFunction('nativeCall',async(id,action,payload)=>{const p=JSON.parse(payload||'{}');calls.push({action,payload:p});let result=true;
+   if(action==='load')result={state,llmConfigured:true,ttsConfigured:true};
+   else if(action==='playbackState')result={playing:false,position:0};
+   else if(action==='saveSnapshot'||action==='productionStatus')result=true;
+   else if(action==='request')result={choices:[{finish_reason:'stop',message:{audio:{data:bytes.toString('base64')},final_text_preview:'适配试听文本。'}}]};
+   else if(action==='saveRawAudio')result={id:'new-line.wav',duration:1,playable:true};
+   else if(action==='mergeAudio')result={id:'new-chapter.wav',duration:2};
+   else if(action==='saveAudio')result={id:'sample.wav',duration:3};
+   else if(action==='readAudio'||action==='mergeAudio'||action==='deleteAudio')throw Error('Unexpected destructive or quality operation: '+action);
+   await page.evaluate(v=>window.nativeResult(v),{id,result});
+  });
+  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  const click=act=>page.locator('button[data-act="'+act+'"]').last().click();
+  await click('book:b');await click('read:legacy');await click('playchapter');await click('playchapter');
+  assert.deepEqual(calls.filter(c=>['request','saveAudio','readAudio','mergeAudio','deleteAudio'].includes(c.action)),[]);assert.equal(legacy.audio,'old-chapter.wav');assert.equal(legacy.segments[0].audio,'old-line.wav');
+  await click('back');await click('confirm:pending');await click('opensegment:1');await page.locator('.vc-segment-sheet [data-act="play:raw-return.wav"]').last().waitFor();
+  assert((await page.locator('main').innerText()).includes('输出被截断'));assert.equal(await page.locator('[data-act="nextissue"]').innerText(),'定位下一异常');assert.equal(await page.locator('[data-act="regenerateprompt:1"]').count(),1);await click('play:raw-return.wav');assert.equal(calls.filter(c=>c.action==='play').at(-1).payload.id,'raw-return.wav');
+  const baseline=calls.filter(c=>c.action==='request').length;
+  await click('closesegment');await click('back');await click('back');await click('go:settings');await click('go:quality');
+  assert.equal(await page.locator('[data-act="qualitychoice:auto"]').getAttribute('aria-checked'),'true');await click('qualitychoice:manual');await click('saveproductionsettings');
+  assert.equal(calls.filter(c=>c.action==='request').length,baseline);const settings=await page.evaluate(()=>window.vocastEngine.state.settings);assert.equal(settings.qualityAutoRetry,false);assert.equal(settings.qualityConfirmRetry,true);
+  await click('go:shelf');await click('book:b');await click('confirm:pending');
+  await click('go:listen');assert.equal(await page.locator('[data-act="streamseek:1"]').count(),0,'unchecked sentence excluded from streaming controls');
+  await click('go:annotated');await click('opensegment:1');await click('regenerateprompt:1');await page.waitForFunction(()=>window.vocastEngine.state.books[0].chapters[1].segments[1].audio==='new-line.wav');
+  assert.equal(calls.filter(c=>c.action==='request').length,baseline+1);assert.equal(calls.filter(c=>c.action==='request').at(-1).payload.body.messages[1].content,'乙。');
+  const refs=await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[1].segments.map(s=>s.audio));assert.deepEqual(refs,['passed.wav','new-line.wav']);assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].audio),'old-chapter.wav');
+  await click('closesegment');await click('back');await click('back');await click('go:voices');await click('newdesign');assert.equal(await page.locator('#designText').inputValue(),'');await page.locator('#designDescription').fill('纪录片旁白，not angry，略带气声');await click('designsample');await page.locator('[data-act="acceptsample"]').waitFor();assert.equal(await page.locator('#designText').inputValue(),'');assert((await page.locator('main').innerText()).includes('适配试听文本。'));
+  await click('designsample');assert(calls.filter(c=>c.action==='request'&&c.payload.body.model==='mimo-v2.5-tts-voicedesign').every(c=>c.payload.body.audio.optimize_text_preview===true));
+  const custom='  保持用户原文。  ';await page.locator('#designText').fill(custom);await click('designsample');const request=calls.filter(c=>c.action==='request').at(-1).payload.body;assert.equal(request.audio.optimize_text_preview,false);assert.equal(request.messages[1].content,custom);
+  assert.deepEqual(errors,[]);console.log('PASS audio protection, pending recovery controls, raw audition and adaptive/custom preview UI');
+ }finally{await browser.close();server.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

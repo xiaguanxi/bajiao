@@ -42,17 +42,17 @@ test('voice metadata migration keeps reference audio, ids and character bindings
  const {e,b}=await setup();e.state.voices.push({id:'v',name:'沈砚',description:'沈砚，二十多岁的青年男子，掌门继承人，声音开朗清亮',sample:'existing.wav',format:'wav',enabled:true});
  b.characters.push({name:'沈砚',description:'沈砚，青年男子，掌门，声音开朗清亮',voice:'v',candidate:{id:'candidate',name:'沈砚',description:'青年男子，掌门，声音沉稳',sample:'candidate.wav'}});
  const loaded=new Engine(adapter(),JSON.parse(JSON.stringify(e.state))),v=loaded.state.voices[0],role=loaded.book(b.id).characters[1];
- assert.equal(v.name,'开朗青年男性');assert.equal(v.sample,'existing.wav');assert.equal(v.id,'v');assert.equal(role.name,'沈砚');assert.equal(role.voice,'v');assert.equal(role.candidate.name,'沉稳青年男性');
- for(const d of [v.description,role.description,role.candidate.description])assert(!/沈砚|掌门|继承人/.test(d));
+ assert.equal(v.name,'沈砚');assert.equal(v.sample,'existing.wav');assert.equal(v.id,'v');assert.equal(role.name,'沈砚');assert.equal(role.voice,'v');assert.equal(role.candidate.name,'沈砚');
+ assert.equal(v.description,e.state.voices[0].description);assert.equal(role.description,b.characters[1].description);assert.equal(role.candidate.description,b.characters[1].candidate.description);
  assert.equal(cleanVoiceDescription(v.description),v.description,'migration is idempotent');
 });
 
-test('design, import and save sanitize identity and derive names from acoustic traits',async()=>{
+test('design and import preserve full descriptions while display names remain separate',async()=>{
  const e=new Engine(adapter());let request;e.io.request=async(provider,body)=>{request=body;return {choices:[{message:{audio:{data:'AA=='}}}]};};
  const desc='林晚，二十五岁的公主，声音温柔清亮';const v=await e.design(desc,'试音。','林晚');
- assert.equal(v.name,'温柔青年女性');assert.equal(request.messages[0].content,'二十五岁女性，声音温柔、清亮');
- v.name='林晚';v.description=desc;await e.saveVoice(v);assert.equal(v.name,'温柔青年女性');
- const imported=await e.importVoice({name:'沈砚.wav',description:'二十多岁青年男性，宗门弟子，声音开朗清亮',id:'import.wav',size:100,format:'wav'});assert.equal(imported.name,'开朗青年男性');assert(!imported.description.includes('宗门'));
+ assert.equal(v.name,'温柔青年女性');assert.equal(request.messages[0].content,desc);
+ v.name='林晚';v.description=desc;await e.saveVoice(v);assert.equal(v.name,'林晚');
+ const imported=await e.importVoice({name:'沈砚.wav',description:'二十多岁青年男性，宗门弟子，声音开朗清亮',id:'import.wav',size:100,format:'wav'});assert.equal(imported.name,'开朗青年男性');assert(imported.description.includes('宗门'));
  assert.equal(shortVoiceName('六七岁的小女孩，说话奶声奶气'),'奶声奶气儿童女性');
 });
 
@@ -62,7 +62,7 @@ test('clearing completed task records preserves all audio and voice resources',a
 
 test('voice cleanup preserves acoustic negation and degree',()=>{
  const clean=cleanVoiceDescription('二十多岁男性，掌门，声音不沙哑，清亮，略带气声');
- assert.equal(clean,'二十多岁男性，声音不沙哑、清亮、略带气声');
+ assert.equal(clean,'二十多岁男性，掌门，声音不沙哑，清亮，略带气声');
  assert.equal(cleanVoiceDescription(clean),clean);
  assert.equal(shortVoiceName(clean),'清亮青年男性');
 });

@@ -24,6 +24,7 @@ test('auto mode merges revealed identity and reuses voice with alias spans',asyn
 
 test('manual mode queues merge suggestion instead of merging',async()=>{
   const e=new Engine(io()),b=await e.addBook('t',twoChapters());
+  e.state.settings.mode='manual';
   b.characters.push({name:'黑衣人',description:'青年男声',aliases:[],voice:'v-old'});
   const c2=b.chapters[1];
   e.llm=async()=>{const {units}=require('../app/src/main/assets/core.js');return {characters:[{name:'沈砚',description:'青年男声',aliases:['黑衣人']}],lines:units(c2.text).map(x=>({id:x.id,speaker:'旁白',emotion:'平静',confidence:1}))};};

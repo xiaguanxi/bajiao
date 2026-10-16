@@ -97,7 +97,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 5. 倍速:点控制栏倍速钮弹浮窗,拖带刻度滑块联动 engine + native
     await click('speedmodal');
     await page.locator('#speedRange').waitFor();
-    assert.equal(await page.locator('.vc-tick').count(), 7, '应有 7 个刻度');
+    assert.deepEqual(await page.locator('.vc-tick').allTextContents(), ['0.5x','1x','1.5x','2x','2.5x','3x'], '参考交互提供 0.5–3 倍速的六个快捷刻度');
     await page.evaluate(() => { const r = document.querySelector('#speedRange'); r.value = '1.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.vocastEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');

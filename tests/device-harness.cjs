@@ -8,7 +8,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function log(action) { fs.appendFileSync(path.join(dir, 'actions.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...action }) + '\n'); }
 function finger(x, y) { run(['shell', 'CLASSPATH=/data/local/tmp/vocast-touch.dex', 'app_process', '/system/bin', 'DeviceTouch', String(x), String(y)]); }
 async function connect() {
-  const socket = run(['shell', 'cat', '/proc/net/unix']).toString().match(/@([^\s]*webview_devtools_remote[^\s]*)/)[1];
+  let match;
+  for(let i=0;i<40;i++){match=run(['shell','cat','/proc/net/unix']).toString().match(/@([^\s]*webview_devtools_remote[^\s]*)/);if(match)break;await sleep(250);}
+  if(!match)throw Error('APK WebView debug socket did not become available');
+  const socket = match[1];
   run(['forward', 'tcp:9223', 'localabstract:' + socket]);
   const targets = await (await fetch('http://127.0.0.1:9223/json')).json();
   const target = targets.find(p => p.url.includes('app.vocast.local'));
@@ -34,14 +37,19 @@ async function connect() {
       const point = await page.evaluate(sel => {
         const el = document.querySelector(sel); if (!el) return null;
         const r = el.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: r.top, bottom: r.bottom, h: innerHeight, w: innerWidth, fixed: !!el.closest('nav'), disabled: el.disabled, text: el.textContent.slice(0, 120) };
+        const footerTops=[...document.querySelectorAll('nav')].filter(n=>getComputedStyle(n).position==='fixed').map(n=>n.getBoundingClientRect().top).filter(top=>top>innerHeight/2);
+        let visibleTop=10,visibleBottom=el.closest('.vc-modal-overlay')?innerHeight-8:Math.min(innerHeight-8,...footerTops.map(top=>top-4));
+        for(let parent=el.parentElement;parent&&parent!==document.body;parent=parent.parentElement){if(/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)){const box=parent.getBoundingClientRect();visibleTop=Math.max(visibleTop,box.top+parent.clientTop);visibleBottom=Math.min(visibleBottom,box.bottom);}}
+        const x=r.x+r.width/2,y=r.y+r.height/2;
+        return { x,y,top:r.top,bottom:r.bottom,h:innerHeight,visibleTop,visibleBottom,hit:el.contains(document.elementFromPoint(x,y)),w:innerWidth,fixed:!!el.closest('nav'),disabled:el.disabled,text:el.textContent.slice(0,120) };
       }, selector);
       if (!point) { await sleep(250); continue; }
       if (point.disabled) throw Error('Disabled control: ' + selector);
-      if (!point.fixed && (point.top < 10 || point.bottom > point.h - 75)) {
+      if (!point.fixed && (point.top < point.visibleTop || point.bottom > point.visibleBottom || !point.hit)) {
         const { result } = await cdp.send('Runtime.evaluate', { expression: 'devicePixelRatio', returnByValue: true });
         const d = result.value;
-        run(['shell', 'input', 'swipe', String(Math.round(point.w * d / 2)), String(Math.round(point.h * d * (point.top < 10 ? .3 : .7))), String(Math.round(point.w * d / 2)), String(Math.round(point.h * d * (point.top < 10 ? .7 : .3))), '300']);
+        const span=point.visibleBottom-point.visibleTop,up=point.top<point.visibleTop;
+        run(['shell','input','swipe',String(Math.round(point.w*d/2)),String(Math.round((point.visibleTop+span*(up?.3:.7))*d)),String(Math.round(point.w*d/2)),String(Math.round((point.visibleTop+span*(up?.7:.3))*d)),'300']);
         await sleep(400); continue;
       }
       const { result } = await cdp.send('Runtime.evaluate', { expression: 'devicePixelRatio', returnByValue: true });
@@ -52,6 +60,8 @@ async function connect() {
       const statusBar=frames.match(/Window #\d+ Window\{[^\n]*StatusBar\}:[\s\S]*?mFrame=\[0,0\]\[\d+,(\d+)\]/);
       if(!statusBar)throw Error('Visible viewport inset unavailable');
       const yOffset=Number(statusBar[1]);
+      const stable=await page.evaluate(({sel,x,y})=>{const el=document.querySelector(sel);if(!el)return false;const box=el.getBoundingClientRect();return Math.abs(box.x+box.width/2-x)<2&&Math.abs(box.y+box.height/2-y)<2&&el.contains(document.elementFromPoint(x,y));},{sel:selector,x:point.x,y:point.y});
+      if(!stable){await sleep(200);continue;}
       const x = Math.round(point.x * d), y = Math.round(point.y * d + yOffset);
       finger(x, y);
       log({ type: 'tap', selector, x, y, text: point.text });

@@ -27,32 +27,37 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
       else if(action==='saveSnapshot'){const previous=new Map((state?.books||[]).flatMap(b=>b.chapters).map(c=>[c.id,c]));for(const c of JSON.parse(p.chapters))previous.set(c.id,c);state=JSON.parse(p.header);for(const b of state.books)b.chapters=b.chapters.map(c=>previous.get(c.id));}
       else if(action==='pick')result=[{id:'voice_sample.wav',name:'优雅女声.wav',size:1500000,format:'wav'}];
       else if(action==='playbackState')result={playing:false,position:0};
-      else if(action==='request')result={choices:[{message:{audio:{data:'AAAA'}},finish_reason:'stop'}]};
-      else if(action==='saveAudio')result={id:'sample_audio.wav'};
+      else if(action==='request'){await new Promise(r=>setTimeout(r,100));result=p.provider==='llm'?{choices:[{message:{content:JSON.stringify({matches:[]})}}]}:{choices:[{message:{audio:{data:require('./wav-fixture.cjs')()}},finish_reason:'stop'}]};}
+      else if(action==='saveAudio')result={id:'sample_'+id+'.wav',duration:2,playable:true};
+      else if(action==='readAudio')result={base64:require('./wav-fixture.cjs')(),format:'wav'};
+      else if(action==='saveRawAudio')result={id:'raw_'+id+'.wav',duration:2,playable:true};
+      else if(action==='mergeAudio')result={id:'chapter_'+id+'.wav',duration:4};
       await page.evaluate(v=>window.nativeResult(v),{id,result});
     });
 
     await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});
     await page.goto('http://127.0.0.1:'+server.address().port);
 
-    const click=async act=>{await page.locator('[data-act="'+act+'"]').first().click();};
+    const click=async act=>{await page.locator('button[data-act="'+act+'"]').last().click();};
 
     // --- 测试 1：导入示例书并创建音色和任务 ---
     await click('samplebook');
+    await page.evaluate(async()=>{vocastEngine.state.settings.mode='manual';await vocastEngine.persist();});
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
     console.log('✓ 示例文本已导入');
 
     // 导入一个音色
     await click('go:voices');
     await click('importvoices');
+    await page.locator('#import-0').fill('年轻女性，优雅清晰的普通话，音色温暖自然');
     await click('saveimports');
-    await page.locator('.voice-name').waitFor();
+    await page.locator('.vc-preset-title').first().waitFor();
     console.log('✓ 音色库已成功导入自定义音色');
 
     // 测试 1.1：点击音色卡片任意位置（标题区域）自动进入音色管理页 (voicedetail)
-    const voiceCard = page.locator('.vc-panel.vc-card-clickable').first();
-    await voiceCard.locator('.voice-name').click();
-    await page.getByRole('heading',{name:'我的音色'}).waitFor();
+    const voiceCard = page.locator('.vc-preset-row[data-act^="voice:"]').first();
+    await voiceCard.locator('.vc-preset-title').click();
+    await page.getByRole('heading',{name:'编辑音色'}).waitFor();
     console.log('✓ 验证 1.1 成功：点击音色卡标题任意位置自动进入音色管理页！');
 
     // 返回音色库
@@ -114,7 +119,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
 
     // 待确认章节高亮显示并可点击
-    const waitingTag = page.locator('.vc-tag.warn.clickable').first();
+    const waitingTag = page.locator('.vc-chapter-confirm').first();
     await waitingTag.waitFor();
     assert.equal(await waitingTag.textContent(), '待确认');
 
@@ -138,7 +143,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.locator('.vc-top [data-act="back"]').click();
     console.log('✓ 新角色设计页自动带入已有音色描述');
 
-    await click('editseg:2');await click('dropdown:segSpeaker');await page.locator('[data-act="pickopt:segSpeaker|旁白"]').click();await click('saveseg');
+    await click('opensegment:2');await click('editseg:2');await click('dropdown:segSpeaker');await page.locator('[data-act="pickopt:segSpeaker|旁白"]').click();await click('saveseg');
     await page.locator('.vc-annotated-topbar').waitFor();
     await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);await e.persist();});
     console.log('✓ 校对保存后保留待确认处理页');

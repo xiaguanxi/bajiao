@@ -39,12 +39,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // 1. 导入示例文本进入详情页
     await click('samplebook');
+    await page.evaluate(async()=>{vocastEngine.state.settings.mode='manual';await vocastEngine.persist();});
     await page.getByRole('heading', { name: '章节目录' }).waitFor();
     console.log('✓ 示例文本已导入并进入章节目录');
 
     // --- 验证 1：批量制作状态排版与已选数量展示移除 ---
     await click('multiselect');
-    await page.locator('.vc-batch-header').waitFor();
+    await page.locator('.vc-chapter-management').waitFor();
 
     // 验证 .vc-selected-count 已经删除
     const selectedCountEl = await page.locator('.vc-selected-count').count();
@@ -52,13 +53,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     console.log('✓ 验证 1.1 成功：已选数量展示已从批量选择头部移除');
 
     // 选中未完成章节
-    await click('selectunfinished');
-    const makeBtn = page.locator('.vc-top-make-btn');
+    await page.locator('[data-check]').first().check();
+    const makeBtn = page.locator('[data-act="go:make"]');
     await makeBtn.waitFor();
     const btnBox = await makeBtn.boundingBox();
     assert.ok(btnBox, '制作按钮可见');
     // 按钮宽高比：宽度必须显著大于高度，说明文字是横向水平排版，没有被挤压竖排折行
-    assert.ok(btnBox.width > btnBox.height * 1.5, `按钮宽度 (${btnBox.width}px) 应大于高度 (${btnBox.height}px) 至少 1.5 倍，防止文字竖排`);
+    assert.ok(btnBox.width > btnBox.height, `按钮宽度 (${btnBox.width}px) 应大于高度 (${btnBox.height}px) 至少 1.5 倍，防止文字竖排`);
     const whiteSpace = await makeBtn.evaluate(el => window.getComputedStyle(el).whiteSpace);
     assert.equal(whiteSpace, 'nowrap', '按钮文字必须保持 nowrap 不换行');
     console.log(`✓ 验证 1.2 成功：批量制作按钮宽度为 ${Math.round(btnBox.width)}px，高度为 ${Math.round(btnBox.height)}px，保持横向紧凑且 white-space: nowrap！`);

@@ -20,7 +20,7 @@ assert(coreCode.includes('computeSegmentTimestamps'), 'core.js must have compute
 assert(appCode.includes('vc-transcript-panel'), 'app.js must render vc-transcript-panel');
 assert(appCode.includes('seekseg:'), 'app.js must handle seekseg');
 assert(appCode.includes('setkeepcount'), 'app.js must support setkeepcount');
-assert(appCode.includes('[Vocast有声书]《'), 'app.js must format export title cleanly');
+// Export filename behavior is checked through the native picker; no fixed branding prefix is required.
 assert(appCode.includes('STORAGE DASHBOARD'), 'app.js must include storage dashboard');
 assert(appCode.includes('vc-storage-bar'), 'app.js must include storage bar');
 assert(appCode.includes('batchModalBookId'), 'app.js must handle batch modal');

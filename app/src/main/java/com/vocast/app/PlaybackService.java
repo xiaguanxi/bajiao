@@ -42,6 +42,7 @@ public class PlaybackService extends Service {
     public static final String ACTION_FAST_FORWARD = "fast_forward";
     public static final String ACTION_SPEED = "speed";
     public static final String ACTION_SLEEP = "sleep";
+    public static final String ACTION_PROMPT = "playback_prompt";
 
     public interface PlaybackEventListener {
         void onPlaybackEvent(String action, long value, String audioId);
@@ -74,7 +75,13 @@ public class PlaybackService extends Service {
     private boolean noisyReceiverRegistered = false;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable sleepRunnable = this::pausePlayback;
+    private MediaPlayer promptPlayer;
+    private String promptPath = "";
+    private long lastCompletionAt;
+    private final PlaybackPromptGate promptGate = new PlaybackPromptGate();
+    private final Runnable promptRunnable = this::startPlaybackPrompt;
+    private static long sleepUntil=0;
+    private final Runnable sleepRunnable = ()->{sleepUntil=0;pausePlayback();notifyClientEvent("pause",0);};
 
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override
@@ -166,6 +173,7 @@ public class PlaybackService extends Service {
     }
 
     private void notifyClientEvent(String action, long value) {
+        if (action.equals("next") || action.equals("prev")) cancelPlaybackPrompt();
         final String eventAudioId = currentAudioId;
         handler.post(() -> {
             if (eventListener != null) {
@@ -186,6 +194,9 @@ public class PlaybackService extends Service {
             switch (action) {
                 case ACTION_PLAY:
                     handlePlayAction(intent);
+                    break;
+                case ACTION_PROMPT:
+                    handlePromptAction(intent);
                     break;
                 case ACTION_PAUSE:
                     pausePlayback();
@@ -232,7 +243,7 @@ public class PlaybackService extends Service {
                     break;
                 case ACTION_SLEEP:
                     double minutes = intent.getDoubleExtra("value", 0);
-                    handler.removeCallbacks(sleepRunnable);
+                    handler.removeCallbacks(sleepRunnable);sleepUntil=minutes>0?System.currentTimeMillis()+(long)(minutes*60000):0;
                     if (minutes > 0) {
                         handler.postDelayed(sleepRunnable, (long) (minutes * 60000));
                     }
@@ -245,6 +256,8 @@ public class PlaybackService extends Service {
     }
 
     private void handlePlayAction(Intent intent) {
+        cancelPlaybackPrompt();
+        lastCompletionAt = 0;
         String id = intent.getStringExtra("id");
         String path = intent.getStringExtra("path");
         chapterTitle = intent.getStringExtra("title");
@@ -300,6 +313,7 @@ public class PlaybackService extends Service {
             });
             player.setOnCompletionListener(mp -> {
                 if (mp != player) return;
+                lastCompletionAt = SystemClock.elapsedRealtime();
                 updatePlaybackState();
                 updateNotification();
                 notifyClientEvent("completion", durationMs);
@@ -326,7 +340,69 @@ public class PlaybackService extends Service {
         }
     }
 
+    private boolean canPlayPrompt(String expectedAudioId) {
+        return !expectedAudioId.isEmpty() && expectedAudioId.equals(currentAudioId)
+                && lastCompletionAt > 0 && player != null && prepared && playWhenPrepared && !player.isPlaying();
+    }
+
+    private void handlePromptAction(Intent intent) {
+        String op = intent.getStringExtra("op"), token = intent.getStringExtra("token");
+        if (token == null || token.isEmpty()) return;
+        if ("cancel".equals(op)) {
+            if (promptGate.matches(token)) cancelPlaybackPrompt();
+        } else if ("schedule".equals(op)) {
+            String expected = intent.getStringExtra("expectedAudioId");
+            if (expected == null || !canPlayPrompt(expected)) return;
+            cancelPlaybackPrompt();
+            promptGate.arm(token, expected, lastCompletionAt);
+            registerNoisyReceiver();
+        } else if ("ready".equals(op) && promptGate.matches(token) && promptPlayer == null) {
+            promptPath = intent.getStringExtra("path");
+            handler.removeCallbacks(promptRunnable);
+            handler.postDelayed(promptRunnable, promptGate.delay(SystemClock.elapsedRealtime()));
+        }
+    }
+
+    private void cancelPlaybackPrompt() {
+        handler.removeCallbacks(promptRunnable);
+        promptGate.cancel();
+        promptPath = "";
+        if (promptPlayer != null) {
+            promptPlayer.release();
+            promptPlayer = null;
+        }
+    }
+
+    private void startPlaybackPrompt() {
+        if (promptGate.token.isEmpty() || promptPath == null || promptPath.isEmpty()
+                || !canPlayPrompt(promptGate.audioId)) { cancelPlaybackPrompt(); return; }
+        final String token = promptGate.token;
+        MediaPlayer notice = new MediaPlayer();
+        promptPlayer = notice;
+        notice.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+        notice.setOnPreparedListener(mp -> {
+            if (mp != promptPlayer || !promptGate.matches(token)) return;
+            if (!canPlayPrompt(promptGate.audioId) || !requestAudioFocus()) { cancelPlaybackPrompt(); return; }
+            try { mp.start(); } catch (Exception ignored) { cancelPlaybackPrompt(); }
+        });
+        notice.setOnCompletionListener(mp -> {
+            if (mp != promptPlayer) return;
+            cancelPlaybackPrompt();
+            if (player == null || !prepared || !player.isPlaying()) unregisterNoisyReceiver();
+            // Prompt audio never replaces chapter metadata or emits a chapter completion.
+        });
+        notice.setOnErrorListener((mp, what, extra) -> {
+            if (mp == promptPlayer) cancelPlaybackPrompt();
+            return true;
+        });
+        try { notice.setDataSource(promptPath); notice.prepareAsync(); }
+        catch (Exception ignored) { cancelPlaybackPrompt(); }
+    }
+
     private void resumePlayback() {
+        cancelPlaybackPrompt();
+        lastCompletionAt = 0;
         playWhenPrepared = true;
         if (player != null && prepared && !player.isPlaying()) {
             if (requestAudioFocus()) {
@@ -340,6 +416,7 @@ public class PlaybackService extends Service {
     }
 
     private void pausePlayback() {
+        cancelPlaybackPrompt();
         playWhenPrepared = false;
         if (player != null && prepared && player.isPlaying()) {
             player.pause();
@@ -350,6 +427,7 @@ public class PlaybackService extends Service {
     }
 
     private void stopPlayback() {
+        cancelPlaybackPrompt();
         prepared = false;
         playWhenPrepared = false;
         if (player != null) {
@@ -363,6 +441,8 @@ public class PlaybackService extends Service {
     }
 
     private void seekToPosition(int posMs) {
+        cancelPlaybackPrompt();
+        lastCompletionAt = 0;
         if (player != null && prepared) {
             int target = Math.max(0, Math.min(posMs, player.getDuration() > 0 ? player.getDuration() : posMs));
             boolean wasPlaying = player.isPlaying();
@@ -527,8 +607,12 @@ public class PlaybackService extends Service {
                             notifyClientEvent("pause", 0);
                         } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
                                    focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                            boolean wasPromptPending = !promptGate.token.isEmpty();
                             if (player != null && prepared && player.isPlaying()) {
                                 resumeOnFocusGain = true;
+                                pausePlayback();
+                                notifyClientEvent("pause", 0);
+                            } else if (wasPromptPending) {
                                 pausePlayback();
                                 notifyClientEvent("pause", 0);
                             }
@@ -656,7 +740,7 @@ public class PlaybackService extends Service {
         JSONObject j = new JSONObject();
         try {
             boolean isPlaying = player != null && prepared && player.isPlaying();
-            j.put("playing", isPlaying);
+            j.put("sleepRemainingMs",Math.max(0,sleepUntil-System.currentTimeMillis())).put("playing", isPlaying);
             j.put("position", player == null || !prepared ? 0 : player.getCurrentPosition());
             j.put("duration", player == null || !prepared ? durationMs : player.getDuration());
             j.put("id", currentAudioId);
@@ -673,6 +757,7 @@ public class PlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        cancelPlaybackPrompt();
         prepared = false;
         handler.removeCallbacksAndMessages(null);
         unregisterNoisyReceiver();

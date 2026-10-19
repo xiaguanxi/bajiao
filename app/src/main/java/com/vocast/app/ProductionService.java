@@ -10,6 +10,8 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 
 public class ProductionService extends Service {
@@ -20,6 +22,15 @@ public class ProductionService extends Service {
 
     private PowerManager.WakeLock wakeLock;
     private NotificationManager notificationManager;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean productionActive;
+    private final Runnable renewWakeLock = new Runnable() {
+        @Override public void run() {
+            if (!productionActive) return;
+            acquireWakeLock();
+            handler.postDelayed(this, 30 * 60 * 1000L);
+        }
+    };
 
     @Override
     public void onCreate() {
@@ -60,6 +71,10 @@ public class ProductionService extends Service {
             int total = intent.getIntExtra("total", 0);
 
             acquireWakeLock();
+            if (!productionActive) {
+                productionActive = true;
+                handler.postDelayed(renewWakeLock, 30 * 60 * 1000L);
+            }
             Notification notification = buildNotification(title, message, progress, total);
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -111,7 +126,7 @@ public class ProductionService extends Service {
                 wakeLock.setReferenceCounted(false);
             }
         }
-        if (wakeLock != null && !wakeLock.isHeld()) {
+        if (wakeLock != null) {
             wakeLock.acquire(60 * 60 * 1000L);
         }
     }
@@ -125,6 +140,8 @@ public class ProductionService extends Service {
     }
 
     private void stopForegroundProduction() {
+        productionActive = false;
+        handler.removeCallbacks(renewWakeLock);
         releaseWakeLock();
         stopForeground(true);
         stopSelf();
@@ -132,6 +149,8 @@ public class ProductionService extends Service {
 
     @Override
     public void onDestroy() {
+        productionActive = false;
+        handler.removeCallbacks(renewWakeLock);
         releaseWakeLock();
         super.onDestroy();
     }

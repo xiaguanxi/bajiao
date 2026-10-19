@@ -28,6 +28,8 @@ import android.text.TextPaint;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class PlaybackService extends Service {
     public static final String ACTION_PLAY = "play";
@@ -73,6 +75,35 @@ public class PlaybackService extends Service {
     private AudioFocusRequest audioFocusRequest;
     private boolean resumeOnFocusGain = false;
     private boolean noisyReceiverRegistered = false;
+    private static PlaybackService activeService;
+    private PlaybackCheckpoint checkpoint;
+    private final ExecutorService checkpointWriter = Executors.newSingleThreadExecutor();
+    private String progressBookId = "", progressChapterId = "";
+    private int progressSegmentId = -1, progressBase = 0;
+    private Integer pendingPosition;
+    private boolean progressCompleted;
+    private final Runnable progressRunnable = new Runnable() {
+        @Override public void run() {
+            saveProgress();
+            handler.postDelayed(this, 1000);
+        }
+    };
+
+    public static void checkpointNow() {
+        if (activeService != null) activeService.saveProgress();
+    }
+
+    private void saveProgress() {
+        if (checkpoint == null || player == null || !prepared || progressBookId.isEmpty() || progressChapterId.isEmpty()) return;
+        try {
+            int local = pendingPosition != null ? pendingPosition : player.getCurrentPosition();
+            JSONObject value = new JSONObject().put("bookId", progressBookId).put("chapterId", progressChapterId)
+                    .put("audioId", currentAudioId).put("segmentId", progressSegmentId).put("offsetMs", local)
+                    .put("position", progressBase + local).put("completed", progressCompleted)
+                    .put("at", System.currentTimeMillis());
+            checkpointWriter.execute(() -> { try { checkpoint.save(value); } catch (Exception ignored) {} });
+        } catch (Exception ignored) {}
+    }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private MediaPlayer promptPlayer;
@@ -101,6 +132,9 @@ public class PlaybackService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        activeService = this;
+        checkpoint = new PlaybackCheckpoint(getFilesDir());
+        handler.postDelayed(progressRunnable, 1000);
         createNotificationChannel();
         initMediaSession();
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -256,6 +290,7 @@ public class PlaybackService extends Service {
     }
 
     private void handlePlayAction(Intent intent) {
+        saveProgress();
         cancelPlaybackPrompt();
         lastCompletionAt = 0;
         String id = intent.getStringExtra("id");
@@ -266,6 +301,14 @@ public class PlaybackService extends Service {
         coverPath = intent.getStringExtra("coverPath");
         durationMs = intent.getIntExtra("duration", 0);
         int startPosition = intent.getIntExtra("position", 0);
+        progressBookId = intent.getStringExtra("bookId");
+        progressChapterId = intent.getStringExtra("chapterId");
+        if (progressBookId == null) progressBookId = "";
+        if (progressChapterId == null) progressChapterId = "";
+        progressSegmentId = intent.getIntExtra("segmentId", -1);
+        progressBase = intent.getIntExtra("positionBase", 0);
+        pendingPosition = null;
+        progressCompleted = false;
         if (intent.hasExtra("speed")) { float s = intent.getFloatExtra("speed", 1.0f); if (s > 0) playbackSpeed = Math.max(0.5f, Math.min(s, 3.0f)); }
         hasPrevious = intent.getBooleanExtra("hasPrev", false);
         hasNext = intent.getBooleanExtra("hasNext", false);
@@ -284,7 +327,7 @@ public class PlaybackService extends Service {
         }
 
         prepared = false;
-        playWhenPrepared = true;
+        playWhenPrepared = !intent.getBooleanExtra("startPaused", false);
         currentAudioId = id != null ? id : "";
         player = new MediaPlayer();
         player.setAudioAttributes(new AudioAttributes.Builder()
@@ -299,7 +342,8 @@ public class PlaybackService extends Service {
                 prepared = true;
                 durationMs = mp.getDuration();
                 if (startPosition > 0 && durationMs > 0) {
-                    mp.seekTo(Math.min(startPosition, durationMs - 1), MediaPlayer.SEEK_CLOSEST);
+                    pendingPosition = Math.min(startPosition, durationMs - 1);
+                    mp.seekTo(pendingPosition, MediaPlayer.SEEK_CLOSEST);
                 }
                 if (playWhenPrepared && requestAudioFocus()) {
                     mp.start();
@@ -309,10 +353,22 @@ public class PlaybackService extends Service {
                     updateMetadata();
                     updateNotification();
                     notifyClientEvent("play", 0);
+                } else {
+                    updatePlaybackState();
+                    updateMetadata();
+                    updateNotification();
                 }
+                saveProgress();
+            });
+            player.setOnSeekCompleteListener(mp -> {
+                if (mp != player) return;
+                pendingPosition = null;
+                saveProgress();
             });
             player.setOnCompletionListener(mp -> {
                 if (mp != player) return;
+                progressCompleted = progressSegmentId < 0;
+                saveProgress();
                 lastCompletionAt = SystemClock.elapsedRealtime();
                 updatePlaybackState();
                 updateNotification();
@@ -421,12 +477,14 @@ public class PlaybackService extends Service {
         if (player != null && prepared && player.isPlaying()) {
             player.pause();
         }
+        saveProgress();
         unregisterNoisyReceiver();
         updatePlaybackState();
         updateNotification();
     }
 
     private void stopPlayback() {
+        saveProgress();
         cancelPlaybackPrompt();
         prepared = false;
         playWhenPrepared = false;
@@ -445,6 +503,8 @@ public class PlaybackService extends Service {
         lastCompletionAt = 0;
         if (player != null && prepared) {
             int target = Math.max(0, Math.min(posMs, player.getDuration() > 0 ? player.getDuration() : posMs));
+            pendingPosition = target;
+            progressCompleted = false;
             boolean wasPlaying = player.isPlaying();
             // SEEK_CLOSEST 在 24kHz 长音频上可能回退到关键帧附近;优先精确 seek,失败再退回普通 seek。
             try {
@@ -459,6 +519,7 @@ public class PlaybackService extends Service {
             }
             updatePlaybackState();
             updateNotification();
+            saveProgress();
         }
     }
 
@@ -756,7 +817,16 @@ public class PlaybackService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        saveProgress();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
     public void onDestroy() {
+        saveProgress();
+        activeService = null;
+        checkpointWriter.shutdown();
         cancelPlaybackPrompt();
         prepared = false;
         handler.removeCallbacksAndMessages(null);

@@ -9,8 +9,8 @@ test('invalid voice ids returned by LLM are rejected',async()=>{const e=new Engi
 test('manual design pauses only blocked role and preserves completed narrator audio',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];e.state.settings.mode='manual';c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'平静',confidence:1,audio:null},{id:1,text:'乙。',speaker:'乙',emotion:'平静',confidence:1,audio:null}];b.characters.push({name:'乙',description:'少年',voice:null});e.design=async()=>({id:'new',sample:'reference.wav',description:'少年',enabled:true});let calls=0;e.synthesize=async()=>({id:'audio-'+(++calls)});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(calls,1);assert(c.segments[0].audio);await e.accept(b.id,'乙');assert.equal(e.state.tasks[0].status,'done');assert.equal(calls,2);assert.equal(e.state.voices.length,1);});
 test('auto design saves reference and completes without confirmation',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];e.state.settings.mode='auto';b.characters.push({name:'甲',voice:null,description:'少年'});c.segments=[{id:0,text:'甲。',speaker:'甲',emotion:'平静',confidence:1}];e.design=async()=>({id:'voice',sample:'ref.wav'});e.synthesize=async()=>({id:'out.wav'});await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'done');assert.equal(b.characters[1].voice,'voice');assert.equal(e.state.voices.length,1);});
 test('failed segment retries without resynthesizing finished segments',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2)throw Error('音色不存在');return {id:text};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'failed');await e.resume(e.state.tasks[0].id);assert.equal(e.state.tasks[0].status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
-test('exhausted network request fails visibly and keeps finished segments for manual resume',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2){const err=Error('timeout');err.retryable=true;throw err;}return {id:text};};await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];assert.equal(t.status,'failed');assert.equal(t.error.retryable,true);assert.equal(t.nextRetryAt,undefined);assert.equal(c.segments[0].audio,'甲。');await e.resume(t.id);assert.equal(t.status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
-test('process interruption becomes paused on reload',()=>{const e=new Engine(io());e.state.tasks.push({status:'running'});const other=new Engine(io(),JSON.parse(JSON.stringify(e.state)));assert.equal(other.state.tasks[0].status,'paused');});
+test('exhausted network burst schedules automatic retry and keeps finished segments',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静'}));let calls=[];e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&calls.length===2){const err=Error('timeout');err.retryable=true;throw err;}return {id:text};};await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];assert.equal(t.status,'queued');assert.equal(t.error.retryable,true);assert(t.nextRetryAt>Date.now());assert.equal(c.segments[0].audio,'甲。');await e.resume(t.id);assert.equal(t.status,'done');assert.deepEqual(calls,['甲。','乙。','乙。']);});
+test('process interruption becomes queued on reload',()=>{const e=new Engine(io());e.state.tasks.push({status:'running'});const other=new Engine(io(),JSON.parse(JSON.stringify(e.state)));assert.equal(other.state.tasks[0].status,'queued');});
 test('uncertain attribution requires correction even with an existing voice',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];e.state.settings.mode='manual';c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:.4,emotion:'平静'}];e.synthesize=async()=>{throw Error('must not synthesize')};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');});
 test('correcting a completed segment invalidates chapter output only',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。乙。'),c=b.chapters[0];c.audio='old.wav';c.segments=units(c.text).map(x=>({...x,speaker:'旁白',confidence:1,emotion:'平静',audio:'a'+x.id}));await e.correct(b.id,c.id,1,'旁白','紧张');assert.equal(c.audio,'old.wav');assert.equal(c.audioStale,true);assert.equal(c.originalAudio,'old.wav');assert.equal(c.segments[0].audio,'a0');assert.equal(c.segments[1].audio,null);});
 test('sample import derives acoustic description and short name and rejects unsupported formats',async()=>{const e=new Engine(io());const v=await e.importVoice({name:'低沉.温润.wav',id:'x',format:'wav',size:100});assert.equal(v.description,'低沉.温润');assert.equal(v.name,'低沉声音');await assert.rejects(e.importVoice({format:'m4a'}));await assert.rejects(e.importVoice({format:'wav',size:8000000}));});
@@ -20,7 +20,7 @@ test('narrative cannot be attributed to a character even when the model does so'
 test('incremental persistence writes only changed chapter and retries failed snapshots',async()=>{const writes=[];let failure=false;const e=new Engine({...io(),saveSnapshot:async(header,chapters)=>{if(failure){failure=false;throw Error('disk failure');}writes.push({header:JSON.parse(header),chapters:JSON.parse(chapters)});}}),b=await e.addBook('t','第一章\n甲。\n第二章\n乙。');assert.equal(writes[0].chapters.length,2);await e.persist();assert.equal(writes[1].chapters.length,0);b.chapters[1].summary='changed';e.touch(b.chapters[1]);failure=true;await assert.rejects(e.persist());await e.persist();assert.equal(writes.at(-1).chapters.length,1);assert.equal(writes.at(-1).chapters[0].summary,'changed');assert.deepEqual(writes.at(-1).header.books[0].chapters.map(c=>c.id),[b.chapters[0].id,b.chapters[1].id]);});
 test('invented role names are not accepted even with high model confidence',async()=>{const e=new Engine(io()),b=await e.addBook('t','双胞胎女娃来了。\n“你好。”');e.state.settings.mode='manual';e.llm=async()=>({characters:[{name:'双胞胎女娃A',description:'女孩'}],lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1},{id:1,speaker:'双胞胎女娃A',emotion:'平静',confidence:1}]});await e.analyze(b.id,b.chapters[0].id);assert(!b.characters.some(c=>c.name==='双胞胎女娃A'));assert.equal(b.chapters[0].segments[1].speaker,'未知角色');assert.equal(b.chapters[0].segments[1].confidence,0);});
 test('pause between analysis batches resumes from saved draft without repeating calls',async()=>{const e=new Engine({...io(),features:{batching:true,direction:false}}),b=await e.addBook('t','一句话。'.repeat(95));let paused=false,calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines[0].id);paused=true;return {characters:[],lines:lines.map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id,()=>paused);assert.equal(b.chapters[0].segments.length,95);assert.equal(b.chapters[0].segments.filter(s=>s.annotationStatus==='complete').length,90);assert.equal(b.chapters[0].analysisDraft.next,90);await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[0,90]);assert.equal(b.chapters[0].segments.length,95);assert.equal(b.chapters[0].analysisDraft,undefined);});
-test('editing during synthesis discards stale audio and permits a clean retry',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'旧情绪',confidence:1}];e.synthesize=async()=>{await e.correct(b.id,c.id,0,'旁白','新情绪');return {id:'stale.wav'};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(c.segments[0].audio,null);e.synthesize=async()=>({id:'fresh.wav'});await e.resume(e.state.tasks[0].id);assert.equal(c.segments[0].audio,'fresh.wav');assert.equal(e.state.tasks[0].status,'done');});
+test('manual editing during synthesis discards stale audio and permits a clean retry',async()=>{const e=new Engine(io());e.state.settings.mode='manual';const b=await e.addBook('t','甲。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',emotion:'旧情绪',confidence:1}];e.synthesize=async()=>{await e.correct(b.id,c.id,0,'旁白','新情绪');return {id:'stale.wav'};};await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');assert.equal(c.segments[0].audio,null);e.synthesize=async()=>({id:'fresh.wav'});await e.resume(e.state.tasks[0].id);assert.equal(c.segments[0].audio,'fresh.wav');assert.equal(e.state.tasks[0].status,'done');});
 test('changing a bound voice preserves all completed chapter audio and tasks',async()=>{const e=new Engine(io()),b=await e.addBook('t','第一章\n甲。\n第二章\n乙。');b.characters.push({name:'角色',voice:'preset:白桦'});for(const c of b.chapters){c.audio='chapter.wav';c.segments=[{id:0,speaker:'角色',audio:'role.wav'},{id:1,speaker:'旁白',audio:'narrator.wav'}];e.state.tasks.push({id:c.id,bookId:b.id,chapterId:c.id,status:'done',done:2});}const chapters=JSON.stringify(b.chapters),tasks=JSON.stringify(e.state.tasks);await e.bind(b.id,'角色','preset:茉莉');assert.equal(b.characters[1].voice,'preset:茉莉');assert.equal(JSON.stringify(b.chapters),chapters);assert.equal(JSON.stringify(e.state.tasks),tasks);});
 test('malformed batch is retried with fewer lines without corrupting source',async()=>{const e=new Engine({...io(),features:{batching:true,direction:false}}),b=await e.addBook('t','一句话。'.repeat(50));let calls=[];e.llm=async prompt=>{const lines=JSON.parse(prompt.split('本批片段：')[1]);calls.push(lines.length);return {characters:[],lines:(calls.length===1?lines.slice(1):lines).map(x=>({id:x.id,speaker:'旁白',emotion:'自然',confidence:1}))};};await e.analyze(b.id,b.chapters[0].id);assert.deepEqual(calls,[50,1]);assert.equal(b.chapters[0].segments.length,50);assert.equal(b.chapters[0].analysisIssues.length,1);});
 test('lazy chapter metadata saves without overwriting body and shared loads deduplicate',async()=>{const e=new Engine(io()),b=await e.addBook('t','甲。');const original=JSON.parse(JSON.stringify(b.chapters[0]));b.chapters[0]={id:original.id,title:original.title,textLength:2,segmentCount:0,unloaded:true,segments:[]};let reads=0,writes=[];const lazy=new Engine({...io(),loadChapter:async()=>{reads++;return original;},saveSnapshot:async(h,c)=>writes.push(JSON.parse(c))},e.state);await lazy.persist();assert.equal(writes[0].length,0);await Promise.all([lazy.ensureChapter(b.id,original.id),lazy.ensureChapter(b.id,original.id)]);assert.equal(reads,1);assert.equal(lazy.chapter(b.id,original.id).text,'甲。');assert.equal(lazy.chapter(b.id,original.id).unloaded,undefined);});
@@ -195,7 +195,7 @@ test('major roles never use lexical automatic reuse', async () => {
   assert.equal(e.autoVoiceFor(b.id, '老汉'), null);
 });
 
-test('confirmed task jumps to front of queue instead of waiting at back', async () => {
+test('confirmed task returns to chapter order without overriding manual priority', async () => {
   const e = new Engine(io()), b = await e.addBook('t', '第一章\n甲。\n第二章\n乙。\n第三章\n丙。');
   const calls = [];
   e.work = async (t) => { calls.push(t.chapterId); t.status = 'done'; };
@@ -205,7 +205,7 @@ test('confirmed task jumps to front of queue instead of waiting at back', async 
   e.state.tasks.find(t => t.chapterId === ids[1]).status = 'waiting';
   calls.length = 0;
   await e.resumeWaiting(b.id);
-  assert.equal(calls[0], ids[1]);
+  assert.deepEqual(calls, ids);
 });
 
 test('resumed task jumps to front of queue', async () => {
@@ -379,7 +379,7 @@ test('auto mode never blocks on uncertain attribution',async()=>{
   assert.equal(c.segments[0].speaker,'旁白');
   assert(c.segments[0].audio);
 });
-test('punct-only line skips TTS and uses silence of reasonable length',async()=>{
+test('punct-only line skips TTS and silence generation',async()=>{
   assert.equal(isPunctOnly('……'),true);
   assert.equal(isPunctOnly('。。。'),true);
   assert.equal(isPunctOnly('？'),true);
@@ -397,8 +397,8 @@ test('punct-only line skips TTS and uses silence of reasonable length',async()=>
   c.segments=[{id:0,text:'……',speaker:'旁白',emotion:'平静',confidence:1,audio:null}];
   await e.enqueue(b.id,[c.id]);
   assert.equal(ttsCalls,0);
-  assert.deepEqual(silenceCalls,[{ms:800,ref:null}]);
-  assert.equal(c.segments[0].audio,'silence.wav');
+  assert.deepEqual(silenceCalls,[]);
+  assert.equal(c.segments[0].audio,'skip');
   assert.equal(e.state.tasks[0].status,'done');
 });
 
@@ -501,13 +501,13 @@ test('paused-task-policy: paused in active tab, crash-running recovers', async (
   // 模拟"关软件时留下 running + 用户暂停的 paused"
   const e = new Engine(io, {books: [], voices: [], tasks: [
     {id: 't1', bookId: 'b', chapterId: 'c1', status: 'running', prio: 0, created: 1},
-    {id: 't2', bookId: 'b', chapterId: 'c2', status: 'paused', prio: 0, created: 2},
+    {id: 't2', bookId: 'b', chapterId: 'c2', status: 'paused', pauseRequested: true, prio: 0, created: 2},
     {id: 't3', bookId: 'b', chapterId: 'c3', status: 'waiting', prio: 0, created: 3},
     {id: 't4', bookId: 'b', chapterId: 'c4', status: 'failed', prio: 0, created: 4},
   ], settings: {}});
   // 1. 崩溃残留的 running 被收成 paused（可续，不丢）
   const t1 = e.state.tasks.find(t => t.id === 't1');
-  assert.equal(t1.status, 'paused', 'running 应收成 paused');
+  assert.equal(t1.status, 'queued', 'interrupted running task automatically queues');
   // 2. paused 归执行中、待确认只剩 waiting+failed
   const isActive = t => ['running','queued','paused'].includes(t.status);
   const isAttention = t => ['waiting','failed'].includes(t.status);

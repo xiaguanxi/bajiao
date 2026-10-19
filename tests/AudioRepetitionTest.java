@@ -22,7 +22,7 @@ public class AudioRepetitionTest {
     }
     public static void main(String[] args) throws Exception {
         if(args.length>0&&args[0].equals("--truncate")){System.out.print(new AudioFiles(new File(args[1])).truncateRepeatedSpeech(args[2],new JSONObject(args[3])));return;}
-        File dir=Files.createTempDirectory("vocast-repetition-java-").toFile();
+        File dir=Files.createTempDirectory("bajiao-repetition-java-").toFile();
         try{
             AudioFiles files=new AudioFiles(dir);
             for(int bits:new int[]{8,16,24,32})for(int channels:new int[]{1,2})for(int rate:new int[]{8000,11025,24000,48000}){

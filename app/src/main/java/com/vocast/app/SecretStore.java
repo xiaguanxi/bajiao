@@ -15,6 +15,7 @@ final class SecretStore {
     private final Context context;
     SecretStore(Context context){this.context=context;}
     private SecretKey key() throws Exception {
+        // Historical alias must continue decrypting credentials after rebranding.
         KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
         if(!ks.containsAlias("vocast-config")){
             KeyGenerator g=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");

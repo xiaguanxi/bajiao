@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./core.js'):root.Vocast);if(typeof module==='object'&&module.exports)module.exports=api;else root.VocastUX=api;})(typeof globalThis!=='undefined'?globalThis:this,function(V){
+(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./core.js'):root.Bajiao);if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoUX=api;})(typeof globalThis!=='undefined'?globalThis:this,function(V){
 'use strict';
 const copy=value=>JSON.parse(JSON.stringify(value)),uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 function friendlyError(error){

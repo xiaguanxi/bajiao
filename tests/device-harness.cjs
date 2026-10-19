@@ -6,7 +6,7 @@ fs.mkdirSync(dir, { recursive: true });
 function run(args, opts = {}) { return cp.execFileSync(adb, args, { timeout: 60000, maxBuffer: 64 * 1024 * 1024, ...opts }); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function log(action) { fs.appendFileSync(path.join(dir, 'actions.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...action }) + '\n'); }
-function finger(x, y) { run(['shell', 'CLASSPATH=/data/local/tmp/vocast-touch.dex', 'app_process', '/system/bin', 'DeviceTouch', String(x), String(y)]); }
+function finger(x, y) { run(['shell', 'CLASSPATH=/data/local/tmp/bajiao-touch.dex', 'app_process', '/system/bin', 'DeviceTouch', String(x), String(y)]); }
 async function connect() {
   let match;
   for(let i=0;i<40;i++){match=run(['shell','cat','/proc/net/unix']).toString().match(/@([^\s]*webview_devtools_remote[^\s]*)/);if(match)break;await sleep(250);}
@@ -14,7 +14,7 @@ async function connect() {
   const socket = match[1];
   run(['forward', 'tcp:9223', 'localabstract:' + socket]);
   const targets = await (await fetch('http://127.0.0.1:9223/json')).json();
-  const target = targets.find(p => p.url.includes('app.vocast.local'));
+  const target = targets.find(p => p.url.includes('app.bajiao.local'));
   if (!target) throw Error('APK WebView unavailable');
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
@@ -29,9 +29,9 @@ async function connect() {
   const page = { evaluate };
   const read = expr => evaluate(expr);
   let ready=false;
-  for(let i=0;i<40;i++){if(await read(()=>Boolean(window.vocastEngine?.state))){ready=true;break;}await sleep(250);}
+  for(let i=0;i<40;i++){if(await read(()=>Boolean(window.bajiaoEngine?.state))){ready=true;break;}await sleep(250);}
   if(!ready){await browser.close();throw Error('APK library did not finish loading');}
-  const state = () => read(() => JSON.parse(JSON.stringify(window.vocastEngine?.state)));
+  const state = () => read(() => JSON.parse(JSON.stringify(window.bajiaoEngine?.state)));
   async function tap(selector) {
     for (let i = 0; i < 25; i++) {
       const point = await page.evaluate(sel => {
@@ -75,7 +75,7 @@ async function connect() {
     run(['shell', 'input', 'keyevent', 'KEYCODE_MOVE_END']);
     if (length) run(['shell', 'input', 'keyevent', ...Array(length).fill('KEYCODE_DEL')]);
     if(/[^\x20-\x7e]/.test(value)){
-      run(['shell','CLASSPATH=/data/local/tmp/vocast-touch.dex','app_process','/system/bin','DeviceTouch','clipboard',Buffer.from(value,'utf8').toString('base64')]);
+      run(['shell','CLASSPATH=/data/local/tmp/bajiao-touch.dex','app_process','/system/bin','DeviceTouch','clipboard',Buffer.from(value,'utf8').toString('base64')]);
       run(['shell','input','keyevent','KEYCODE_PASTE']);
     }else run(['shell', 'input', 'text', value]);
     run(['shell', 'input', 'keyevent', '4']);
@@ -87,10 +87,10 @@ async function connect() {
   return { browser, page, cdp, read, state, tap, field, screenshot };
 }
 function nodes() {
-  run(['shell','rm','-f','/sdcard/vocast-e2e.xml']);
-  const dump=run(['shell', 'uiautomator', 'dump', '/sdcard/vocast-e2e.xml']).toString();
+  run(['shell','rm','-f','/sdcard/bajiao-e2e.xml']);
+  const dump=run(['shell', 'uiautomator', 'dump', '/sdcard/bajiao-e2e.xml']).toString();
   if(!dump.includes('dumped'))throw Error('Fresh Android UI hierarchy unavailable');
-  const xml = run(['exec-out', 'cat', '/sdcard/vocast-e2e.xml']).toString();
+  const xml = run(['exec-out', 'cat', '/sdcard/bajiao-e2e.xml']).toString();
   return [...xml.matchAll(/<node\s+([^>]+)>?/g)].map(m => Object.fromEntries([...m[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(x => [x[1], x[2]])));
 }
 async function nativeTap(text) {
@@ -107,7 +107,7 @@ if (require.main === module) (async () => {
   if (process.argv[2] === 'nativeTap') return nativeTap(process.argv.slice(3).join(' '));
   const h = await connect();
   try {
-    if (process.argv[2] === 'summary') { console.log(JSON.stringify(await h.read(() => ({ settings: vocastEngine.state.settings, books: vocastEngine.state.books.map(b => ({ id: b.id, name: b.name, count: b.chapters.length, chapters: b.chapters.slice(0, 6).map(c => ({ id: c.id, title: c.title, status: c.status, audio: c.audio, duration: c.duration, segments: c.segments.length })), roles: b.characters })), tasks: vocastEngine.state.tasks, usage: vocastEngine.state.usage.slice(-5), busy: !document.querySelector('#busy').hidden, toast: document.querySelector('#toast').textContent })), null, 2)); return; }
+    if (process.argv[2] === 'summary') { console.log(JSON.stringify(await h.read(() => ({ settings: bajiaoEngine.state.settings, books: bajiaoEngine.state.books.map(b => ({ id: b.id, name: b.name, count: b.chapters.length, chapters: b.chapters.slice(0, 6).map(c => ({ id: c.id, title: c.title, status: c.status, audio: c.audio, duration: c.duration, segments: c.segments.length })), roles: b.characters })), tasks: bajiaoEngine.state.tasks, usage: bajiaoEngine.state.usage.slice(-5), busy: !document.querySelector('#busy').hidden, toast: document.querySelector('#toast').textContent })), null, 2)); return; }
     if (process.argv[2] === 'tap') await h.tap(process.argv[3]);
     if (process.argv[2] === 'field') await h.field(process.argv[3], process.argv[4]);
     await h.screenshot(process.argv[2] || 'observe');

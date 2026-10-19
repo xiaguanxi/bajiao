@@ -12,13 +12,13 @@ async function connect() {
   const browser = await chromium.connectOverCDP('http://127.0.0.1:9223');
   const ctxs = browser.contexts();
   let page = null;
-  for (const c of ctxs) for (const p of c.pages()) { const u = p.url(); if (u.includes('app.vocast.local')) { page = p; break; } }
+  for (const c of ctxs) for (const p of c.pages()) { const u = p.url(); if (u.includes('app.bajiao.local')) { page = p; break; } }
   if (!page) throw Error('APK WebView page not found');
   let ready = false;
-  for (let i = 0; i < 40; i++) { try { if (await page.evaluate(() => Boolean(window.vocastEngine?.state))) { ready = true; break; } } catch (e) {} await sleep(300); }
+  for (let i = 0; i < 40; i++) { try { if (await page.evaluate(() => Boolean(window.bajiaoEngine?.state))) { ready = true; break; } } catch (e) {} await sleep(300); }
   if (!ready) throw Error('APK library did not finish loading');
   const read = expr => page.evaluate(expr);
-  const state = async () => JSON.parse(await page.evaluate(() => JSON.stringify(window.vocastEngine?.state)));
+  const state = async () => JSON.parse(await page.evaluate(() => JSON.stringify(window.bajiaoEngine?.state)));
   async function tap(selector) {
     for (let i = 0; i < 25; i++) {
       const point = await page.evaluate(sel => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: r.top, bottom: r.bottom, h: innerHeight, w: innerWidth, disabled: el.disabled, text: el.textContent.slice(0, 60) }; }, selector);
@@ -32,7 +32,7 @@ async function connect() {
       const w = await page.evaluate(() => ({ w: innerWidth, h: innerHeight, d: devicePixelRatio }));
       let yOff = 0;
       try { const frames = run(['shell', 'dumpsys', 'window', 'windows']).toString(); const sb = frames.match(/Window #\d+ Window\{[^}]*StatusBar\}:[\s\S]*?mFrame=\[0,0\]\[\d+,(\d+)\]/); if (sb) yOff = Number(sb[1]); } catch (e) {}
-      run(['shell', 'CLASSPATH=/data/local/tmp/vocast-touch.dex', 'app_process', '/system/bin', 'DeviceTouch', String(Math.round(point.x * w.d)), String(Math.round(point.y * w.d + yOff))]);
+      run(['shell', 'CLASSPATH=/data/local/tmp/bajiao-touch.dex', 'app_process', '/system/bin', 'DeviceTouch', String(Math.round(point.x * w.d)), String(Math.round(point.y * w.d + yOff))]);
       await sleep(400); return;
     }
     throw Error('Could not scroll to control: ' + selector);
@@ -44,7 +44,7 @@ module.exports = { connect, run, sleep };
 if (require.main === module) (async () => {
   const h = await connect();
   try {
-    if (process.argv[2] === 'summary') console.log(JSON.stringify(await h.read(() => ({ books: vocastEngine.state.books.map(b => ({ name: b.name, count: b.chapters.length })), tasks: vocastEngine.state.tasks.length, busy: !document.querySelector('#busy').hidden })), null, 2));
+    if (process.argv[2] === 'summary') console.log(JSON.stringify(await h.read(() => ({ books: bajiaoEngine.state.books.map(b => ({ name: b.name, count: b.chapters.length })), tasks: bajiaoEngine.state.tasks.length, busy: !document.querySelector('#busy').hidden })), null, 2));
     else { await h.screenshot(process.argv[2] || 'observe'); console.log((await h.read(() => document.body.innerText)).slice(0, 800)); }
   } finally { await h.browser.close(); }
 })().catch(e => { console.error('FAIL:', e.message); process.exitCode = 1; });

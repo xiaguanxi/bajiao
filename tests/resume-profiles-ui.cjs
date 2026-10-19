@@ -30,20 +30,20 @@ const V=require('../app/src/main/assets/core.js');
    return {id,result};
   });
   await page.addInitScript(()=>{window.Native={call:(...args)=>window.fixtureNative(...args).then(window.nativeResult)};});
-  const load=async()=>{await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');await page.waitForFunction(()=>!!window.vocastEngine);};
+  const load=async()=>{await page.goto('http://127.0.0.1:'+server.address().port+'/index.html');await page.waitForFunction(()=>!!window.bajiaoEngine);};
   const click=async action=>{await page.locator('[data-act="'+action+'"]').first().click();};
   await load();await click('resumebook:'+b.id+':'+whole.id);await page.waitForFunction(()=>document.querySelector('#playBtn'));
   assert.equal(plays.at(-1).position,98500,'near-end listened marker must preserve position');assert.equal(plays.at(-1).bookId,b.id);
-  playback.position=100000;playback.playing=false;await page.evaluate(async()=>{const e=window.vocastEngine,b=e.state.books[0],c=b.chapters[0];await e.updatePlaybackProgress(b.id,c.id,100000,100000,true);await window.onNativePlaybackAction('pause',0,'whole.wav');});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].playbackCompleted),true,'pause after completion must not erase the completed checkpoint');
+  playback.position=100000;playback.playing=false;await page.evaluate(async()=>{const e=window.bajiaoEngine,b=e.state.books[0],c=b.chapters[0];await e.updatePlaybackProgress(b.id,c.id,100000,100000,true);await window.onNativePlaybackAction('pause',0,'whole.wav');});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].playbackCompleted),true,'pause after completion must not erase the completed checkpoint');
   // Native journal advances while the persisted chapter body still has the old zero position.
   checkpoint={...checkpoint,chapterId:stream.id,position:25375,offsetMs:5375,audioId:'s2.wav',segmentId:2,at:Date.now()+2000};playback={id:'',playing:false,position:0};
   await load();await click('resumebook:'+b.id+':'+stream.id);await page.waitForFunction(()=>document.querySelector('#playBtn'));
   assert.equal(plays.at(-1).id,'s2.wav');assert.equal(plays.at(-1).position,5375);assert.equal(plays.at(-1).segmentId,2);assert.equal(plays.at(-1).positionBase,20000);
-  playback.position=7321;await page.waitForFunction(()=>window.vocastEngine.state.lastPlayback?.position===27321);
-  assert.equal(await page.evaluate(()=>window.vocastEngine.state.lastPlayback.segmentId),2);
+  playback.position=7321;await page.waitForFunction(()=>window.bajiaoEngine.state.lastPlayback?.position===27321);
+  assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.lastPlayback.segmentId),2);
   await page.evaluate(()=>window.appBackground());await page.waitForTimeout(100);
   assert.equal(state.lastPlayback.position,27321);assert.equal(state.books[0].chapters[1].lastPlayedPosition,27321);
-  await click('back');await click('go:roles');await page.waitForFunction(()=>window.vocastEngine.state.books[0].characters.find(r=>r.name==='林晚')?.background==='医馆的学徒。');
+  await click('back');await click('go:roles');await page.waitForFunction(()=>window.bajiaoEngine.state.books[0].characters.find(r=>r.name==='林晚')?.background==='医馆的学徒。');
   assert.equal(modelCalls.length,1);assert.match(await page.locator('.vc-role-background').nth(1).textContent(),/医馆的学徒/);assert.match(await page.locator('.vc-role-description').nth(1).textContent(),/音色柔和/);
   for(const width of [320,393,768]){await page.setViewportSize({width,height:820});await page.waitForTimeout(50);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'roles-'+width+'.png'),fullPage:true});}
   await click('back');await click('go:roles');await page.waitForTimeout(100);assert.equal(modelCalls.length,1,'completed profiles must not be requested again');assert.deepEqual(errors,[]);

@@ -16,7 +16,7 @@ async function connect(){
  assert(socket,'app WebView socket must be ready');
  const port=run(['forward','tcp:0','localabstract:'+socket]).toString().trim();
  const targets=await(await fetch('http://127.0.0.1:'+port+'/json')).json();
- const target=targets.find(t=>t.url.includes('app.vocast.local'));assert(target);
+ const target=targets.find(t=>t.url.includes('app.bajiao.local'));assert(target);
  const ws=new WebSocket(target.webSocketDebuggerUrl),pending=new Map();let sequence=0;
  await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});
  ws.addEventListener('message',event=>{const message=JSON.parse(event.data);if(!message.id)return;const request=pending.get(message.id);if(!request)return;pending.delete(message.id);clearTimeout(request.timer);message.error?request.reject(Error(message.error.message)):request.resolve(message.result);});
@@ -44,14 +44,14 @@ async function main(){
     processSpeechAudio:async id=>{processors++;return device.processSpeechAudio(id);},
     readAudio:async id=>{reads++;return device.readAudio(id);},
     request:async()=>{requests++;return {choices:[{finish_reason:'stop',message:{audio:{data:base64}}}]};}};
-   const e=new Vocast.Engine(io);e.state.settings.retries=0;
+   const e=new Bajiao.Engine(io);e.state.settings.retries=0;
    const actualRaw=await device.saveRawAudio(originalBase64,'wav');
    const actualSample=await device.processSpeechAudio(actualRaw.id);
    check(actualSample.corrected&&actualSample.removedMs>190000,'original sample must lose long blank intervals');
    // Remaining scattered sounds can still make the seven-character sentence too
    // long: its quality retry must happen after trimming, not accept the anomaly.
    let residualCalls=0;
-   const residualEngine=new Vocast.Engine({...io,request:async()=>{residualCalls++;return {choices:[{finish_reason:'stop',message:{audio:{data:residualCalls===1?originalBase64:normalBase64}}}]};}});
+   const residualEngine=new Bajiao.Engine({...io,request:async()=>{residualCalls++;return {choices:[{finish_reason:'stop',message:{audio:{data:residualCalls===1?originalBase64:normalBase64}}}]};}});
    residualEngine.state.settings.retries=0;
    const residualRetry=await residualEngine.synthesize('柳宗主的大秘密？','preset:白桦');
    check(residualCalls===2&&residualRetry.qualityAttempts===1,'residual duration anomaly must retry once');

@@ -65,7 +65,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // 2. 为前两章配置模拟音频以支持听书
     await page.evaluate(async () => {
-      const engine = window.vocastEngine;
+      const engine = window.bajiaoEngine;
       const b = engine.state.books[0];
       b.chapters[0].audio = 'audio_ch_001';
       b.chapters[0].duration = 125; // 125秒
@@ -129,7 +129,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     assert.equal(lastPlay.id, 'audio_ch_001', '音频 ID 正确');
     assert.equal(lastPlay.title, state.books[0].chapters[0].title, '章节标题正确');
     assert.equal(lastPlay.bookTitle, state.books[0].name, '小说书名正确');
-    assert.ok(lastPlay.artist.includes('Vocast'), '副标题应包含 Vocast 与多角色演绎');
+    assert.ok(lastPlay.artist.includes('芭蕉'), '副标题应包含 芭蕉 与多角色演绎');
     assert.equal(lastPlay.duration, 125000, '时长应准确转换为毫秒');
     assert.equal(lastPlay.hasPrev, false, '第1章 hasPrev 应为 false');
     assert.equal(lastPlay.hasNext, true, '第1章 hasNext 应为 true');

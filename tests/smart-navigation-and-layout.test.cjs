@@ -39,7 +39,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // 1. 导入示例文本进入详情页
     await click('samplebook');
-    await page.evaluate(async()=>{vocastEngine.state.settings.mode='manual';await vocastEngine.persist();});
+    await page.evaluate(async()=>{bajiaoEngine.state.settings.mode='manual';await bajiaoEngine.persist();});
     await page.getByRole('heading', { name: '章节目录' }).waitFor();
     console.log('✓ 示例文本已导入并进入章节目录');
 
@@ -76,7 +76,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // --- 验证 3：确认页面主操作按钮移至上方重新设计 ---
     // 构造一个待确认章节
     await page.evaluate(async () => {
-      const e = window.vocastEngine;
+      const e = window.bajiaoEngine;
       const b = e.state.books[0];
       const c = b.chapters[1];
       c.status = 'waiting';
@@ -159,7 +159,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
 
     // Case 4.4: 整章完成（已有 audio） -> 点击跳转 听书 listen
     await page.evaluate(async () => {
-      const e = window.vocastEngine;
+      const e = window.bajiaoEngine;
       const c = e.state.books[0].chapters[0];
       c.audio = 'chapter_0_complete.wav';
       c.duration = 45;

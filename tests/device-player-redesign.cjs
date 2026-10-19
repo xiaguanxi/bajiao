@@ -69,15 +69,15 @@ const { connect, run, sleep, dir } = require('./device-harness.cjs');
     // 4. 倍速浮窗:带刻度滑块,拖动联动 engine + native,刻度回切 1x
     await h.tap('[data-act="speedmodal"]');await sleep(400);
     assert.equal(await h.read(() => document.querySelectorAll('.vc-tick').length), 7, '倍速浮窗应有 7 个刻度');
-    const speedBefore = await h.read(() => window.vocastEngine.state.playbackSpeed) || 1;
+    const speedBefore = await h.read(() => window.bajiaoEngine.state.playbackSpeed) || 1;
     await h.read(() => { const r = document.querySelector('#speedRange'); r.value = '1.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
     await sleep(600);
-    assert.equal(await h.read(() => window.vocastEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
+    assert.equal(await h.read(() => window.bajiaoEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
     assert.equal(await h.read(() => document.querySelector('#speedBtnVal').textContent), '1.5x', '控制栏倍速签应更新');
     check('speed 1.5x links engine and badge');
     await h.tap('[data-act="setspeed:1"]');
     await sleep(600);
-    assert.equal(await h.read(() => window.vocastEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
+    assert.equal(await h.read(() => window.bajiaoEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
     assert.equal(await h.read(() => document.querySelector('#speedBtnVal').textContent), '1x', '控制栏倍速签应回到 1x');
     assert.equal((await status()).speed ?? 1, 1, 'native 实际速度应为 1');
     await h.tap('[data-act="closespeed"]');

@@ -46,7 +46,7 @@ public class ProductionService extends Service {
                 "有声书后台制作",
                 NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("保持 Vocast 在后台或锁屏时持续制作有声书音频");
+            channel.setDescription("保持 芭蕉 在后台或锁屏时持续制作有声书音频");
             if (notificationManager != null) {
                 notificationManager.createNotificationChannel(channel);
             }
@@ -64,7 +64,7 @@ public class ProductionService extends Service {
 
         if (ACTION_UPDATE.equals(action)) {
             String title = intent.getStringExtra("title");
-            if (title == null || title.isEmpty()) title = "Vocast 正在后台制作";
+            if (title == null || title.isEmpty()) title = "芭蕉 正在后台制作";
             String message = intent.getStringExtra("message");
             if (message == null || message.isEmpty()) message = "正在合成有声书章节...";
             int progress = intent.getIntExtra("progress", 0);
@@ -122,7 +122,7 @@ public class ProductionService extends Service {
         if (wakeLock == null) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vocast:production_wakelock");
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bajiao:production_wakelock");
                 wakeLock.setReferenceCounted(false);
             }
         }

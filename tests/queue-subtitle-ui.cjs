@@ -25,25 +25,25 @@ const V=require('../app/src/main/assets/core.js');
    await page.evaluate(value=>window.nativeResult(value),{id,result});
   });
   await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});
-  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const click=act=>page.locator('[data-act="'+act+'"]').first().click();
   await click('go:voices');assert.match(await page.locator('.voice-library-copy small').innerText(),/声音温柔清晰/);
   for(const width of [320,393,768]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   await page.setViewportSize({width:393,height:873});await page.screenshot({path:path.join(out,'voices.png')});
-  await page.evaluate(()=>{const e=window.vocastEngine;e.state.tasks=e.state.books[0].chapters.map((c,i)=>({id:'task'+i,bookId:'book',chapterId:c.id,status:'queued',prio:0,created:8-i,phase:'等待开始',done:0,total:18}));window.renderApp();});
+  await page.evaluate(()=>{const e=window.bajiaoEngine;e.state.tasks=e.state.books[0].chapters.map((c,i)=>({id:'task'+i,bookId:'book',chapterId:c.id,status:'queued',prio:0,created:8-i,phase:'等待开始',done:0,total:18}));window.renderApp();});
   await click('go:tasks');assert.deepEqual(await page.locator('[data-task-id]').evaluateAll(rows=>rows.map(r=>r.dataset.taskId)),Array.from({length:8},(_,i)=>'task'+i));
   for(const width of [320,393,768]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   await page.setViewportSize({width:393,height:873});
   const height=(await page.locator('[data-task-id="task1"]').boundingBox()).height;assert(height<220,'task cards must be compact: '+height);
   const from=await page.locator('[data-task-drag="task2"]').boundingBox(),to=await page.locator('[data-task-id="task0"]').boundingBox();
   await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();await page.mouse.move(to.x+30,to.y+12,{steps:14});await page.mouse.up();
-  await page.waitForFunction(()=>window.vocastEngine.pendingOrder()[0].id==='task2');
+  await page.waitForFunction(()=>window.bajiaoEngine.pendingOrder()[0].id==='task2');
   assert.equal(await page.locator('[data-task-id]').first().getAttribute('data-task-id'),'task2');
   await page.screenshot({path:path.join(out,'tasks.png')});
   // Touch pointer path uses the same capture/drag events and remains scrollable elsewhere.
   await page.evaluate(()=>{const h=document.querySelector('[data-task-drag="task1"]');document.querySelector('#screen').setPointerCapture=()=>{};const r=h.getBoundingClientRect();h.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:77,button:0,clientX:r.x+16,clientY:r.y+16}));const target=document.querySelector('[data-task-id="task2"]').getBoundingClientRect();document.querySelector('#screen').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'touch',pointerId:77,clientX:target.x+30,clientY:target.y+8}));document.querySelector('#screen').dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:77}));});
-  await page.waitForFunction(()=>window.vocastEngine.pendingOrder()[0].id==='task1');
-  await page.evaluate(()=>{window.vocastEngine.state.tasks=[];window.renderApp();});
+  await page.waitForFunction(()=>window.bajiaoEngine.pendingOrder()[0].id==='task1');
+  await page.evaluate(()=>{window.bajiaoEngine.state.tasks=[];window.renderApp();});
   await click('go:shelf');await click('book:book');await click('read:c0');await click('go:listen');await page.locator('#playBtn').click();
   await page.waitForFunction(()=>document.querySelector('.vc-transcript-line.active')?.dataset.segstream==='0');
   assert.equal(starts[0].visual.id,'0');assert(Math.abs(starts[0].visual.offset)<4,'first subtitle is centered before audio starts');
@@ -56,9 +56,9 @@ const V=require('../app/src/main/assets/core.js');
   const next=starts.find(s=>s.id==='seg10.wav');assert.equal(next.visual.id,'10');assert(Math.abs(next.visual.offset)<4,'automatic stream advance centers before native play');
   await page.screenshot({path:path.join(out,'subtitles.png')});
   // Merging a chapter while segment playback continues must retain the active segment identity.
-  await page.evaluate(()=>{const c=window.vocastEngine.state.books[0].chapters[0];c.audio='merged.wav';c.duration=18;window.renderApp();});
+  await page.evaluate(()=>{const c=window.bajiaoEngine.state.books[0].chapters[0];c.audio='merged.wav';c.duration=18;window.renderApp();});
   assert.equal(await page.locator('.vc-transcript-line.active').getAttribute('data-segstream'),'10');
-  await page.evaluate(async()=>{await window.vocastEngine.updatePlaybackProgress('book','c0',0,18000,false);});
+  await page.evaluate(async()=>{await window.bajiaoEngine.updatePlaybackProgress('book','c0',0,18000,false);});
   await click('back');await click('back');await click('resumebook:book:c0');
   await page.waitForFunction(()=>document.querySelector('.vc-transcript-line.active')?.dataset.segstream==='0');
   const whole=starts.find(s=>s.id==='merged.wav');assert.equal(whole.visual.id,'0');assert(Math.abs(whole.visual.offset)<4);

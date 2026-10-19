@@ -11,4 +11,4 @@ if($feature.State -ne 'Enabled') {
 & bcdedit.exe /set hypervisorlaunchtype auto
 if($LASTEXITCODE -ne 0) { throw 'Failed to enable the hypervisor at Windows startup.' }
 Write-Host 'Windows Hypervisor Platform is enabled. Save your work and restart Windows manually.'
-Write-Host 'After restarting, return to the Vocast chat to continue actual emulator click testing.'
+Write-Host 'After restarting, return to the 芭蕉 chat to continue actual emulator click testing.'

@@ -1,8 +1,8 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.Vocast=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.Bajiao=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
-const AudioQuality=typeof module==='object'&&module.exports?require('./audio-quality.js'):globalThis.VocastAudioQuality;
-const ModelPrompts=typeof module==='object'&&module.exports?require('./model-prompts.js'):globalThis.VocastModelPrompts;
-const {Scheduler}=typeof module==='object'&&module.exports?require('./model-scheduler.js'):globalThis.VocastModelScheduler;
+const AudioQuality=typeof module==='object'&&module.exports?require('./audio-quality.js'):globalThis.BajiaoAudioQuality;
+const ModelPrompts=typeof module==='object'&&module.exports?require('./model-prompts.js'):globalThis.BajiaoModelPrompts;
+const {Scheduler}=typeof module==='object'&&module.exports?require('./model-scheduler.js'):globalThis.BajiaoModelScheduler;
 const FEATURES={batching:false,direction:true,pipeline:false,cloneConcurrency:1};
 const PROMPT_VERSION=4;
 const DIRECTION_VERSION=1;

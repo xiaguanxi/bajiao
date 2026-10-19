@@ -52,11 +52,11 @@ const { connect, run, sleep, log, nativeTap } = require('./device-harness.cjs');
   const backgroundPreservesTasks = await h.read(() => {
     // 注入一个模拟 running 任务并测试 window.appBackground
     const mockTask = { id: 'test_task_1', status: 'running', bookId: 'b1', chapterId: 'c1' };
-    window.vocastEngine.state.tasks.push(mockTask);
+    window.bajiaoEngine.state.tasks.push(mockTask);
     window.appBackground();
     const preserved = mockTask.status === 'running' && !mockTask.pauseRequested;
     // 清理模拟任务
-    window.vocastEngine.state.tasks = window.vocastEngine.state.tasks.filter(t => t.id !== 'test_task_1');
+    window.bajiaoEngine.state.tasks = window.bajiaoEngine.state.tasks.filter(t => t.id !== 'test_task_1');
     return preserved;
   });
   assert.ok(backgroundPreservesTasks, '切后台时任务状态必须保持 running 且不被请求暂停');
@@ -64,15 +64,15 @@ const { connect, run, sleep, log, nativeTap } = require('./device-harness.cjs');
 
   // 3. 验证听书时边听边做自动预制后续章节
   const autoProduceUpcomingWorks = await h.read(async () => {
-    const b = window.vocastEngine.state.books[0];
+    const b = window.bajiaoEngine.state.books[0];
     if (!b || b.chapters.length < 2) return true; // 若书库章节少于2章则跳过
     const c1 = b.chapters[0];
     const c2 = b.chapters[1];
     // 模拟 c1 播放触发 checkAutoProduceUpcoming
     await window.checkAutoProduceUpcoming(b.id, c1.id);
-    const hasNextInQueue = window.vocastEngine.state.tasks.some(t => t.bookId === b.id && t.chapterId === c2.id);
+    const hasNextInQueue = window.bajiaoEngine.state.tasks.some(t => t.bookId === b.id && t.chapterId === c2.id);
     // 清理产生的模拟测试队列任务
-    window.vocastEngine.state.tasks = window.vocastEngine.state.tasks.filter(t => t.chapterId !== c2.id);
+    window.bajiaoEngine.state.tasks = window.bajiaoEngine.state.tasks.filter(t => t.chapterId !== c2.id);
     return hasNextInQueue;
   });
   assert.ok(autoProduceUpcomingWorks, '听书时应自动将下一章加入制作队列');

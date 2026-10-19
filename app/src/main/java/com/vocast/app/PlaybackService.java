@@ -148,7 +148,7 @@ public class PlaybackService extends Service {
                     "听书播放器",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Vocast 锁屏与系统控制中心有声书播放控制");
+            channel.setDescription("芭蕉 锁屏与系统控制中心有声书播放控制");
             channel.setShowBadge(false);
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(channel);
@@ -157,7 +157,7 @@ public class PlaybackService extends Service {
 
     private void initMediaSession() {
         if (mediaSession != null) return;
-        mediaSession = new MediaSession(this, "VocastMediaSession");
+        mediaSession = new MediaSession(this, "BajiaoMediaSession");
         mediaSession.setCallback(new MediaSession.Callback() {
             @Override
             public void onPlay() {
@@ -316,8 +316,8 @@ public class PlaybackService extends Service {
 
         if (chapterTitle == null) chapterTitle = "";
         chapterTitle = shortenNotifyTitle(chapterTitle);
-        if (bookTitle == null) bookTitle = "Vocast";
-        if (artist == null || artist.isEmpty()) artist = "多角色演绎 · Vocast";
+        if (bookTitle == null) bookTitle = "芭蕉";
+        if (artist == null || artist.isEmpty()) artist = "多角色演绎 · 芭蕉";
 
         cachedCoverBitmap = generateCoverBitmap(bookTitle, chapterTitle, coverPath);
 
@@ -576,8 +576,8 @@ public class PlaybackService extends Service {
 
         MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, chapterTitle != null && !chapterTitle.isEmpty() ? chapterTitle : "有声书播放")
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "Vocast")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist != null && !artist.isEmpty() ? artist : "多角色演绎 · Vocast")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "芭蕉")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist != null && !artist.isEmpty() ? artist : "多角色演绎 · 芭蕉")
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
 
         if (cachedCoverBitmap != null) {
@@ -616,9 +616,9 @@ public class PlaybackService extends Service {
                 .setStyle(mediaStyle)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setLargeIcon(cachedCoverBitmap)
-                .setContentTitle(chapterTitle != null && !chapterTitle.isEmpty() ? chapterTitle : "Vocast 听书")
-                .setContentText((bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "Vocast") + " · " + artist)
-                .setSubText("Vocast 有声书")
+                .setContentTitle(chapterTitle != null && !chapterTitle.isEmpty() ? chapterTitle : "芭蕉 听书")
+                .setContentText((bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "芭蕉") + " · " + artist)
+                .setSubText("芭蕉 有声书")
                 .setContentIntent(contentPi)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setOngoing(isPlaying)
@@ -761,13 +761,13 @@ public class PlaybackService extends Service {
         canvas.drawCircle(rcx, rcy, 140, ringPaint);
         canvas.drawCircle(rcx, rcy, 160, ringPaint);
 
-        // 顶部小字 VOCAST / AUDIOBOOK
+        // 顶部小字 芭蕉 / AUDIOBOOK
         TextPaint topPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         topPaint.setColor(0xFFF3EFDF);
         topPaint.setTextSize(24);
         topPaint.setTextAlign(Paint.Align.CENTER);
         topPaint.setLetterSpacing(0.2f);
-        canvas.drawText("VOCAST / AUDIOBOOK", width / 2.0f, 72, topPaint);
+        canvas.drawText("芭蕉 / AUDIOBOOK", width / 2.0f, 72, topPaint);
 
         // 书名横排（同书架 vc-cover：横排 serif 大字，最多取 12 字，超 6 字折两行）
         String displayBook = (book != null && !book.isEmpty()) ? book : "有声小说";

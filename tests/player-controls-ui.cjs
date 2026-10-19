@@ -22,11 +22,11 @@ const V=require('../app/src/main/assets/core.js');
    else if(action==='playback'){calls.push({action,...p});if(p.op==='sleep')playback.sleepRemainingMs=p.value*60000;if(p.op==='pause')playback.playing=false;if(p.op==='resume')playback.playing=true;if(p.op==='seek')playback.position=p.value;}
    await page.evaluate(v=>window.nativeResult(v),{id,result});
   });await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});
-  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const click=act=>page.locator('button[data-act="'+act+'"]').first().click();
   const openTimer=()=>page.locator('.vc-player-tools [data-act="sleepmenu"]').click();
   const modal=page.locator('.vc-player-sheet');
-  const waitSetting=async value=>page.waitForFunction(v=>window.vocastEngine.state.settings.sleepTimer===v,value);
+  const waitSetting=async value=>page.waitForFunction(v=>window.bajiaoEngine.state.settings.sleepTimer===v,value);
   await click('book:'+b.id);await click('read:'+b.chapters[0].id);await page.locator('.vc-ctlbar').waitFor();
   // Keep the speed key in its original slot; move the seek keys around the range.
   assert.equal(await page.locator('.vc-ctlbar>button').first().getAttribute('data-act'),'speedmodal');
@@ -45,16 +45,16 @@ const V=require('../app/src/main/assets/core.js');
   await click('speedmodal');await page.locator('#speedRange').focus();
   await page.locator('#speedRange').evaluate(r=>{window.savedSpeedRange=r;r.value='1.35';r.dispatchEvent(new Event('input',{bubbles:true}));});
   assert.equal(await page.locator('#speedBubble').textContent(),'1.35x');
-  await page.evaluate(async()=>{await window.vocastEngine.persist();});
+  await page.evaluate(async()=>{await window.bajiaoEngine.persist();});
   assert(await page.evaluate(()=>window.savedSpeedRange===document.querySelector('#speedRange')),'background saves preserve slider DOM');
   await page.locator('#speedRange').evaluate(r=>r.dispatchEvent(new Event('change',{bubbles:true})));
-  await page.waitForFunction(()=>window.vocastEngine.state.playbackSpeed===1.35);assert.equal(calls.filter(c=>c.op==='speed').at(-1).value,1.35);
-  await click('setspeed:3');await page.waitForFunction(()=>window.vocastEngine.state.playbackSpeed===3);assert.equal(await page.locator('#speedRange').inputValue(),'3');assert.equal(await page.locator('[data-act="setspeed:3"]').getAttribute('aria-pressed'),'true');
+  await page.waitForFunction(()=>window.bajiaoEngine.state.playbackSpeed===1.35);assert.equal(calls.filter(c=>c.op==='speed').at(-1).value,1.35);
+  await click('setspeed:3');await page.waitForFunction(()=>window.bajiaoEngine.state.playbackSpeed===3);assert.equal(await page.locator('#speedRange').inputValue(),'3');assert.equal(await page.locator('[data-act="setspeed:3"]').getAttribute('aria-pressed'),'true');
   await page.screenshot({path:path.join(out,'speed-sheet.png'),animations:'disabled'});await click('closespeed');assert.equal(await page.locator('#speedBtnVal').textContent(),'3x');
   // Native timer commands, selected states, cancellation, and resume last choice.
   await openTimer();await click('setsleep:30');await waitSetting(30);assert.equal(calls.filter(c=>c.op==='sleep').at(-1).value,30);assert.equal(await page.locator('[data-sleep-choice="30"]').getAttribute('aria-pressed'),'true');assert.equal(await page.getByRole('switch').getAttribute('aria-checked'),'true');
   await click('togglesleep');await waitSetting(0);assert.equal(calls.filter(c=>c.op==='sleep').at(-1).value,0);assert.equal(await page.getByRole('switch').getAttribute('aria-checked'),'false');
-  await click('togglesleep');await waitSetting(30);await click('sleepcustom');await page.locator('#sleepMinutes').fill('0');await click('setsleepcustom');assert.equal(await page.evaluate(()=>window.vocastEngine.state.settings.sleepTimer),30);assert.match(await page.locator('#toast').textContent(),/1–720/);
+  await click('togglesleep');await waitSetting(30);await click('sleepcustom');await page.locator('#sleepMinutes').fill('0');await click('setsleepcustom');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.sleepTimer),30);assert.match(await page.locator('#toast').textContent(),/1–720/);
   await page.locator('#sleepMinutes').fill('7');await click('setsleepcustom');await waitSetting(7);assert.equal(calls.filter(c=>c.op==='sleep').at(-1).value,7);assert.match(await page.locator('[data-act="sleepcustom"]').textContent(),/7 分钟/);
   await page.screenshot({path:path.join(out,'timer-custom.png'),animations:'disabled'});await click('closesleep');
   playback.sleepRemainingMs=0;await openTimer();assert.equal(await page.getByRole('switch').getAttribute('aria-checked'),'false','expired native timer clears active status');await click('closesleep');
@@ -66,23 +66,23 @@ const V=require('../app/src/main/assets/core.js');
    if(count===2)await page.screenshot({path:path.join(out,'timer-chapters.png'),animations:'disabled'});await click('closesleep');
    await page.setViewportSize({width:320,height:740});assert(await page.locator('.vc-timer-button').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'active timer text fits a 320px screen');await page.setViewportSize({width:393,height:873});
    // Reload keeps the persisted chapter countdown (as on activity recreation).
-   if(count===3){await page.reload();await page.waitForFunction(()=>window.vocastEngine);await click('book:'+b.id);await click('read:'+b.chapters[0].id);await page.locator('.vc-ctlbar').waitFor();assert.equal(await page.evaluate(()=>window.vocastEngine.state.sleepChapterPlan.remaining),3);}
+   if(count===3){await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await click('book:'+b.id);await click('read:'+b.chapters[0].id);await page.locator('.vc-ctlbar').waitFor();assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.sleepChapterPlan.remaining),3);}
    if(!playback.playing)await click('playchapter');
    for(let i=0;i<count;i++){
     playback.playing=false;const before=calls.filter(c=>c.action==='play').length;
     await page.evaluate(audio=>window.onNativePlaybackAction('completion',120000,audio),playback.id);
-    if(i<count-1){assert.equal(calls.filter(c=>c.action==='play').length,before+1);assert.equal(playback.id,b.chapters[i+1].audio);assert.equal(await page.evaluate(()=>window.vocastEngine.state.sleepChapterPlan.remaining),count-i-1);}
-    else {assert.equal(calls.filter(c=>c.action==='play').length,before,'no next chapter after timer boundary');assert.equal(await page.evaluate(()=>window.vocastEngine.state.sleepChapterPlan),null);assert.equal(playback.playing,false);}
+    if(i<count-1){assert.equal(calls.filter(c=>c.action==='play').length,before+1);assert.equal(playback.id,b.chapters[i+1].audio);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.sleepChapterPlan.remaining),count-i-1);}
+    else {assert.equal(calls.filter(c=>c.action==='play').length,before,'no next chapter after timer boundary');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.sleepChapterPlan),null);assert.equal(playback.playing,false);}
    }
   }
   // A streamed chapter has several native completion events, but counts only once.
-  await page.evaluate(()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[3];c.audio=null;c.status='annotated';c.segments=[{id:0,text:'第一句。',speaker:'旁白',confidence:1,audio:'stream-0.wav',durMs:10000},{id:1,text:'第二句。',speaker:'旁白',confidence:1,audio:'stream-1.wav',durMs:10000}];e.touch(c);window.renderApp();});
+  await page.evaluate(()=>{const e=window.bajiaoEngine,c=e.state.books[0].chapters[3];c.audio=null;c.status='annotated';c.segments=[{id:0,text:'第一句。',speaker:'旁白',confidence:1,audio:'stream-0.wav',durMs:10000},{id:1,text:'第二句。',speaker:'旁白',confidence:1,audio:'stream-1.wav',durMs:10000}];e.touch(c);window.renderApp();});
   await click('nextchapter');await page.waitForFunction(()=>document.querySelector('[data-segstream="0"]'));
   assert.equal(playback.id,'stream-0.wav');await openTimer();await click('setsleep:chapters:1');await waitSetting('chapters:1');await click('closesleep');
-  playback.playing=false;await page.evaluate(()=>window.onNativePlaybackAction('completion',10000,'stream-0.wav'));assert.equal(playback.id,'stream-1.wav');assert.equal(await page.evaluate(()=>window.vocastEngine.state.sleepChapterPlan.remaining),1);
-  const beforeStreamEnd=calls.filter(c=>c.action==='play').length;playback.playing=false;await page.evaluate(()=>window.onNativePlaybackAction('completion',10000,'stream-1.wav'));assert.equal(calls.filter(c=>c.action==='play').length,beforeStreamEnd);assert.equal(await page.evaluate(()=>window.vocastEngine.state.sleepChapterPlan),null);
+  playback.playing=false;await page.evaluate(()=>window.onNativePlaybackAction('completion',10000,'stream-0.wav'));assert.equal(playback.id,'stream-1.wav');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.sleepChapterPlan.remaining),1);
+  const beforeStreamEnd=calls.filter(c=>c.action==='play').length;playback.playing=false;await page.evaluate(()=>window.onNativePlaybackAction('completion',10000,'stream-1.wav'));assert.equal(calls.filter(c=>c.action==='play').length,beforeStreamEnd);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.sleepChapterPlan),null);
   // Palette follows the reader theme even though the sheet is outside the reader.
-  await page.evaluate(()=>{window.vocastEngine.state.settings.readerTheme='dark';window.renderApp();});await openTimer();assert.equal(await modal.getAttribute('data-theme'),'dark');assert.equal(await modal.evaluate(el=>getComputedStyle(el).color),'rgb(228, 233, 228)');await page.screenshot({path:path.join(out,'timer-dark.png'),animations:'disabled'});
+  await page.evaluate(()=>{window.bajiaoEngine.state.settings.readerTheme='dark';window.renderApp();});await openTimer();assert.equal(await modal.getAttribute('data-theme'),'dark');assert.equal(await modal.evaluate(el=>getComputedStyle(el).color),'rgb(228, 233, 228)');await page.screenshot({path:path.join(out,'timer-dark.png'),animations:'disabled'});
   await page.keyboard.press('Escape');await modal.waitFor({state:'detached'});assert.equal(await page.locator('main[inert]').count(),0);
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'ui-report.json'),JSON.stringify({passed:true,checks:['320/393/768px and landscape layout','seek commands around progress','original speed position','bottom sheets and dark theme','slider preview and native commit','3x preset','stable slider across save','minute timer and toggle memory','custom validation and timing','native timer expiry','1/2/3 complete chapter boundaries','chapter timer persisted across reload','stream segments count as one chapter','Escape restores page interaction'],errors},null,2));console.log('PASS player controls, speed and sleep sheets, native commands and chapter timers');
  }finally{await browser.close();server.close();}

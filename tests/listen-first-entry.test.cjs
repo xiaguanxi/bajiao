@@ -96,7 +96,7 @@ const { makeState } = require('../app/src/main/assets/core.js');
     await click('go:tasks');
     await click('tasktab:done');
     await page.evaluate(chapterIndex => {
-      const c = window.vocastEngine.state.books[0].chapters[0];
+      const c = window.bajiaoEngine.state.books[0].chapters[0];
       delete c.text; delete c.segments; Object.assign(c, chapterIndex);
     }, index(fullChapters.get('chapter-0')));
     await click('listentask:done-task');
@@ -107,14 +107,14 @@ const { makeState } = require('../app/src/main/assets/core.js');
     await click('back');
     await click('go:shelf');
     await page.evaluate(chapterIndex => {
-      const c = window.vocastEngine.state.books[0].chapters[0];
+      const c = window.bajiaoEngine.state.books[0].chapters[0];
       delete c.text; delete c.segments; Object.assign(c, chapterIndex);
     }, index(fullChapters.get('chapter-0')));
     await click('resumebook:book:chapter-0');
     await click('back');
     await page.getByRole('heading', { name: '章节目录' }).waitFor();
     await finishLoad();
-    await page.waitForFunction(() => !window.vocastEngine.state.books[0].chapters[0].unloaded);
+    await page.waitForFunction(() => !window.bajiaoEngine.state.books[0].chapters[0].unloaded);
     assert.equal(await page.locator('#transcriptPanel').count(), 0, 'late reads must not reopen the listening page');
     await page.getByRole('heading', { name: '章节目录' }).waitFor();
     assert.deepEqual(errors, []);

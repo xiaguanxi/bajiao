@@ -1,6 +1,6 @@
 /* Shared network policy for chapter workers, resumes and segment remakes. */
 (()=>{'use strict';
-const P=Vocast.Engine.prototype,key=(bid,cid)=>JSON.stringify([bid,cid]);
+const P=Bajiao.Engine.prototype,key=(bid,cid)=>JSON.stringify([bid,cid]);
 function state(){if(['wifi','other','offline','unknown'].includes(window.productionNativeNetwork))return window.productionNativeNetwork;if(navigator.onLine===false)return 'offline';const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;return c?.type==='wifi'?'wifi':c?.type&&c.type!=='unknown'&&c.type!=='none'?'other':c?.type==='none'?'offline':'unknown';}
 P.productionNetworkState=state;
 P.productionNetworkMessage=function(){const n=state();return n==='offline'?'当前无网络，连接后继续':n==='unknown'?'无法确认 Wi-Fi，等待连接或手动允许本次制作':'仅 Wi-Fi 下制作已开启，等待 Wi-Fi';};
@@ -17,7 +17,7 @@ const finish=P.finishTaskRun;P.finishTaskRun=async function(t){await finish.call
 const regenerate=P.regenerateSegment;
 P.regenerateSegment=async function(bid,cid,...args){const t={id:'segment:'+key(bid,cid)+':'+args[0],bookId:bid,chapterId:cid,persisted:false};consume(this,t);try{await this.productionNetworkCheck(t);return await regenerate.call(scoped(this,t),bid,cid,...args);}catch(e){if(e.networkWait)throw Error(this.productionNetworkMessage()+'；请重试并选择本次允许');throw e;}finally{this._productionGrants?.delete(t.id);}};
 P.refreshProductionNetwork=async function(reconnected=false){let changed=false;for(const t of this.state.tasks){if((t.networkWaiting||reconnected&&t.retryWaiting&&t.retryKind!=='checkpoint')&&['waiting','queued'].includes(t.status)&&!t.pauseRequested&&this.productionNetworkAllowed(t)){t.networkWaiting=false;t.retryWaiting=false;delete t.nextRetryAt;t.status='queued';t.phase='排队等待';t.message='';changed=true;}}if(changed){await this.persist();this.kick().catch(()=>{});}this.scheduleProductionRetry();this.listeners.forEach(fn=>fn());};
-let last=state();function update(){const e=window.vocastEngine,n=state();if(!e)return;const changed=n!==last;if(changed){e._productionGrants?.clear();e._productionPending?.clear();last=n;}e.refreshProductionNetwork(changed&&n!=='offline').catch(()=>{});window.dispatchEvent(new Event('productionnetworkchange'));}
+let last=state();function update(){const e=window.bajiaoEngine,n=state();if(!e)return;const changed=n!==last;if(changed){e._productionGrants?.clear();e._productionPending?.clear();last=n;}e.refreshProductionNetwork(changed&&n!=='offline').catch(()=>{});window.dispatchEvent(new Event('productionnetworkchange'));}
 window.onNativeNetworkChange=function(n){window.productionNativeNetwork=n;update();};
 if(window.Native)device.call('networkState').then(window.onNativeNetworkChange).catch(()=>{});
 window.addEventListener('online',update);window.addEventListener('offline',update);(navigator.connection||navigator.mozConnection||navigator.webkitConnection)?.addEventListener?.('change',update);

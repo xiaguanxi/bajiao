@@ -44,10 +44,10 @@ const { connect, run, sleep, log, nativeTap, dir } = require('./device-harness.c
   console.log('✓ 存储管理页统计与刷新功能正常');
 
   // 5. Test toggle auto-delete
-  const autoBefore = await h.read(() => window.vocastEngine.state.autoDeletePlayed);
+  const autoBefore = await h.read(() => window.bajiaoEngine.state.autoDeletePlayed);
   await h.tap('[data-act="toggleautodelete"]');
   await sleep(500);
-  const autoAfter = await h.read(() => window.vocastEngine.state.autoDeletePlayed);
+  const autoAfter = await h.read(() => window.bajiaoEngine.state.autoDeletePlayed);
   console.log('autoBefore:', autoBefore, 'autoAfter:', autoAfter);
   assert.equal(Boolean(autoAfter), !Boolean(autoBefore), '完播自删开关应成功切换状态');
   console.log('✓ 完播自动删除开关切换正常：' + autoAfter);
@@ -77,7 +77,7 @@ const { connect, run, sleep, log, nativeTap, dir } = require('./device-harness.c
       assert.equal(await h.read(() => document.querySelectorAll('[data-act^="setspeed:"]').length), 6, '倍速行应有 6 个选项');
       await h.tap('[data-act="setspeed:1.5"]');
       await sleep(600);
-      const speedVal = await h.read(() => window.vocastEngine.state.playbackSpeed);
+      const speedVal = await h.read(() => window.bajiaoEngine.state.playbackSpeed);
       assert.equal(speedVal, 1.5, '倍速应成功设置为 1.5x');
       assert(await h.read(() => !!document.querySelector('[data-act="setspeed:1.5"].active')), '所选倍速应高亮');
       console.log('✓ 倍速行直选与高亮正常：1.5x');

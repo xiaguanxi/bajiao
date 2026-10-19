@@ -19,7 +19,7 @@ const V=require('../app/src/main/assets/core.js');
    else if(action==='loadChapter'){loads.push(p.id);result=full.books[0].chapters.find(c=>c.id===p.id);}
    else if(action==='play'){plays.push(p);await page.evaluate(p=>window.fixturePlay=p,p);result=true;}
    await page.evaluate(v=>window.nativeResult(v),{id,result});
-  });await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  });await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const click=act=>page.locator('button[data-act="'+act+'"]').first().click();
   const waitAligned=id=>page.waitForFunction(id=>{const row=document.querySelector('[data-chapter-id="'+id+'"]'),heading=document.getElementById('catalog-heading');return row&&heading&&Math.abs(row.getBoundingClientRect().top-heading.getBoundingClientRect().bottom)<=1;},id);
   const row=id=>page.locator('[data-chapter-id="'+id+'"]');
@@ -43,7 +43,7 @@ const V=require('../app/src/main/assets/core.js');
   for(let i=0;i<10;i++){await page.mouse.wheel(0,700);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}
   assert(await page.locator('[data-chapter-id]').count()>50,'scrolling crosses former fifty-chapter limit');
   const ids=await page.locator('[data-chapter-id]').evaluateAll(rows=>rows.map(r=>r.dataset.chapterId));assert.equal(new Set(ids).size,ids.length);const indexes=ids.map(id=>b.chapters.findIndex(c=>c.id===id));assert(indexes.every((n,i)=>!i||n===indexes[i-1]+1),'original chapter order is continuous');
-  const before=await visible();await page.evaluate(()=>window.vocastEngine.persist());await click('openepisodes');await click('closeepisodes');const after=await visible();assert.equal(after[0].id,before[0].id);assert(Math.abs(after[0].top-before[0].top)<2,'modal updates preserve the scroll anchor');
+  const before=await visible();await page.evaluate(()=>window.bajiaoEngine.persist());await click('openepisodes');await click('closeepisodes');const after=await visible();assert.equal(after[0].id,before[0].id);assert(Math.abs(after[0].top-before[0].top)<2,'modal updates preserve the scroll anchor');
   await click('openepisodes');await click('setchpage:0');await waitAligned(b.chapters[0].id);assert.equal((await visible())[0].id,b.chapters[0].id);
   await goToChapter(239);assert.equal((await visible())[0].id,b.chapters[239].id,'last chapter can also be first visible');
   await goToChapter(128);

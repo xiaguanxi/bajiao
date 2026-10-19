@@ -25,8 +25,8 @@ const V=require('../app/src/main/assets/core.js');
    else if(action==='playbackState')result={playing:false,position:0};
    await page.evaluate(v=>window.nativeResult(v),{id,result});
   });await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});
-  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
-  await page.evaluate(()=>{const e=window.vocastEngine;e.kick=async()=>{};for(const t of e.state.tasks)if(t.status==='queued')t.status='running';window.enqueued=0;window.resumed=0;const enqueue=e.enqueue.bind(e);e.enqueue=(...args)=>{window.enqueued++;return enqueue(...args);};e.resume=()=>{window.resumed++;throw Error('active task must not be resumed');};});
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
+  await page.evaluate(()=>{const e=window.bajiaoEngine;e.kick=async()=>{};for(const t of e.state.tasks)if(t.status==='queued')t.status='running';window.enqueued=0;window.resumed=0;const enqueue=e.enqueue.bind(e);e.enqueue=(...args)=>{window.enqueued++;return enqueue(...args);};e.resume=()=>{window.resumed++;throw Error('active task must not be resumed');};});
   const click=act=>page.locator('button[data-act="'+act+'"]').first().click();
   const row=i=>page.locator('[data-chapter-id="'+b.chapters[i].id+'"]');
   const modal=page.locator('.vc-modal-overlay[data-act="closeunmade"]');
@@ -35,7 +35,7 @@ const V=require('../app/src/main/assets/core.js');
   for(const width of [320,393]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const size=await row(0).locator('.vc-chapter-produce').boundingBox();assert(size.width>=40&&size.height>=44);}
   await page.screenshot({path:path.join(out,'catalog-icons.png')});
   // Queue a task immediately, staying on the catalog and without loading chapter text.
-  await row(0).locator('.vc-chapter-produce').click();await page.waitForFunction(()=>window.vocastEngine.state.tasks.length===4);await row(0).getByText('制作中',{exact:true}).waitFor();assert.equal(loads.length,0);assert.equal(await page.locator('main[data-page="detail"]').count(),1);assert.equal(await modal.count(),0);
+  await row(0).locator('.vc-chapter-produce').click();await page.waitForFunction(()=>window.bajiaoEngine.state.tasks.length===4);await row(0).getByText('制作中',{exact:true}).waitFor();assert.equal(loads.length,0);assert.equal(await page.locator('main[data-page="detail"]').count(),1);assert.equal(await modal.count(),0);
   await click('read:'+b.chapters[0].id);await assertProducing();assert.match(await modal.innerText(),/排队等待/);
   await page.screenshot({path:path.join(out,'producing-options.png')});
   await click('readraw');await page.locator('main[data-page="raw"]').waitFor();assert.match(await page.locator('.reader').innerText(),/第1章的原文/);await click('back');await page.locator('main[data-page="detail"]').waitFor();
@@ -45,12 +45,12 @@ const V=require('../app/src/main/assets/core.js');
   assert.equal(await page.evaluate(()=>window.enqueued),1);assert.equal(await page.evaluate(()=>window.resumed),0);
   await click('read:'+b.chapters[3].id);await page.locator('main[data-page="listen"]').waitFor();assert.equal(await modal.count(),0);await click('back');await page.locator('main[data-page="detail"]').waitFor();
   // An existing ordinary unmade dialog updates as a task starts in the background.
-  await click('read:'+b.chapters[4].id);await modal.locator('[data-act="makechapter"]').waitFor();await page.evaluate(async({bid,cid})=>window.vocastEngine.enqueue(bid,[cid]),{bid:b.id,cid:b.chapters[4].id});await assertProducing();await click('closeunmade');
+  await click('read:'+b.chapters[4].id);await modal.locator('[data-act="makechapter"]').waitFor();await page.evaluate(async({bid,cid})=>window.bajiaoEngine.enqueue(bid,[cid]),{bid:b.id,cid:b.chapters[4].id});await assertProducing();await click('closeunmade');
   // Even two clicks before a row refresh cannot enqueue duplicate work.
-  await row(5).locator('.vc-chapter-produce').evaluate(el=>{el.click();el.click();});await page.waitForFunction(cid=>window.vocastEngine.state.tasks.filter(t=>t.chapterId===cid).length===1,b.chapters[5].id);assert.equal(await page.evaluate(()=>window.enqueued),3);await assertProducing();await click('closeunmade');
+  await row(5).locator('.vc-chapter-produce').evaluate(el=>{el.click();el.click();});await page.waitForFunction(cid=>window.bajiaoEngine.state.tasks.filter(t=>t.chapterId===cid).length===1,b.chapters[5].id);assert.equal(await page.evaluate(()=>window.enqueued),3);await assertProducing();await click('closeunmade');
   // Missing credentials block new production, but do not block listening to an existing task.
-  configured=false;await page.reload();await page.waitForFunction(()=>window.vocastEngine);await click('book:'+b.id);await row(0).locator('.vc-chapter-produce').click();await page.locator('main[data-page="settings"]').waitFor();assert.equal(await page.evaluate(()=>window.vocastEngine.state.tasks.length),3);
-  await click('go:shelf');await click('book:'+b.id);await page.locator('main[data-page="detail"]').waitFor();await click('read:'+b.chapters[1].id);await assertProducing();await click('makeandlisten');await page.locator('main[data-page="listen"]').waitFor();assert.equal(await page.evaluate(()=>window.vocastEngine.state.tasks.length),3);
+  configured=false;await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await click('book:'+b.id);await row(0).locator('.vc-chapter-produce').click();await page.locator('main[data-page="settings"]').waitFor();assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks.length),3);
+  await click('go:shelf');await click('book:'+b.id);await page.locator('main[data-page="detail"]').waitFor();await click('read:'+b.chapters[1].id);await assertProducing();await click('makeandlisten');await page.locator('main[data-page="listen"]').waitFor();assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks.length),3);
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'ui-report.json'),JSON.stringify({passed:true,checks:['hammer icon replaces unproduced label','320/393px touch controls','direct single task without chapter text load','queued/running/annotated/stale audio chapter choices','read original and return to catalog','listen while making loads chapter and reuses task','completed chapter keeps player navigation','dialog follows background task start','rapid clicks deduplicate tasks','credentials required only for new production'],errors},null,2));console.log('PASS chapter creation icons, in-progress choices and task reuse');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

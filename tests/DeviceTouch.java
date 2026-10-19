@@ -9,7 +9,7 @@ public class DeviceTouch {
    android.os.IBinder binder=(android.os.IBinder)Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"clipboard");
    Object clip=Class.forName("android.content.IClipboard$Stub").getMethod("asInterface",android.os.IBinder.class).invoke(null,binder);
    java.lang.reflect.Method set=Class.forName("android.content.IClipboard").getMethod("setPrimaryClip",android.content.ClipData.class,String.class,int.class);
-   set.invoke(clip,android.content.ClipData.newPlainText("Vocast device test",text),"com.android.shell",0);return;
+   set.invoke(clip,android.content.ClipData.newPlainText("芭蕉 device test",text),"com.android.shell",0);return;
   }
   Class<?> c=Class.forName("android.hardware.input.InputManager");
   Object im=c.getMethod("getInstance").invoke(null);

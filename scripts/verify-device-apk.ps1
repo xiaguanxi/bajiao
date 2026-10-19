@@ -3,10 +3,10 @@ $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $taskJdk=(Get-ChildItem .tools -Directory -Filter 'jdk-*' | Select-Object -First 1).FullName
 $env:JAVA_HOME=$taskJdk
-$taskSignature=& '.tools/android-sdk/build-tools/35.0.0/apksigner.bat' verify --verbose 'artifacts/Vocast-debug.apk'
+$taskSignature=& '.tools/android-sdk/build-tools/35.0.0/apksigner.bat' verify --verbose 'artifacts/Bajiao-debug.apk'
 if($LASTEXITCODE -ne 0){throw 'APK signature verification failed'}
 $taskSignature | Set-Content 'artifacts/device-e2e/apk-signature.txt'
-$taskArchive=[System.IO.Compression.ZipFile]::OpenRead((Resolve-Path 'artifacts/Vocast-debug.apk'))
+$taskArchive=[System.IO.Compression.ZipFile]::OpenRead((Resolve-Path 'artifacts/Bajiao-debug.apk'))
 $taskKeys=@{}
 try{
  foreach($taskName in @('MINIMAX_KEY','MIMO_KEY')){
@@ -26,6 +26,6 @@ try{
    $taskCount++
   }finally{$taskStream.Dispose();$taskMemory.Dispose()}
  }
- @{pass=$true;entriesScanned=$taskCount;plaintextApiKeysEmbedded=$false;apkSha256=(Get-FileHash 'artifacts/Vocast-debug.apk' -Algorithm SHA256).Hash.ToLower();signatureVerified=$true} | ConvertTo-Json | Set-Content 'artifacts/device-e2e/apk-key-scan.json'
+ @{pass=$true;entriesScanned=$taskCount;plaintextApiKeysEmbedded=$false;apkSha256=(Get-FileHash 'artifacts/Bajiao-debug.apk' -Algorithm SHA256).Hash.ToLower();signatureVerified=$true} | ConvertTo-Json | Set-Content 'artifacts/device-e2e/apk-key-scan.json'
  Write-Output 'PASS APK signature and embedded API key scan'
 }finally{$taskArchive.Dispose();$taskKeys.Clear()}

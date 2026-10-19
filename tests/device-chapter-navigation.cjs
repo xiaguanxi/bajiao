@@ -5,7 +5,7 @@ const {connect,run,sleep,nativeTap,finger,log,dir}=require('./device-harness.cjs
  const check=(name,details={})=>{checks.push({name,...details,at:new Date().toISOString()});fs.writeFileSync(file,JSON.stringify({pass:false,checks},null,2));console.log('PASS',name);};
  async function playing(c){for(let i=0;i<30;i++){const p=await status();if(p.id===c.audio&&p.playing){assert.equal(p.title,c.title);assert.equal(p.error,'');return p;}await sleep(250);}throw Error('Chapter did not play: '+c.title);}
  try{
-  const s=await h.state(),b=s.books.find(b=>b.name==='vocast-novel'),chapters=b.chapters.filter(c=>/^第000[1-5]章/.test(c.title));assert.equal(chapters.length,5);assert(chapters.every(c=>c.audio));
+  const s=await h.state(),b=s.books.find(b=>b.name==='bajiao-novel'),chapters=b.chapters.filter(c=>/^第000[1-5]章/.test(c.title));assert.equal(chapters.length,5);assert(chapters.every(c=>c.audio));
   await h.tap('[data-act="go:shelf"]');await h.tap('[data-act="book:'+b.id+'"]');await h.tap('[data-act="read:'+chapters[0].id+'"]');await h.tap('[data-act="playchapter"]');await playing(chapters[0]);
   assert(await h.read(()=>document.querySelector('[data-act="prevchapter"]').disabled));
   for(let i=1;i<5;i++){await h.tap('[data-act="nextchapter"]');const p=await playing(chapters[i]);const a=p.position;let advanced;for(let n=0;n<32;n++){await sleep(250);advanced=await status();if(advanced.position>a+400)break;}assert(advanced.position>a+400);check('UI next plays chapter '+(i+1),{audio:chapters[i].audio,duration:p.duration});}

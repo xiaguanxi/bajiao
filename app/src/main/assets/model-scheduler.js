@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.VocastModelScheduler=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoModelScheduler=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
 class Scheduler{
  constructor(limit,modelLimit){this.limit=limit;this.modelLimit=modelLimit;this.active=0;this.models=new Map();this.queue=[];this.sequence=0;}

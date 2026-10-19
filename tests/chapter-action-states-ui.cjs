@@ -19,7 +19,7 @@ const V=require('../app/src/main/assets/core.js');
  try{
   const page=await browser.newPage({viewport:{width:393,height:873},colorScheme:'light'});page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
   await page.exposeFunction('nativeCall',async(id,action,payload)=>{const p=JSON.parse(payload||'{}');let result=true;if(action==='load')result={state,llmConfigured:true,ttsConfigured:true};else if(action==='networkState')result='wifi';else if(action==='playbackState')result={playing:false,position:0};else if(action==='play')plays.push(p.id);await page.evaluate(v=>window.nativeResult(v),{id,result});});
-  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);await page.evaluate(tasks=>{const e=window.vocastEngine;e.kick=async()=>{};e.state.tasks=tasks;window.renderApp();},tasks);
+  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);await page.evaluate(tasks=>{const e=window.bajiaoEngine;e.kick=async()=>{};e.state.tasks=tasks;window.renderApp();},tasks);
   const act=a=>page.locator('button[data-act="'+a+'"]').first().click(),row=(i,root='#chapter-list')=>page.locator(root+' [data-chapter-id="'+chapter(i).id+'"]'),shot=name=>page.screenshot({path:path.join(out,name+'.png')});
   const verify=async(root)=>{
    assert.equal(await page.locator(root+' .vc-tag, '+root+' .vc-status-badge, '+root+' .vc-chapter-confirm, '+root+' .vc-current-marker').count(),0,'chapter rows have no extra tags');
@@ -28,7 +28,7 @@ const V=require('../app/src/main/assets/core.js');
     assert.equal(await control.locator(i===0||i===1||i===11?'.vc-chapter-play':'.vc-chapter-produce').count(),1);
     assert.equal(await control.locator(i===0||i===1||i===11?'svg.lucide-play':'svg.lucide-wand-sparkles').count(),1,'the selected magic wand renders for production actions');
     const metadata=(await r.locator('.vc-chapter-meta').textContent()).trim();assert.equal(metadata,[0,1,11].includes(i)?{0:'05:40',1:'05:23',11:'61:01'}[i]:'15 字','audio duration replaces the character count only for available audio');
-    const caption=[3,6,11].includes(i)?'制作中':[1,4].includes(i)?'已听完':'';assert.equal((await control.locator('.vc-chapter-caption').allTextContents()).join(''),caption,'chapter '+i+' '+JSON.stringify(await page.evaluate(()=>window.vocastEngine.state.tasks.map(t=>({id:t.id,status:t.status})))));
+    const caption=[3,6,11].includes(i)?'制作中':[1,4].includes(i)?'已听完':'';assert.equal((await control.locator('.vc-chapter-caption').allTextContents()).join(''),caption,'chapter '+i+' '+JSON.stringify(await page.evaluate(()=>window.bajiaoEngine.state.tasks.map(t=>({id:t.id,status:t.status})))));
    }
   };
   const verifyLayout=async root=>{
@@ -55,11 +55,11 @@ const V=require('../app/src/main/assets/core.js');
   }
   await act('multiselect');assert.equal(await page.locator('#chapter-list .vc-tag, #chapter-list .vc-chapter-action').count(),0);await act('multiselect');
   // A released chapter regenerates once and replaces its caption with "制作中".
-  await row(4).locator('.vc-chapter-produce').click();await row(4).getByText('制作中',{exact:true}).waitFor();assert.equal(await page.evaluate(id=>window.vocastEngine.state.tasks.filter(t=>t.chapterId===id).length,chapter(4).id),1);
-  await row(4).locator('.vc-chapter-produce').click();await page.locator('.vc-modal-overlay').waitFor();assert.equal(await page.evaluate(id=>window.vocastEngine.state.tasks.filter(t=>t.chapterId===id).length,chapter(4).id),1);await act('closeunmade');
+  await row(4).locator('.vc-chapter-produce').click();await row(4).getByText('制作中',{exact:true}).waitFor();assert.equal(await page.evaluate(id=>window.bajiaoEngine.state.tasks.filter(t=>t.chapterId===id).length,chapter(4).id),1);
+  await row(4).locator('.vc-chapter-produce').click();await page.locator('.vc-modal-overlay').waitFor();assert.equal(await page.evaluate(id=>window.bajiaoEngine.state.tasks.filter(t=>t.chapterId===id).length,chapter(4).id),1);await act('closeunmade');
   await row(0).locator('.vc-chapter-play').click();await page.locator('main[data-page="listen"]').waitFor();assert(plays.includes('ready-0.wav'));await act('playercatalog');
   // Restore the released fixture to inspect the same state matrix in the player sheet.
-  await page.evaluate(id=>{const e=window.vocastEngine;e.state.tasks=e.state.tasks.filter(t=>t.chapterId!==id);window.renderApp();},chapter(4).id);await verify('#player-catalog-scroll');await verifyLayout('#player-catalog-scroll');await shot('player-catalog');
+  await page.evaluate(id=>{const e=window.bajiaoEngine;e.state.tasks=e.state.tasks.filter(t=>t.chapterId!==id);window.renderApp();},chapter(4).id);await verify('#player-catalog-scroll');await verifyLayout('#player-catalog-scroll');await shot('player-catalog');
   await act('closeplayercatalog');await act('back');await page.locator('main[data-page="detail"]').waitFor();await page.locator('.vc-catalog-handle').click();await page.waitForTimeout(300);await page.emulateMedia({colorScheme:'dark'});await page.mouse.move(0,0);await shot('detail-dark');
   await verifyLayout('#chapter-list');assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({passed:true,checks:['ready / listened / unmade / running / released / waiting / queued / annotated / failed / paused / skipped / stale audio','exactly one action without background','audio duration replaces character count','metadata and status share a baseline, including long titles','compact single-line rows','320/393px touch size and alignment','management has no tags','released chapter regenerates without duplicates','play starts existing audio','player catalog matches detail','dark mode'],errors},null,2));console.log('PASS chapter action state matrix, playback, regeneration, player catalog and compact layout');
  }finally{await browser.close();server.close();}

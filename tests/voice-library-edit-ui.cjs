@@ -12,7 +12,7 @@ const V=require('../app/src/main/assets/core.js');
  try{
   const page=await browser.newPage({viewport:{width:393,height:873},colorScheme:'light'});page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
   await page.exposeFunction('nativeCall',async(id,action)=>{const result=action==='load'?{state,llmConfigured:true,ttsConfigured:true}:action==='playbackState'?{playing:false,position:0}:true;await page.evaluate(v=>window.nativeResult(v),{id,result});});
-  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const act=a=>page.locator('button[data-act="'+a+'"]').first().click(),row=i=>page.locator('[data-act="voicebatchtoggle:voice-'+i+'"]'),shot=name=>page.screenshot({path:path.join(out,name+'.png')});
   const footer=page.locator('.voice-batch-footer'),remove=page.locator('[data-act="voicebatchdelete"]');
   await act('go:voices');await act('voicebatchedit');assert.equal(await row(0).count(),1);assert.equal(await remove.isDisabled(),true);await shot('unselected');
@@ -23,14 +23,14 @@ const V=require('../app/src/main/assets/core.js');
   await row(2).focus();await page.keyboard.press('Space');assert.equal(await row(2).getAttribute('aria-pressed'),'true');assert.equal(await row(2).evaluate(el=>el===document.activeElement),true,'keyboard focus survives selection render');
   await act('voicebatchall');assert.equal(await page.locator('.voice-batch-row[aria-pressed="true"]').count(),45);await separate();await shot('all-selected');await page.setViewportSize({width:320,height:700});await separate();await shot('adjacent-narrow');await page.setViewportSize({width:393,height:873});await page.emulateMedia({colorScheme:'dark'});await separate();await shot('adjacent-dark');await page.emulateMedia({colorScheme:'light'});await act('voicebatchall');assert.equal(await remove.isDisabled(),true);
   await row(44).scrollIntoViewIfNeeded();await row(44).click();assert(await footer.isVisible());assert.equal(await remove.isEnabled(),true);assert(await row(44).evaluate(el=>el.getBoundingClientRect().bottom<=document.querySelector('.voice-batch-footer').getBoundingClientRect().top),'last voice stays above the fixed actions');
-  const scroll=await page.evaluate(()=>scrollY);await act('voicebatchdelete');await page.getByRole('dialog').waitFor();await act('uxcancel');assert.equal(await page.evaluate(()=>window.vocastEngine.state.voices.length),45);assert.equal(await row(44).getAttribute('aria-pressed'),'true');assert(Math.abs((await page.evaluate(()=>scrollY))-scroll)<2,'cancel preserves selection and list position');
-  await act('voicebatchdelete');await act('uxconfirm');await page.waitForFunction(()=>window.vocastEngine.state.voices.length===44);assert.equal(await footer.count(),0);assert.equal(await page.locator('.voice-batch-row').count(),0);
+  const scroll=await page.evaluate(()=>scrollY);await act('voicebatchdelete');await page.getByRole('dialog').waitFor();await act('uxcancel');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.voices.length),45);assert.equal(await row(44).getAttribute('aria-pressed'),'true');assert(Math.abs((await page.evaluate(()=>scrollY))-scroll)<2,'cancel preserves selection and list position');
+  await act('voicebatchdelete');await act('uxconfirm');await page.waitForFunction(()=>window.bajiaoEngine.state.voices.length===44);assert.equal(await footer.count(),0);assert.equal(await page.locator('.voice-batch-row').count(),0);
   await page.evaluate(()=>scrollTo(0,0));await act('voicebatchedit');await row(0).click();
   for(const width of [320,393,768]){
    await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    const f=await footer.boundingBox(),n=await page.locator('.vc-nav').boundingBox();assert(f.y+f.height<=n.y+1,'actions sit above navigation');assert(f.x>=0&&f.x+f.width<=width+1);
   }
-  await page.setViewportSize({width:320,height:700});await page.evaluate(()=>{window.vocastEngine.state.voices[0].name='温柔清亮的年轻女性声音，适合长篇叙事与自然对白';window.renderApp();});await shot('narrow-long-name');assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.setViewportSize({width:320,height:700});await page.evaluate(()=>{window.bajiaoEngine.state.voices[0].name='温柔清亮的年轻女性声音，适合长篇叙事与自然对白';window.renderApp();});await shot('narrow-long-name');assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.setViewportSize({width:393,height:873});await page.emulateMedia({colorScheme:'dark'});await shot('dark');await page.emulateMedia({colorScheme:'light'});
   // Fixed actions also reserve space for the existing mini player.
   await page.evaluate(()=>{const mini=document.createElement('div');mini.className='vc-mini-player';mini.textContent='播放中';document.querySelector('#screen-content').append(mini);window.dispatchEvent(new Event('resize'));});await page.waitForTimeout(150);

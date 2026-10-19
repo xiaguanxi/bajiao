@@ -1,4 +1,4 @@
-# Vocast Android
+# 芭蕉 Android
 
 将小说分句标注为旁白和角色，匹配个人音色库，使用 MiMo 生成多角色有声书。首期可安装开发版，Android 8.0+。
 
@@ -22,7 +22,17 @@
 ./gradlew.bat assembleDebug lintDebug
 ```
 
-APK 在 `app/build/outputs/apk/debug/app-debug.apk`。本工作区已准备本地工具链，也可以执行 `./scripts/build.ps1`，输出到 `artifacts/Vocast-debug.apk`。APK 不包含测试密钥，安装后在「我的 → 语言模型 / 语音引擎」填写。
+APK 在 `app/build/outputs/apk/debug/app-debug.apk`。本工作区已准备本地工具链，也可以执行 `./scripts/build.ps1`，输出到 `artifacts/Bajiao-debug.apk`。APK 不包含测试密钥，安装后在「我的 → 语言模型 / 语音引擎」填写。
+
+## 2026-10-19 更名芭蕉与新图标（0.8.15）
+
+- 项目显示名称改为「芭蕉」，英文代码标识统一使用 `Bajiao` / `bajiao`；书架、封面、启动页面、系统播放信息、后台通知、导出文件名和构建产物同步更新。
+- 使用第一轮第一个「叶页成书」图标。原始选定图片保存在 `assets/branding/bajiao-master.png`，启动器增加圆形和其他自适应蒙版所需的安全留白。
+- 安装 ID、原生组件包名和密钥别名保留，以支持覆盖安装与已有书库、音频和凭据读取；历史安装包与验收归档保持原文件名。现有本地模拟器、系统计划任务名称也继续兼容。
+
+交付：`artifacts/Bajiao-0.8.15-rebrand.apk`（版本号 85），构建脚本默认输出 `artifacts/Bajiao-debug.apk`。SHA-256：`617ab4a33172582c03b57492c5b3b62c8d46f5befbc6a7ee9ca4880c04e2b91a`。
+
+验证：构建、Lint、签名和包内资源一致性检查通过，签名证书与 0.8.14 相同；352 项可用 `.test.cjs` 回归通过，继续排除下文 0.8.4 已记录的三个过期界面脚本。使用旧版代码生成的书库快照验证书籍、音频引用、音色、设置保持一致，并检查 320 / 393 / 768 宽度显示。未连接 Android 设备，未执行真机覆盖安装；本次验证未调用收费模型。证据在 `artifacts/bajiao-rebrand/`。
 
 ## 2026-10-19 播放断点、旁白指导与角色资料（0.8.14）
 
@@ -233,7 +243,7 @@ Android 11 / API 30 模拟器通过真实手指触摸、按键和系统文件选
 
 交付文件：`artifacts/Vocast-0.1.2-tested.apk`（debug 签名）、`artifacts/Vocast-first-5-chapters.zip`、`artifacts/device-e2e/report.html` / `report.json`。APK 与模拟器已安装包 SHA-256 一致，签名验证通过，未包含测试 API 密钥。已测范围无遗留缺陷；未进行其他 Android 版本、真机或完整 15 分钟定时到期测试。
 
-复测工具：先运行 `scripts/start-emulator.ps1` 和 `scripts/prepare-device-touch.ps1`，在应用中导入同一本测试小说（测试书名 `vocast-novel`）并保存 M3 / MiMo 配置。`tests/device-five-chapters.cjs start` 通过实际点击选择第 0001–0005 章；`watch` 记录制作进度，`continue` 续做已暂停/失败任务。制作完成后依次执行：
+复测工具：先运行 `scripts/start-emulator.ps1` 和 `scripts/prepare-device-touch.ps1`，在应用中导入同一本测试小说（测试书名 `bajiao-novel`）并保存 M3 / MiMo 配置。`tests/device-five-chapters.cjs start` 通过实际点击选择第 0001–0005 章；`watch` 记录制作进度，`continue` 续做已暂停/失败任务。制作完成后依次执行：
 
 ```powershell
 node tests/device-playback.cjs
@@ -282,4 +292,4 @@ node tests/device-finalize.cjs
 
 单句朗读设置显示下一次实际使用的指导，历史请求单独展示。“使用标注指导”在下次合成时清除自定义覆盖；手动换说话人清除原角色的自动导演信息，保留用户自定义提示词。
 
-针对性检查：`node --test tests/director.test.cjs tests/segment-prompts.test.cjs tests/model-prompts.test.cjs`、`node tests/segment-prompts-ui.cjs`、`node tests/annotation-recovery-ui.cjs`。真实接口对照：`./scripts/with-env.ps1 -Script tests/director-live.cjs`，使用同一参考音频生成挽留、压抑愤怒、反讽、惊恐、释然和悬念旁白六组对照，在独立产物目录保存原文、标注、实际请求和可试听页面。`VOCAST_DIRECTOR_OUT` 可指定恢复目录；`VOCAST_DIRECTOR_REFERENCE` 可指定 WAV 参考文件。默认参考文件为 `artifacts/probe-mimo.wav`。对照生成成功不等同于听感通过，主观评价需实际试听。
+针对性检查：`node --test tests/director.test.cjs tests/segment-prompts.test.cjs tests/model-prompts.test.cjs`、`node tests/segment-prompts-ui.cjs`、`node tests/annotation-recovery-ui.cjs`。真实接口对照：`./scripts/with-env.ps1 -Script tests/director-live.cjs`，使用同一参考音频生成挽留、压抑愤怒、反讽、惊恐、释然和悬念旁白六组对照，在独立产物目录保存原文、标注、实际请求和可试听页面。`芭蕉_DIRECTOR_OUT` 可指定恢复目录；`芭蕉_DIRECTOR_REFERENCE` 可指定 WAV 参考文件。默认参考文件为 `artifacts/probe-mimo.wav`。对照生成成功不等同于听感通过，主观评价需实际试听。

@@ -103,7 +103,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await shot('15', '原文模式');
     // 修正说话人弹窗
     await page.evaluate(async () => {
-      const e = window.vocastEngine, c = e.state.books[0].chapters[0];
+      const e = window.bajiaoEngine, c = e.state.books[0].chapters[0];
       c.segments = [
         { id: 0, text: '“你终于来了。”', speaker: '沈砚', emotion: '低沉温润', confidence: 0.9 },
         { id: 1, text: '“这封信是谁寄来的？”', speaker: '未知角色', emotion: '清亮', confidence: 0.2 },
@@ -127,7 +127,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     // 实现：saveseg 后直接回 annotated（探针已验证）
     // 听书页：先给音频状态，从标注页进听书
     await page.evaluate(async () => {
-      const e = window.vocastEngine, c = e.state.books[0].chapters[0];
+      const e = window.bajiaoEngine, c = e.state.books[0].chapters[0];
       c.audio = { durationMs: 60000, parts: [] }; e.touch(c); await e.persist();
     });
     await click('go:annotated');
@@ -149,7 +149,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await scrollBottom('06b', '角色与音色');
     // 为角色选音色（roles 页点 chooserole；先种一个音色保证列表非空）
     await page.evaluate(async () => {
-      const e = window.vocastEngine;
+      const e = window.bajiaoEngine;
       if (!e.state.voices.length) {
         e.state.voices.push({ id: 'v-demo', name: '演示女声', description: '温柔清亮的年轻女声', sample: null, enabled: true, format: 'wav', source: 'import', tested: false });
         await e.persist();
@@ -174,7 +174,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await scrollBottom('09b', '全局音色策略');
     // 任务页
     await page.evaluate(async () => {
-      const e = window.vocastEngine, b = e.state.books[0];
+      const e = window.bajiaoEngine, b = e.state.books[0];
       e.state.tasks = [
         { id: 't-run', bookId: b.id, chapterId: b.chapters[0].id, status: 'running', progress: 0.4, label: '制作中示例' },
         { id: 't-wait', bookId: b.id, chapterId: b.chapters[1].id, status: 'waiting', label: '待确认示例' },

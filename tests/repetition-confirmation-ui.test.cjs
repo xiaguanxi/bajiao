@@ -19,14 +19,14 @@ const V=require('../app/src/main/assets/core.js'),{wav}=require('./native-speech
    else if(action==='mergeAudio')result={id:'merged.wav',duration:6.6};
    await page.evaluate(v=>window.nativeResult(v),{id,result});
   });
-  await page.addInitScript(()=>window.Native={call:(...args)=>window.nativeCall(...args)});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
-  await page.evaluate(()=>window.vocastEngine.enqueue('b',['c']));assert.equal(calls.filter(c=>c.action==='request').length,2);
+  await page.addInitScript(()=>window.Native={call:(...args)=>window.nativeCall(...args)});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
+  await page.evaluate(()=>window.bajiaoEngine.enqueue('b',['c']));assert.equal(calls.filter(c=>c.action==='request').length,2);
   const click=act=>page.locator('[data-act="'+act+'"]').first().click();await click('book:b');await click('confirm:c');await click('opensegment:0');
   const button=page.locator('.vc-segment-sheet [data-act="confirmrepetition:0"]');await button.waitFor();assert((await button.innerText()).includes('确认保留'));
-  const rawId=await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].segments[0].speechDraft.pendingRaw.file.id);await page.locator('.vc-segment-sheet [data-act="play:'+rawId+'"]').click();assert.equal(calls.filter(c=>c.action==='play').at(-1).payload.id,rawId);
+  const rawId=await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].segments[0].speechDraft.pendingRaw.file.id);await page.locator('.vc-segment-sheet [data-act="play:'+rawId+'"]').click();assert.equal(calls.filter(c=>c.action==='play').at(-1).payload.id,rawId);
   fs.mkdirSync('artifacts/auto-repeat',{recursive:true});await page.screenshot({path:'artifacts/auto-repeat/confirmation.png'});
-  await button.click();await page.waitForFunction(()=>window.vocastEngine.state.books[0].chapters[0].segments[0].repetitionConfirmed);
-  assert.equal(calls.filter(c=>c.action==='request').length,2);assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].audio),'merged.wav');assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].segments[0].audio),rawId);assert.deepEqual(errors,[]);
+  await button.click();await page.waitForFunction(()=>window.bajiaoEngine.state.books[0].chapters[0].segments[0].repetitionConfirmed);
+  assert.equal(calls.filter(c=>c.action==='request').length,2);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].audio),'merged.wav');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].segments[0].audio),rawId);assert.deepEqual(errors,[]);
   await page.screenshot({path:'artifacts/auto-repeat/confirmed.png'});console.log('PASS confirmation UI: two attempts, original audition, explicit acceptance, no further request, merged chapter');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

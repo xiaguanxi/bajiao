@@ -2,7 +2,7 @@ package com.vocast.app;
 import org.json.*;import java.io.*;import java.nio.file.*;
 public class SnapshotStoreTest {
  public static void main(String[] args)throws Exception{
- File dir=Files.createTempDirectory("vocast-snapshots-").toFile();SnapshotStore store=new SnapshotStore(dir);
+ File dir=Files.createTempDirectory("bajiao-snapshots-").toFile();SnapshotStore store=new SnapshotStore(dir);
  String header="{\"books\":[{\"id\":\"b\",\"chapters\":[{\"id\":\"a\"},{\"id\":\"b\"}]}]}";
  store.save(header,"[{\"id\":\"a\",\"text\":\"第一章\",\"segments\":[]},{\"id\":\"b\",\"text\":\"第二章\",\"segments\":[]}]");
  store.save(header,"[{\"id\":\"a\",\"text\":\"修改第一章\",\"segments\":[]}]");

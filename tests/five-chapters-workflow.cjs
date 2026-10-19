@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const Vocast = require(path.resolve('app/src/main/assets/core.js'));
+const Bajiao = require(path.resolve('app/src/main/assets/core.js'));
 
 (async () => {
-  console.log('=== 开始 Vocast 前 5 章全流程自动化测试 ===');
+  console.log('=== 开始 芭蕉 前 5 章全流程自动化测试 ===');
 
   // 1. 构造包含角色对白与典型广告的前 5 章文本
   const bookText = `
@@ -175,12 +175,12 @@ PS：求大家的推荐票和月票支持！新书起航，请大家多多收藏
   };
 
   // 3. 初始化引擎，配置使用 MiniMax-M3 与手选角色模式（mode: 'manual'）
-  const state = Vocast.makeState();
+  const state = Bajiao.makeState();
   state.settings.llmModel = 'MiniMax-M3';
   state.settings.mode = 'manual'; // 未勾选“自动选角色配音”，严格手动确认模式！
   state.settings.usePresets = true;
 
-  const engine = new Vocast.Engine(mockDevice, state);
+  const engine = new Bajiao.Engine(mockDevice, state);
 
   // 4. 导入包含 5 章的书籍
   const book = await engine.addBook('雾山传奇', bookText);

@@ -22,7 +22,7 @@ const bytes=Buffer.alloc(44+16000);bytes.write('RIFF');bytes.writeUInt32LE(bytes
    else if(action==='readAudio'||action==='mergeAudio'||action==='deleteAudio')throw Error('Unexpected destructive or quality operation: '+action);
    await page.evaluate(v=>window.nativeResult(v),{id,result});
   });
-  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const click=act=>page.locator('button[data-act="'+act+'"]').last().click();
   await click('book:b');await click('read:legacy');await click('playchapter');await click('playchapter');
   assert.deepEqual(calls.filter(c=>['request','saveAudio','readAudio','processSpeechAudio','mergeAudio','deleteAudio'].includes(c.action)),[]);assert.equal(legacy.audio,'old-chapter.wav');assert.equal(legacy.segments[0].audio,'old-line.wav');
@@ -31,12 +31,12 @@ const bytes=Buffer.alloc(44+16000);bytes.write('RIFF');bytes.writeUInt32LE(bytes
   const baseline=calls.filter(c=>c.action==='request').length;
   await click('closesegment');await click('back');await click('back');await click('go:settings');await click('go:quality');
   assert.equal(await page.locator('[data-act="qualitychoice:auto"]').getAttribute('aria-checked'),'true');await click('qualitychoice:manual');await click('saveproductionsettings');
-  assert.equal(calls.filter(c=>c.action==='request').length,baseline);const settings=await page.evaluate(()=>window.vocastEngine.state.settings);assert.equal(settings.qualityAutoRetry,false);assert.equal(settings.qualityConfirmRetry,true);
+  assert.equal(calls.filter(c=>c.action==='request').length,baseline);const settings=await page.evaluate(()=>window.bajiaoEngine.state.settings);assert.equal(settings.qualityAutoRetry,false);assert.equal(settings.qualityConfirmRetry,true);
   await click('go:shelf');await click('book:b');await click('confirm:pending');
   await click('go:listen');assert.equal(await page.locator('[data-act="streamseek:1"]').count(),0,'unchecked sentence excluded from streaming controls');
-  await click('go:annotated');await click('opensegment:1');await click('regenerateprompt:1');await page.waitForFunction(()=>window.vocastEngine.state.books[0].chapters[1].segments[1].audio==='new-line.wav');
+  await click('go:annotated');await click('opensegment:1');await click('regenerateprompt:1');await page.waitForFunction(()=>window.bajiaoEngine.state.books[0].chapters[1].segments[1].audio==='new-line.wav');
   assert.equal(calls.filter(c=>c.action==='request').length,baseline+1);assert.equal(calls.filter(c=>c.action==='request').at(-1).payload.body.messages.find(m=>m.role==='assistant').content,'乙。');
-  const refs=await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[1].segments.map(s=>s.audio));assert.deepEqual(refs,['passed.wav','new-line.wav']);assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0].chapters[0].audio),'old-chapter.wav');
+  const refs=await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[1].segments.map(s=>s.audio));assert.deepEqual(refs,['passed.wav','new-line.wav']);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].audio),'old-chapter.wav');
   await click('closesegment');await click('back');await click('back');await click('go:voices');await click('newdesign');assert.equal(await page.locator('#designText').inputValue(),'');await page.locator('#designDescription').fill('纪录片旁白，not angry，略带气声');await click('designsample');await page.locator('[data-act="acceptsample"]').waitFor();assert.equal(await page.locator('#designText').inputValue(),'');assert((await page.locator('main').innerText()).includes('适配试听文本。'));
   await click('designsample');assert(calls.filter(c=>c.action==='request'&&c.payload.body.model==='mimo-v2.5-tts-voicedesign').every(c=>c.payload.body.audio.optimize_text_preview===true));
   const custom='  保持用户原文。  ';await page.locator('#designText').fill(custom);await click('designsample');const request=calls.filter(c=>c.action==='request').at(-1).payload.body;assert.equal(request.audio.optimize_text_preview,false);assert.equal(request.messages[1].content,custom);

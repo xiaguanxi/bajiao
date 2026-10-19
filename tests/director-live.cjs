@@ -14,7 +14,7 @@ const cases=[
 const oldDirection=(emotion,description)=>'以自然连贯的有声书方式忠实朗读原文，按语义与标点自然停顿，保留自然的气息和尾音，不增删台词。参考样本确定声线；单句语气可随剧情适度变化。\n稳定声音基准（参考样本优先）：'+description+'\n本句演绎指令（保留否定和复合情绪）：'+emotion;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 (async()=>{
- const out=path.resolve(process.env.VOCAST_DIRECTOR_OUT||'artifacts/director-live-'+Date.now());
+ const out=path.resolve(process.env.BAJIAO_DIRECTOR_OUT||'artifacts/director-live-'+Date.now());
  fs.mkdirSync(out,{recursive:true});
  const reportPath=path.join(out,'report.json'),report=fs.existsSync(reportPath)?JSON.parse(fs.readFileSync(reportPath)): {started:new Date().toISOString(),pairs:[],requests:[],listeningAssessment:'待人工对照试听；链路成功不代表听感通过。',scope:'Node production engine and real APIs; Android native silence processing is covered separately by local tests.'};
  const io=makeIO(out),request=io.request;let llmCount=0,ttsCount=0;
@@ -23,8 +23,8 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
   const record={provider,model:body.model,messages:body.messages,at:new Date().toISOString()};report.requests.push(record);save();
   try{const response=await request(provider,body,settings);Object.assign(record,io.calls.at(-1));save();return response;}catch(e){record.error=e.message;save();throw e;}
  };
- const e=new Engine(io);Object.assign(e.state.settings,{llmBase:process.env.VOCAST_LLM_BASE||'https://api.minimax.cn/v1',llmModel:process.env.VOCAST_LLM_MODEL||'MiniMax-M3',retries:0,qualityAutoRetry:false,autoProduceUpcoming:false});
- const source=path.resolve(process.env.VOCAST_DIRECTOR_REFERENCE||'artifacts/probe-mimo.wav'),reference=fs.readFileSync(source);waveInfo(reference);
+ const e=new Engine(io);Object.assign(e.state.settings,{llmBase:process.env.BAJIAO_LLM_BASE||'https://api.minimax.cn/v1',llmModel:process.env.BAJIAO_LLM_MODEL||'MiniMax-M3',retries:0,qualityAutoRetry:false,autoProduceUpcoming:false});
+ const source=path.resolve(process.env.BAJIAO_DIRECTOR_REFERENCE||'artifacts/probe-mimo.wav'),reference=fs.readFileSync(source);waveInfo(reference);
  const referenceHash=crypto.createHash('sha256').update(reference).digest('hex');if(report.referenceHash&&report.referenceHash!==referenceHash)throw Error('Reference changed during resumed evaluation');
  fs.copyFileSync(source,path.join(out,'reference.wav'));report.referenceHash=referenceHash;
  const voice={id:'evaluation-reference',sample:'reference.wav',format:'wav',description:'成年男声，音色温润，普通话，吐字清楚。',enabled:true};e.state.voices.push(voice);

@@ -56,7 +56,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await click('samplebook');
     const bid = state.books[0].id, cid = state.books[0].chapters[0].id;
     await page.evaluate(async () => {
-      const e = window.vocastEngine, b = e.state.books[0], c = b.chapters[0];
+      const e = window.bajiaoEngine, b = e.state.books[0], c = b.chapters[0];
       e.state.settings.autoProduceUpcoming = false;
       b.name = '雾山来信：这是一本用于检查超长书名的有声小说 LongBookTitleWithoutSpaces';
       b.characters.push({ name: '欧阳慕容雪落长角色名', description: '温柔清亮的年轻女声', voice: null });

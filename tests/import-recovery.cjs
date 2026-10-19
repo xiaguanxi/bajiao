@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const Flow=require('../app/src/main/assets/import-flow.js');
-const Vocast=require('../app/src/main/assets/core.js');
+const Bajiao=require('../app/src/main/assets/core.js');
 
 (async()=>{
   const root=path.resolve('app/src/main/assets'),out=path.resolve('artifacts/import-recovery');fs.mkdirSync(out,{recursive:true});
@@ -35,13 +35,13 @@ const Vocast=require('../app/src/main/assets/core.js');
       await page.evaluate(value=>window.nativeResult(value),{id,result,error});
     });
     await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});
-    const fresh=async()=>{await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);};
+    const fresh=async()=>{await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);};
     const click=act=>page.locator('[data-act="'+act+'"]').first().click();
-    const count=()=>page.evaluate(()=>window.vocastEngine.state.books.length);
+    const count=()=>page.evaluate(()=>window.bajiaoEngine.state.books.length);
     const heading=()=>page.locator('.vc-import-heading h1').innerText();
 
     // Invalid saved rules used to throw before importDraft was assigned, leaving a blank screen.
-    await fresh();await page.evaluate(()=>{window.vocastEngine.state.settings.splitRule='missing-rule';});
+    await fresh();await page.evaluate(()=>{window.bajiaoEngine.state.settings.splitRule='missing-rule';});
     await click('importbook');assert.equal(await heading(),'需要识别章节标题');
     assert.match(await page.locator('[role=alert]').innerText(),/规则/);
     assert((await page.locator('main').innerText()).includes(pick.name));
@@ -67,7 +67,7 @@ const Vocast=require('../app/src/main/assets/core.js');
     await page.locator('.vc-import-manual summary').click();
     await page.locator('#splitCustom').fill('不存在的第*节');
     assert.equal(await page.locator('[data-act=confirmsplit]').isDisabled(),true);
-    await page.evaluate(async()=>{document.getElementById('splitCustom').setSelectionRange(2,2);await window.vocastEngine.persist();window.renderApp();});
+    await page.evaluate(async()=>{document.getElementById('splitCustom').setSelectionRange(2,2);await window.bajiaoEngine.persist();window.renderApp();});
     assert.equal(await page.locator('#splitCustom').inputValue(),'不存在的第*节');
     assert.deepEqual(await page.locator('#splitCustom').evaluate(el=>({focused:el===document.activeElement,caret:el.selectionStart})),{focused:true,caret:2});
     await click('resplit');assert.equal(await page.locator('[data-act=confirmsplit]').count(),0);
@@ -75,11 +75,11 @@ const Vocast=require('../app/src/main/assets/core.js');
     await page.locator('#splitCustom').fill('卷一-第*章');await click('resplit');
     await page.getByRole('heading',{name:'确认章节后导入',exact:true}).waitFor();
     await click('confirmsplit');assert.equal(await count(),1);
-    assert.equal(await page.evaluate(()=>window.vocastEngine.state.books[0]._rawText),source);
+    assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0]._rawText),source);
     await page.evaluate(()=>window.appBack());assert.equal(await page.locator('.vc-import-flow').count(),0);
     checks.push('改规则禁用旧预览，零匹配不能导入，修正规则后保留全文导入且返回无空页面');
 
-    await fresh();await page.evaluate(()=>{window.vocastEngine.state.settings.splitRule='custom';window.vocastEngine.state.settings.splitCustom='';});
+    await fresh();await page.evaluate(()=>{window.bajiaoEngine.state.settings.splitRule='custom';window.bajiaoEngine.state.settings.splitCustom='';});
     await click('importbook');assert.equal(await heading(),'需要识别章节标题');
     llmResponse={template:'无星号'};await click('splitprobe');
     await page.getByText('LLM 没有返回可用的标题模板。请重新识别，或手动选择规则。',{exact:true}).waitFor();
@@ -109,7 +109,7 @@ const Vocast=require('../app/src/main/assets/core.js');
     await page.evaluate(()=>window.appBack());assert.equal(await page.locator('.vc-import-flow').count(),0);
     checks.push('探测期间可放弃，迟到结果不会重新打开或导入');
 
-    llmConfigured=false;await fresh();await page.evaluate(()=>{window.vocastEngine.state.settings.splitRule='missing-rule';});
+    llmConfigured=false;await fresh();await page.evaluate(()=>{window.bajiaoEngine.state.settings.splitRule='missing-rule';});
     await click('importbook');assert.equal(await page.locator('[data-act=splitprobe]').isDisabled(),true);
     await click('importllm');await page.locator('#llmKey').fill('fake-test-key');await click('savellm');
     await page.getByRole('heading',{name:'需要识别章节标题',exact:true}).waitFor();
@@ -125,7 +125,7 @@ const Vocast=require('../app/src/main/assets/core.js');
     assert.equal(await page.locator('.vc-import-flow').count(),0);checks.push('读取错误直接显示处理页，文件选择取消保持原页面');
 
     pick={name:'自动识别失败.txt',text:'只有正文，没有任何章节标题。'};
-    await page.evaluate(()=>{window.vocastEngine.state.settings.splitRule='auto';});
+    await page.evaluate(()=>{window.bajiaoEngine.state.settings.splitRule='auto';});
     const requestCount=requests.length;await click('importbook');
     await page.getByRole('heading',{name:'需要识别章节标题',exact:true}).waitFor();
     assert.match(await page.locator('[role=alert]').innerText(),/没有找到/);
@@ -134,7 +134,7 @@ const Vocast=require('../app/src/main/assets/core.js');
     await click('cancelsplit');checks.push('自动切章零匹配直接进入处理页，等待用户选择后才调用 LLM');
 
     const forced=Flow.createDraft({name:'无标题.txt',text:'仅有正文。'},{splitRule:'chapter_cn'});
-    Flow.splitDraft(forced,Vocast.splitChapters);assert.equal(Flow.canImport(forced),false);
+    Flow.splitDraft(forced,Bajiao.splitChapters);assert.equal(Flow.canImport(forced),false);
     assert.equal(forced.result,null);checks.push('指定规则零匹配也不会把全文当作成功切章');
     assert.deepEqual(errors,[]);
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({passed:true,nativeBridge:'mock',externalApiCalls:0,checks,errors},null,2));

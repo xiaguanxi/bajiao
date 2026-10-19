@@ -89,7 +89,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 7. Test task -> chapter -> back navigation
     await page.evaluate(async()=>{
-      const e=window.vocastEngine;
+      const e=window.bajiaoEngine;
       const b=e.state.books[0];
       b.chapters[0].segments=[{id:0,text:'第一句。',speaker:'旁白',emotion:'自然',confidence:1,audio:null}];
       e.touch(b.chapters[0]);

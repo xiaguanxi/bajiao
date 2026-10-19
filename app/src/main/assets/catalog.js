@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.VocastCatalog=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoCatalog=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
 function progressChapter(book,lastPlayback,activePlayback){
  const exists=id=>book.chapters.some(c=>c.id===id);

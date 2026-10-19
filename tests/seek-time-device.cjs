@@ -5,13 +5,13 @@ const finger=(x,y)=>run(['shell','input','tap',String(x),String(y)]);
 (async()=>{
  const out='artifacts/seek-time/',before=JSON.parse(fs.readFileSync(out+'phone-before.json')),original=before.playback;
  const h=await connect(),report={before,checks:[]};
- run(['shell','uiautomator','dump','/sdcard/vocast-seek.xml']);
- const xml=run(['exec-out','cat','/sdcard/vocast-seek.xml']).toString(),web=xml.match(/<node[^>]*class="android.webkit.WebView"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);assert(web);
+ run(['shell','uiautomator','dump','/sdcard/bajiao-seek.xml']);
+ const xml=run(['exec-out','cat','/sdcard/bajiao-seek.xml']).toString(),web=xml.match(/<node[^>]*class="android.webkit.WebView"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);assert(web);
  const inset=Number(web[2]);
  const tap=async selector=>{const p=await h.page.evaluate(selector=>{const el=document.querySelector(selector);if(!el)return null;const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {x:x*devicePixelRatio,y:y*devicePixelRatio,hit:el.contains(document.elementFromPoint(x,y))};},selector);assert(p?.hit,'visible native touch target '+selector);finger(Math.round(p.x),Math.round(p.y+inset));await sleep(450);};
  const read=()=>h.read(async()=>{const p=await device.call('playbackState'),e=document.querySelector('#seek'),t=e?.closest('.vc-seek-track'),r=t?.getBoundingClientRect(),l=t?.querySelector('.vc-seek-times')?.getBoundingClientRect();return {playback:p,seek:e?{value:Number(e.value),max:Number(e.max),ratio:parseFloat(getComputedStyle(t).getPropertyValue('--seek-position'))/100,width:r.width,centre:l.x+l.width/2-r.x,half:l.width/2,left:l.left-r.left,right:l.right-r.right,text:t.querySelector('.vc-seek-times').textContent}:null};});
  try{
-  const target=await h.page.evaluate(id=>{for(const b of vocastEngine.state.books){const c=b.chapters.find(c=>c.audio===id);if(c)return {bid:b.id,cid:c.id};}},original.id);assert(target);
+  const target=await h.page.evaluate(id=>{for(const b of bajiaoEngine.state.books){const c=b.chapters.find(c=>c.audio===id);if(c)return {bid:b.id,cid:c.id};}},original.id);assert(target);
   if(!await h.read(()=>!!document.querySelector('#seek'))){await tap('[data-act="book:'+target.bid+'"]');await tap('[data-act="read:'+target.cid+'"]');await tap('[data-act="go:listen"]');}
 
   for(const fraction of [.25,.5,.75,.95]){

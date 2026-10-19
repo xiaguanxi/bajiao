@@ -66,9 +66,9 @@ manifest = {
 items = ''.join('<li>' + escape(s) + '</li>' for s in browser['checks'] + android['checks'])
 pairs = ''.join(f'<details><summary>{escape(v["page"]) } · 像素一致</summary><div class="pair"><figure><img src="reference-{v["page"]}.png"><figcaption>最新原型</figcaption></figure><figure><img src="app-{v["page"]}.png"><figcaption>新版应用</figcaption></figure></div></details>' for v in visual)
 native = ''.join(f'<figure><img src="{p.name}"><figcaption>{escape(p.stem)}</figcaption></figure>' for p in sorted(out.glob('android-*.png')) if p.stem != 'android-failure')
-html = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vocast 0.8.1 UI 迁移验收</title><style>
+html = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>芭蕉 0.8.1 UI 迁移验收</title><style>
 body{{max-width:1080px;margin:40px auto;padding:0 24px;background:#f8f7f2;color:#243b31;font:16px/1.7 system-ui}}a{{color:#284f3d}}code{{overflow-wrap:anywhere}}details{{border-top:1px solid #cdd6cc;padding:12px 0}}summary{{cursor:pointer}}.pair,.gallery{{display:flex;flex-wrap:wrap;gap:20px}}figure{{margin:12px 0}}img{{display:block;max-width:100%;width:300px;border:1px solid #d4dcd2}}figcaption{{font-size:14px}}li{{margin-bottom:8px}}</style>
-<h1>Vocast 0.8.1 · 新版 UI</h1><p>2026-10-16 · 原型项目 {manifest['prototypeProject']}</p>
+<h1>芭蕉 0.8.1 · 新版 UI</h1><p>2026-10-16 · 原型项目 {manifest['prototypeProject']}</p>
 <p><a href="../{apk.name}">下载 APK</a> · <a href="delivery.json">交付清单</a> · <a href="final-regression.log">完整回归日志</a> · <a href="build.log">构建与 lint</a></p>
 <p>{manifest['regressionPassed']} 项回归通过；{manifest['browserChecks']} 组浏览器流程通过；{manifest['androidChecks']} 组 Android 触摸流程通过。17 个页面与弹层在相同数据、412×835 视口和禁用动画条件下逐像素一致，所有颜色通道的差值均为零。</p>
 <p>APK SHA-256：<code>{manifest['sha256']}</code></p>

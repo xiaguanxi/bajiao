@@ -9,5 +9,5 @@ if($LASTEXITCODE -ne 0){throw 'Touch helper compilation failed'}
 $env:JAVA_HOME=$taskJdk
 & '.tools/android-sdk/build-tools/35.0.0/d8.bat' --min-api 26 --lib '.tools/android-sdk/platforms/android-35/android.jar' --output $taskDex "$taskClasses/DeviceTouch.class"
 if($LASTEXITCODE -ne 0){throw 'Touch helper dex build failed'}
-& '.tools/android-sdk/platform-tools/adb.exe' push "$taskDex/classes.dex" '/data/local/tmp/vocast-touch.dex'
+& '.tools/android-sdk/platform-tools/adb.exe' push "$taskDex/classes.dex" '/data/local/tmp/bajiao-touch.dex'
 if($LASTEXITCODE -ne 0){throw 'Touch helper installation failed'}

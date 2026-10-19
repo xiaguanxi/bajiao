@@ -2,7 +2,7 @@
 (function(root){
 'use strict';
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
-root.VocastCatalogSheet=class {
+root.BajiaoCatalogSheet=class {
  constructor(main,state,{blocked=()=>false,onIdle=()=>{},onResize=()=>{},beforeScroll=()=>{}}={}){
   this.main=main;this.state=state;this.blocked=blocked;this.onIdle=onIdle;this.beforeScroll=beforeScroll;
   this.overview=main.querySelector('.vc-detail-overview');

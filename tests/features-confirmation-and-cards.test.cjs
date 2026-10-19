@@ -42,7 +42,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // --- 测试 1：导入示例书并创建音色和任务 ---
     await click('samplebook');
-    await page.evaluate(async()=>{vocastEngine.state.settings.mode='manual';await vocastEngine.persist();});
+    await page.evaluate(async()=>{bajiaoEngine.state.settings.mode='manual';await bajiaoEngine.persist();});
     await page.getByRole('heading',{name:'章节目录'}).waitFor();
     console.log('✓ 示例文本已导入');
 
@@ -74,7 +74,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 制作一个待确认的任务
     await page.evaluate(async()=>{
-      const e=window.vocastEngine;
+      const e=window.bajiaoEngine;
       const b=e.state.books[0];
       const c=b.chapters[0];
       // 制造待确认问题：未分配音色角色 + 不确定说话人
@@ -145,7 +145,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     await click('opensegment:2');await click('editseg:2');await click('dropdown:segSpeaker');await page.locator('[data-act="pickopt:segSpeaker|旁白"]').click();await click('saveseg');
     await page.locator('.vc-annotated-topbar').waitFor();
-    await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);await e.persist();});
+    await page.evaluate(async()=>{const e=window.bajiaoEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);await e.persist();});
     console.log('✓ 校对保存后保留待确认处理页');
 
     // 角色确认已搬去角色页：从标注页进角色页忽略
@@ -159,7 +159,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 验证角色已标记后台自动设计（不再前台卡住设计）
     const roleVoiceAssigned = await page.evaluate(()=>{
-      const b=window.vocastEngine.state.books[0];
+      const b=window.bajiaoEngine.state.books[0];
       const r=b.characters.find(c=>c.name==='神秘人');
       return !!r.voice || !!r.autoDesign;
     });
@@ -169,7 +169,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     // 忽略角色后已跳任务页"制作中"栏，验证后从任务卡片直接进标注页
     await page.getByRole('heading',{name:'制作任务'}).waitFor();
     assert.equal(await page.locator('[data-act="tasktab:active"].active').count(), 1, '忽略角色后应跳到任务页"制作中"栏');
-    await page.evaluate(async()=>{const e=window.vocastEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);const __t=e.state.tasks.find(x=>x.chapterId===c.id);if(__t){__t.status='waiting';__t.phase='等待确认';}await e.persist();});
+    await page.evaluate(async()=>{const e=window.bajiaoEngine,c=e.state.books[0].chapters[0];c.segments[2].speaker='未知角色';c.segments[2].confidence=.4;c.segments[2].audio=null;c.status='waiting';e.touch(c);const __t=e.state.tasks.find(x=>x.chapterId===c.id);if(__t){__t.status='waiting';__t.phase='等待确认';}await e.persist();});
     await click('tasktab:attention');
     await page.locator('.vc-panel.vc-card-clickable').first().locator('h3').click();
     await page.locator('.vc-annotated-topbar').waitFor();
@@ -183,7 +183,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 验证说话人已变更为旁白
     const speakerChangedToNarrator = await page.evaluate(()=>{
-      const c=window.vocastEngine.state.books[0].chapters[0];
+      const c=window.bajiaoEngine.state.books[0].chapters[0];
       const s=c.segments.find(x=>x.id===2);
       return s.speaker === '旁白' && s.confidence === 1;
     });
@@ -192,7 +192,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
 
     // 此时说话人问题已解决，角色已标记后台自动设计（不再前台卡住）
     const roleMarked = await page.evaluate(()=>{
-      const r=window.vocastEngine.state.books[0].characters.find(c=>c.name==='神秘人');
+      const r=window.bajiaoEngine.state.books[0].characters.find(c=>c.name==='神秘人');
       return !!r.voice || !!r.autoDesign;
     });
     assert.equal(roleMarked, true, '角色应已分配音色或标记后台自动设计');
@@ -207,7 +207,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     // --- 测试 4：测试一键「全部忽略并继续」按钮 ---
     // 再次制造问题
     await page.evaluate(async()=>{
-      const e=window.vocastEngine;
+      const e=window.bajiaoEngine;
       const b=e.state.books[0];
       const c=b.chapters[1];
       b.characters.push({name:'剑客',description:'冷峻刚毅的声音',aliases:[],voice:null});
@@ -226,7 +226,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/xiagu/.cache/c
     await page.locator('[data-act="ignoreall:'+state.books[0].chapters[1].id+'"]').first().click();
     await page.waitForTimeout(800);
     const batchFixed = await page.evaluate(()=>{
-      const b=window.vocastEngine.state.books[0];
+      const b=window.bajiaoEngine.state.books[0];
       const c=b.chapters[1];
       const r=b.characters.find(x=>x.name==='剑客');
       const roleOk = !!r?.voice || !!r?.autoDesign;

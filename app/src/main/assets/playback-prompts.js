@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.VocastPlaybackPrompts=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoPlaybackPrompts=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
 const TEXT={waiting:'您已听到当前制作进度，请稍候。新的内容制作完成后，会自动继续播放。',finished:'这本书已经播放完毕，感谢您的收听，愿您有个好心情。'};
 class Controller{

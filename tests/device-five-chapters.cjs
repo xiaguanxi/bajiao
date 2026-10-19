@@ -5,7 +5,7 @@ const reportFile = path.join(dir, 'five-chapters.json');
   const h = await connect();
   try {
     let s = await h.state();
-    const b = s.books.findLast(b => b.name === 'vocast-novel');
+    const b = s.books.findLast(b => b.name === 'bajiao-novel');
     assert(b, 'Import real novel through Android document picker first');
     assert.equal(s.settings.llmModel, 'MiniMax-M3');
     const chapters = b.chapters.filter(c => /^第000[1-5]章/.test(c.title));
@@ -36,7 +36,7 @@ const reportFile = path.join(dir, 'five-chapters.json');
         const live = await h.state();const r = live.books.find(x => x.id === b.id).characters.find(x => x.name === role);
         await h.tap('[data-act="play:' + r.candidate.sample + '"]');await sleep(1500);
         const media = run(['shell', 'dumpsys', 'media_session']).toString();
-        assert(media.includes('VocastMediaSession'));assert(/state=3/.test(media), 'Voice audition must be playing in native MediaSession');
+        assert(media.includes('BajiaoMediaSession'));assert(/state=3/.test(media), 'Voice audition must be playing in native MediaSession');
         fs.writeFileSync(path.join(dir, role + '-audition-media.txt'), media);
         await h.tap('[data-act="acceptrole:' + role + '"]');
         for(let i=0;i<20&&await h.read(()=>!document.querySelector('#busy').hidden);i++)await sleep(250);

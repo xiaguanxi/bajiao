@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {connect,run,sleep,nodes,nativeTap,finger,log,dir}=require('./device-harness.cjs');
 const {waveInfo}=require('./node-io.cjs');
 (async()=>{const h=await connect();try{
- const s=await h.state(),b=s.books.find(b=>b.name==='vocast-novel');assert(b);
+ const s=await h.state(),b=s.books.find(b=>b.name==='bajiao-novel');assert(b);
  const chapters=b.chapters.filter(c=>/^第000[1-5]章/.test(c.title));
  const file=path.join(dir,'exports.json'),report=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):[];
  fs.mkdirSync(path.join(dir,'audio'),{recursive:true});

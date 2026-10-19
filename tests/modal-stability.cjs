@@ -29,7 +29,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     });
     await page.addInitScript(() => { window.Native = { call: (...args) => window.nativeCall(...args) }; });
     await page.goto('http://127.0.0.1:' + server.address().port);
-    await page.waitForFunction(() => window.vocastEngine);
+    await page.waitForFunction(() => window.bajiaoEngine);
     const click = act => page.locator('[data-act="' + act + '"]').first().click();
     async function stable(label) {
       await page.waitForTimeout(300);
@@ -49,7 +49,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
       // Same callback chain used when background synthesis saves each sentence.
       await page.evaluate(async () => {
         for (let i = 0; i < 12; i++) {
-          await window.vocastEngine.persist();
+          await window.bajiaoEngine.persist();
           window.renderApp(); // also cover explicit UI refreshes on settings pages
           await new Promise(resolve => setTimeout(resolve, 35));
         }
@@ -77,9 +77,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     await click('cancelsplit');
     await page.evaluate(async () => {
       const text = Array.from({ length: 2001 }, (_, i) => '第' + (i + 1) + '章 测试\n正文。').join('\n');
-      await window.vocastEngine.addBook('章节弹窗测试', text);
+      await window.bajiaoEngine.addBook('章节弹窗测试', text);
     });
-    const bid = await page.evaluate(() => window.vocastEngine.state.books[0].id);
+    const bid = await page.evaluate(() => window.bajiaoEngine.state.books[0].id);
     await click('book:' + bid);
     await click('openepisodes');
     await stable('章节弹窗在后台连续保存时保留节点、焦点、滚动且不重播动画');

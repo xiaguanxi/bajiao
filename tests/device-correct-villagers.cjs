@@ -1,7 +1,7 @@
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const {connect,run,sleep,nativeTap,dir}=require('./device-harness.cjs');
 (async()=>{const h=await connect();try{
- let s=await h.state(),b=s.books.find(b=>b.name==='vocast-novel'),c=b.chapters.find(c=>/^第0003章/.test(c.title));
+ let s=await h.state(),b=s.books.find(b=>b.name==='bajiao-novel'),c=b.chapters.find(c=>/^第0003章/.test(c.title));
  assert(s.tasks.find(t=>t.chapterId===c.id).status==='waiting','Wait until chapter 3 requests review');
  await h.tap('[data-act="go:shelf"]');await h.tap('[data-act="book:'+b.id+'"]');await h.tap('[data-act="confirm:'+c.id+'"]');
  const corrections=[];

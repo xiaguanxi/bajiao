@@ -2,9 +2,9 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 function fixture(type='wifi'){
  const win=new EventTarget(),connection=new EventTarget();connection.type=type;
  const context=vm.createContext({module:{exports:{}},require:p=>require('../app/src/main/assets/'+p.replace('./','')),console,setTimeout,clearTimeout,Event,window:win,navigator:{onLine:true,connection}});
- vm.runInContext(fs.readFileSync('app/src/main/assets/core.js','utf8'),context);context.Vocast=context.module.exports;
+ vm.runInContext(fs.readFileSync('app/src/main/assets/core.js','utf8'),context);context.Bajiao=context.module.exports;
  vm.runInContext(fs.readFileSync('app/src/main/assets/production-network.js','utf8'),context);
- const V=context.Vocast,e=new V.Engine({saveState:async()=>{},mergeAudio:async()=>({id:'merged.wav',duration:2})});win.vocastEngine=e;
+ const V=context.Bajiao,e=new V.Engine({saveState:async()=>{},mergeAudio:async()=>({id:'merged.wav',duration:2})});win.bajiaoEngine=e;
  return {e,V,win,set(n){connection.type=n;connection.dispatchEvent(new Event('change'));},native(n){win.onNativeNetworkChange(n);}};
 }
 async function book(e){const b=await e.addBook('network','第1章 开始\n甲。乙。\n第2章 继续\n丙。');for(const c of b.chapters)c.segments=c.text.match(/[^。]+。/g).map((text,id)=>({id,text,speaker:'旁白',confidence:1}));e.state.settings.ttsParallel=1;return b;}

@@ -21,7 +21,7 @@ const V=require('../app/src/main/assets/core.js');
    else if(action==='request')throw Error('Unexpected paid request');
    await page.evaluate(v=>window.nativeResult(v),{id,result});
   });await page.addInitScript(()=>window.Native={call:(...args)=>window.nativeCall(...args)});
-  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.vocastEngine);
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   const click=act=>page.locator('[data-act="'+act+'"]').first().click();await click('book:'+b.id);await click('read:'+whole.id);await click('go:listen');await page.locator('#playBtn').click();
   const read=()=>page.evaluate(()=>{const input=document.querySelector('#seek'),track=input.closest('.vc-seek-track'),label=track.querySelector('.vc-seek-times'),r=track.getBoundingClientRect(),l=label.getBoundingClientRect();return {value:Number(input.value),max:Number(input.max),ratio:parseFloat(getComputedStyle(track).getPropertyValue('--seek-position'))/100,width:r.width,centre:l.x+l.width/2-r.x,half:l.width/2,left:l.left-r.left,right:l.right-r.right,time:document.querySelector('#playtime').textContent,total:document.querySelector('#playduration').textContent};});
   const check=async(fraction)=>{const m=await read();assert(Math.abs(m.ratio-fraction)<.00001,JSON.stringify(m));assert(m.left>=-1&&m.right<=1,'label stays inside track');const expected=Math.max(m.half,Math.min(m.width-m.half,6+(m.width-12)*fraction));assert(Math.abs(m.centre-expected)<1.2,'time label must follow the thumb: '+JSON.stringify(m));return m;};
@@ -40,11 +40,11 @@ const V=require('../app/src/main/assets/core.js');
   // A second forward drag and a backward drag update the same visible indicator.
   for(const value of [570000,60000]){await page.locator('#seek').evaluate((el,v)=>{el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));},value);await check(value/600000);await page.locator('#seek').evaluate(el=>el.dispatchEvent(new Event('change',{bubbles:true})));await page.waitForTimeout(100);}
   // Long durations change the label width; centering and both edge bounds still hold.
-  await page.evaluate(()=>{const c=vocastEngine.state.books[0].chapters[0];c.duration=7200;window.renderApp();});
+  await page.evaluate(()=>{const c=bajiaoEngine.state.books[0].chapters[0];c.duration=7200;window.renderApp();});
   playback.position=6840000;await page.waitForFunction(()=>Number(document.querySelector('#seek').value)===6840000);await check(.95);assert.equal((await read()).total,'120:00');
   await click('back');await click('read:'+stream.id);await click('go:listen');
   await page.locator('#seek').evaluate(el=>{el.value=85000;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});await page.waitForTimeout(120);await check(.85);assert.equal((await read()).time,'01:25');assert.equal(playback.position,5000);assert.equal(playback.playing,false);
-  await page.evaluate(()=>{const c=vocastEngine.state.books[0].chapters[1];c.segments[10].audio='stream-10';window.renderApp();});
+  await page.evaluate(()=>{const c=bajiaoEngine.state.books[0].chapters[1];c.segments[10].audio='stream-10';window.renderApp();});
   await page.waitForFunction(()=>Number(document.querySelector('#seek').max)===110000);await check(85000/110000);assert.equal((await read()).total,'01:50');
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'ui-report.json'),JSON.stringify({pass:true,metrics,stream:await read(),errors},null,2));
   console.log('PASS 320/361/412/768: playback 0–100%, correct thumb/label position, bounded edges, drag preview/backward seek, long times and growing stream duration');

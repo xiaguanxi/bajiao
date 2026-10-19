@@ -1,4 +1,4 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.VocastAudioQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoAudioQuality=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
 // Compare the complete acoustic sequences, not just duration or the speaker's timbre.
 // Deliberate repetitions in the source text are exempt. Uncertain matches stay intact.

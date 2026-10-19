@@ -44,10 +44,10 @@ function wav(sequences,{rate=8000,channels=1}={}){
 }
 const audioReply=(bytes,finish_reason='stop')=>({choices:[{finish_reason,message:{audio:{data:bytes.toString('base64')}}}]});
 function fixture(t,handler){
- const tempRoot=fs.realpathSync(os.tmpdir()),dir=fs.mkdtempSync(path.join(tempRoot,'vocast-native-speech-'));
+ const tempRoot=fs.realpathSync(os.tmpdir()),dir=fs.mkdtempSync(path.join(tempRoot,'bajiao-native-speech-'));
  t.after(()=>{
   const target=fs.realpathSync(dir);
-  if(path.dirname(target)!==tempRoot||!path.basename(target).startsWith('vocast-native-speech-'))throw Error('Unexpected native test cleanup path');
+  if(path.dirname(target)!==tempRoot||!path.basename(target).startsWith('bajiao-native-speech-'))throw Error('Unexpected native test cleanup path');
   fs.rmSync(target,{recursive:true,force:true});
  });
  const io=makeIO(dir),calls=[],events=[],processed=[],reads=[],snapshots=[];

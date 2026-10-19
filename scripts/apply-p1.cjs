@@ -39,7 +39,7 @@ if (appJs.includes(oldAutoDel)) {
 // 3. Export
 const oldExport = "if(a==='export'){await device.call('export',{id:x,name:book().name+'-'+chapter().title});toast('已导出 WAV');return;}";
 console.log('oldExport in appJs?', appJs.includes(oldExport));
-const newExport = "if(a==='export'){const exportName='[Vocast有声书]《'+book().name+'》-'+chapter().title;await device.call('export',{id:x,name:exportName});toast('已导出：'+exportName+'.wav');return;}";
+const newExport = "if(a==='export'){const exportName='[芭蕉有声书]《'+book().name+'》-'+chapter().title;await device.call('export',{id:x,name:exportName});toast('已导出：'+exportName+'.wav');return;}";
 if (appJs.includes(oldExport)) {
   appJs = appJs.replace(oldExport, newExport);
   console.log('3. export updated!');

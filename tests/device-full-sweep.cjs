@@ -10,7 +10,7 @@ const save = () => fs.writeFileSync(reportFile, JSON.stringify(report, null, 2))
 const ok = name => { report.checks.push({ name, at: new Date().toISOString() }); save(); console.log('PASS:', name); };
 
 async function phaseInstall() {
-  run(['install', '-r', '-d', 'artifacts/Vocast-debug.apk']);
+  run(['install', '-r', '-d', 'artifacts/Bajiao-debug.apk']);
   ok('安装最新APK');
   // 证书
   const keys = JSON.stringify({ llmKey: process.env.MINIMAX_KEY, ttsKey: process.env.MIMO_KEY, llmBase: 'https://api.minimax.cn/v1' });
@@ -33,7 +33,7 @@ async function phaseSweep(h) {
   // 书架页
   await h.tap('[data-act="go:shelf"]');
   let body = await h.read(() => document.body.innerText);
-  assert(body.includes('书架') || body.includes('VOCAST'), '书架页渲染');
+  assert(body.includes('书架') || body.includes('芭蕉'), '书架页渲染');
   await h.screenshot('sweep-shelf');
   ok('书架页渲染+截图');
   // 任务页三 tab

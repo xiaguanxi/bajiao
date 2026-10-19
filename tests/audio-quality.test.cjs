@@ -41,11 +41,14 @@ test('ordinary quiet and fading speech preserve all bytes with one TTS request',
   const f=await e.synthesize(text,'preset:白桦');assert.equal(f.qualityStatus,'passed');assert(stored.get(f.id).equals(source));assert.equal(calls.length,1);assert.equal(f.generationVersion,3);
  }
 });
-test('long pauses and suspected repetitions only warn, with no additional request',async()=>{
- for(const source of [dup,wav([{seconds:1},{silence:true,seconds:4},{seed:4,seconds:1}])]){
+test('long pauses alone warn without another request; repeated speech cannot pass',async()=>{
+ for(const source of [wav([{seconds:1},{silence:true,seconds:4},{seed:4,seconds:1}])]){
   const {e,stored,calls}=memoryEngine(()=>audioReply(source)),f=await e.synthesize(text,'preset:白桦');
   assert.equal(f.qualityStatus,'passed_with_warnings');assert(f.qualityIssues.length);assert(stored.get(f.id).equals(source));assert.equal(calls.length,1);
  }
+ const {e,calls,stored}=memoryEngine(()=>audioReply(dup));e.state.settings.qualityConfirmRetry=true;let draft={};
+ await assert.rejects(e.synthesize(text,'preset:白桦','自然',{onQuality:d=>draft={...draft,...d}}),/疑似重复/);
+ assert.equal(calls.length,2);assert(draft.rawAudioIds.every(id=>stored.has(id)));assert.equal(draft.pendingRaw.qualityApproved,false);
 });
 test('intentional full and partial repetitions are preserved',async()=>{
  for(const source of ['回来！回来！','回来！回来！求你了！','别走，别走，我还有话要说。']){
@@ -153,8 +156,9 @@ test('authentication, quotas and local persistence errors do not split or retry 
  for(const status of [401,403,402,429]){const {e,calls}=memoryEngine(()=>{throw new (require('../app/src/main/assets/core.js').ApiError)('HTTP '+status,status,false);});await assert.rejects(e.synthesize('甲。乙。','preset:白桦'));assert.equal(calls.length,1);}
  const {e,calls}=memoryEngine(()=>audioReply(normal));e.io.saveRawAudio=async()=>{throw Error('disk full');};await assert.rejects(e.synthesize('甲。乙。','preset:白桦'),/disk full/);assert.equal(calls.length,1);
 });
-test('warnings propagate through split synthesis without extra calls',async()=>{
- const {e,calls}=memoryEngine(()=>audioReply(dup));const f=await e.synthesize(text+text,'preset:白桦','自然',{forceSplit:true});
- assert.equal(f.qualityStatus,'passed_with_warnings');assert(f.qualityIssues.includes('疑似重复'));assert.equal(calls.length,2);
+test('repetition in split synthesis shares one retry and cannot publish a bad merged result',async()=>{
+ const {e,calls}=memoryEngine((_,__,calls)=>audioReply(calls.length===2?normal:dup));e.state.settings.qualityConfirmRetry=true;let merged=0,files=[];e.io.mergeAudio=async()=>{merged++;throw Error('bad merge');};
+ await assert.rejects(e.synthesize(text+text,'preset:白桦','自然',{forceSplit:true,onPart:parts=>files=[...parts]}),/疑似重复/);
+ assert.equal(calls.length,3);assert.equal(files.length,1);assert.equal(merged,0);
 });
 module.exports={wav,memoryEngine,audioReply,textReply};

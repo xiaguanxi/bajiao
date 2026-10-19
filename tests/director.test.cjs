@@ -10,13 +10,13 @@ async function fixture(n=3){
  return {e,b,c,io,calls,snapshots};
 }
 
-test('new annotations persist and send only LLM scene/direction after reload',async()=>{
+test('new annotations persist and send scene/direction with restrained narration after reload',async()=>{
  const {e,b,c,io,calls,snapshots}=await fixture();let requests=0;e.llm=async p=>{requests++;return labels(batchOf(p));};await e.analyze(b.id,c.id);assert.equal(requests,1);
  const restored=new Engine(io,snapshots.at(-1)),s=restored.chapter(b.id,c.id).segments[0];assert.equal(s.directionVersion,1);
  await restored.regenerateSegment(b.id,c.id,s.id);const body=calls[0].body;
- assert.deepEqual(body.messages,[{role:'user',content:'场景：'+s.scene+'\n指导：'+s.delivery},{role:'assistant',content:s.text}]);
+ assert.equal(body.messages[0].role,'user');assert(body.messages[0].content.startsWith('场景：'+s.scene+'\n指导：'+s.delivery));assert.equal(body.messages[0].content,'场景：'+s.scene+'\n指导：'+s.delivery);assert.deepEqual(body.messages[1],{role:'assistant',content:s.text});
  assert(!body.messages[0].content.includes('忠实朗读'));assert(!body.messages[0].content.includes('稳定声音'));
- assert.equal(s.lastSpeechRequest.prompt,body.messages[0].content);assert.equal(s.lastSpeechRequest.promptVersion,3);
+ assert.equal(s.lastSpeechRequest.prompt,body.messages[0].content);assert.equal(s.lastSpeechRequest.promptVersion,4);
 });
 
 test('24-line cap also bounds old unfinished queues without relabelling saved IDs',async()=>{
@@ -93,7 +93,7 @@ test('legacy annotations never auto-upgrade; unguided speech omits user message'
 test('custom directions win, empty scene is omitted and negations remain exact',()=>{
  const e=new Engine({}),s={directionVersion:1,scene:'',delivery:'不是赞扬，带冷淡轻讽；“准时”稍加重。'};
  assert.equal(e.speechDirection('preset:白桦','愤怒','男声',undefined,s),'指导：'+s.delivery);assert.equal(e.speechDirection('preset:白桦','愤怒','男声','  自己的\n指导  ',s),'  自己的\n指导  ');
- assert.equal(PROMPT_VERSION,3);
+ assert.equal(PROMPT_VERSION,4);
 });
 
 test('ads and punctuation never need director repair',async()=>{

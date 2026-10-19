@@ -65,6 +65,10 @@ body { margin:0; }
  --vc-book-select-ring:3px;
 }
 #app .vc-book-select { display:block;position:relative;width:100%;margin:0;padding:0;border:0;background:transparent;text-align:left;appearance:none; }
+#app .vc-covers{align-items:start}
+#app .vc-covers .vc-book{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;align-self:start;width:100%;height:100%}
+#app .vc-covers .vc-cover{box-sizing:border-box;height:212px;flex:none}
+#app .vc-covers .vc-book h3{min-height:3em;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 #app .vc-book-select .vc-cover { outline:var(--vc-book-select-ring) solid transparent;outline-offset:0; }
 #app .vc-book-select.is-selected .vc-cover { outline-color:var(--vc-accent); }
 #app .vc-book-check { display:flex;align-items:center;justify-content:center;position:absolute;top:var(--vc-book-check-inset);right:var(--vc-book-check-inset);width:var(--vc-book-check-size);height:var(--vc-book-check-size);border:2px solid var(--vc-paper);border-radius:50%;background:var(--vc-paper);color:var(--vc-accent);box-shadow:0 2px 8px #0003;pointer-events:none; }
@@ -115,7 +119,7 @@ body.vc-catalog-open{overflow:hidden}
 #app .vc-catalog-handle span{display:block;width:40px;height:5px;border-radius:3px;background:var(--vc-muted);opacity:.45;pointer-events:none}
 #app .vc-catalog-handle:focus-visible{outline:2px solid var(--vc-accent);outline-offset:-4px;border-radius:20px}
 #app .vc-detail-overview{overflow:hidden}
-#app .vc-detail-overview-content{display:flow-root}
+#app .vc-detail-overview-content{display:flow-root;padding-bottom:12px}
 #app .vc-catalog-scroll{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;overflow-anchor:none;scrollbar-width:thin}
 #app .vc-catalog-scroll:focus-visible{outline:2px solid var(--vc-accent);outline-offset:2px}
 #app .vc-main[data-page=detail] .vc-book-info{min-width:0}
@@ -208,6 +212,23 @@ body.vc-catalog-open{overflow:hidden}
 #app .voice-batch-copy{display:block;flex:1;min-width:0}
 #app .voice-batch-copy strong{display:block;font-size:16px;line-height:1.5;font-weight:500;overflow-wrap:anywhere}
 #app .voice-batch-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--vc-muted);font-size:12px;line-height:1.5}
+#app .voice-library-copy{min-width:0}
+#app .voice-library-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--vc-muted);font-size:12px;line-height:1.5;font-weight:400}
+#app .vc-task-order-note{font-size:12px;color:var(--vc-muted);margin:8px 0 12px}
+#app .vc-task-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:8px;padding:10px 12px;margin:0 0 10px}
+#app .vc-task-card .vc-task-title{grid-column:1/-1;font-size:16px;line-height:1.4;margin:6px 0 2px;overflow-wrap:anywhere}
+#app .vc-task-card .vc-task-book{grid-column:1/-1;font-size:12px;color:var(--vc-muted);margin:0;line-height:1.4;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app .vc-task-card .vc-meter{grid-column:1/-1;height:3px;margin:8px 0 4px}
+#app .vc-task-card>.vc-sub{font-size:12px;margin:4px 0;line-height:1.4}
+#app .vc-task-card-actions{gap:2px 8px;margin-top:4px;align-items:center;min-width:0}
+#app .vc-task-card-actions [data-act^="task"]{width:28px;justify-content:center}
+#app .vc-task-card-actions .vc-link,#app .vc-task-card-actions .vc-btn{min-height:32px;padding:4px 0;font-size:12px}
+#app .vc-task-card-actions .vc-btn{padding:4px 12px;min-width:48px}
+#app .vc-task-card .vc-task-error{grid-column:1/-1}
+#app .vc-task-drag{display:flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--vc-muted);touch-action:none;cursor:grab}
+#app .vc-task-card>.vc-row{grid-column:1/-1;gap:8px;justify-content:flex-start}
+#app .vc-task-card>.vc-row>small{margin-left:auto;font-size:11px;min-width:0}
+#app .vc-task-card.is-dragging{outline:2px solid var(--vc-accent);background:var(--vc-soft);cursor:grabbing}
 #app .voice-batch-row[aria-pressed="true"]{background:var(--vc-soft);border-bottom-color:transparent;border-radius:10px}
 #app .voice-batch-row[aria-pressed="true"] .voice-batch-check{background:var(--vc-accent);border-color:var(--vc-accent)}
 #app .voice-batch-row[aria-pressed="true"] .voice-batch-check svg{opacity:1}
@@ -278,11 +299,11 @@ body.vc-catalog-open{overflow:hidden}
 #app .vc-main-listen .vc-seek-track .big-progress{appearance:none;-webkit-appearance:none;display:block;box-sizing:border-box;height:44px;min-height:44px;width:100%;padding:0;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;cursor:pointer}
 #app .vc-main-listen .big-progress::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:12px;background:transparent;border:0}
 #app .vc-main-listen .big-progress::-moz-range-thumb{width:12px;height:12px;background:transparent;border:0}
-#app .vc-main-listen .vc-seek-times{position:absolute;top:50%;left:clamp(52px,var(--seek-position),calc(100% - 52px));transform:translate(-50%,-50%);display:flex;pointer-events:none}
+#app .vc-main-listen .vc-seek-times{position:absolute;top:50%;left:clamp(var(--seek-label-half,44px),var(--seek-thumb-position,0%),calc(100% - var(--seek-label-half,44px)));transform:translate(-50%,-50%);display:flex;width:max-content;pointer-events:none}
 #app .vc-main-listen .vc-seek-times .vc-seek-bubble{display:flex;align-items:center;justify-content:center;gap:2px;min-width:88px;box-sizing:border-box;padding:2px 8px;line-height:20px;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--vc-text);background:var(--vc-paper,#fff);border-radius:999px}
 #app .vc-main-listen .vc-seek-track:focus-within{outline:2px solid var(--vc-accent);outline-offset:2px;border-radius:8px}
 /* The touch target stays generous; only the native track draws the fine line. */
-#app .vc-main-listen .vc-seek-track .big-progress::-webkit-slider-runnable-track{height:2px;border:0;border-radius:1px;background:linear-gradient(to right,var(--vc-accent) var(--seek-position),var(--vc-line) var(--seek-position));box-shadow:none}
+#app .vc-main-listen .vc-seek-track .big-progress::-webkit-slider-runnable-track{height:2px;border:0;border-radius:1px;background:linear-gradient(to right,var(--vc-accent) var(--seek-thumb-position,0%),var(--vc-line) var(--seek-thumb-position,0%));box-shadow:none}
 #app .vc-main-listen .vc-seek-track .big-progress::-webkit-slider-thumb{margin-top:-5px}
 #app .vc-main-listen .vc-seek-track .big-progress::-moz-range-track{height:2px;border:0;border-radius:1px;background:var(--vc-line);box-shadow:none}
 #app .vc-main-listen .vc-seek-track .big-progress::-moz-range-progress{height:2px;background:var(--vc-accent)}
@@ -357,7 +378,10 @@ body.vc-catalog-open{overflow:hidden}
 :root{--segment-gap:8px;--segment-section-gap:24px;--segment-radius:16px;--segment-enter:200ms}
 #app .vc-main[data-page=annotated]{--vc-ink:var(--vc-text);color:var(--vc-text)}
 #app .vc-main[data-page=annotated] .vc-quote>.vc-row{display:flex;flex-wrap:wrap;gap:6px;min-height:36px;margin:0 0 4px;padding-right:40px;align-items:center;justify-content:flex-start}
-#app .vc-main[data-page=annotated] .vc-quote>.vc-row>.vc-link{flex:0 1 auto;max-width:100%;min-height:36px;overflow-wrap:anywhere}
+#app .vc-main[data-page=annotated] .vc-quote>.vc-row>.vc-link{flex:0 0 auto;max-width:100%;min-height:36px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .vc-main[data-page=annotated] .vc-quote>.vc-row>small{flex:1 0 100%;order:3;min-width:0;line-height:1.6;overflow-wrap:anywhere}
+#app .vc-main[data-page=annotated] .vc-quote.vc-production-issue{border-color:#d9a8a4;background:#fff6f5}
+#app .vc-task-card-actions [data-act^="task"]{width:auto;min-width:44px;white-space:nowrap}
 #app .vc-main[data-page=annotated] .vc-quote .vc-tag{display:inline-flex;align-items:center;flex:none;box-sizing:border-box;min-height:20px;height:20px;padding:0 6px;font-size:11px;line-height:18px;white-space:nowrap;transition:none;animation:none}
 #app .vc-segment-trigger{display:flex;flex:none;align-items:center;justify-content:center;position:absolute;right:4px;top:4px;width:44px;height:44px;margin:0;padding:8px;border:0;border-radius:8px;background:transparent;color:var(--vc-accent);cursor:pointer}
 #app .vc-segment-trigger svg{display:block;flex:none;width:20px;height:20px}

@@ -3,7 +3,9 @@ const {spawnSync}=require('node:child_process');
 const {Engine}=require('../app/src/main/assets/core.js');
 const {makeIO}=require('./node-io.cjs');
 const root=path.resolve(__dirname,'..');
-const classes=path.join(root,'artifacts/silence-v083/test-classes');
+// Node runs test files in separate processes. Compiling into a shared directory
+// can expose half-written Java classes to another file's native assertions.
+const classes=path.join(root,'artifacts/silence-v083/test-classes','node-'+process.pid);
 const jdk=path.join(root,'.tools/jdk-17.0.18+8/bin');
 const json=path.join(root,'.tools/json.jar');
 let compiled=false;
@@ -16,13 +18,14 @@ function run(executable,args){
 function compile(){
  if(compiled)return;
  fs.mkdirSync(classes,{recursive:true});
- run('javac',['-encoding','UTF-8','-cp',json,'-d',classes,path.join(root,'app/src/main/java/com/vocast/app/AudioFiles.java'),path.join(root,'tests/AudioSilenceTest.java')]);
+ run('javac',['-encoding','UTF-8','-cp',json,'-d',classes,path.join(root,'app/src/main/java/com/vocast/app/AudioFiles.java'),path.join(root,'tests/AudioSilenceTest.java'),path.join(root,'tests/AudioRepetitionTest.java')]);
  compiled=true;
 }
 function processNative(dir,id){
  compile();
  return JSON.parse(run('java',['-Dfile.encoding=UTF-8','-cp',[classes,json].join(path.delimiter),'com.vocast.app.AudioSilenceTest','--process',dir,id]));
 }
+function truncateNative(dir,id,evidence){compile();return JSON.parse(run('java',['-Dfile.encoding=UTF-8','-cp',[classes,json].join(path.delimiter),'com.vocast.app.AudioRepetitionTest','--truncate',dir,id,JSON.stringify(evidence)]));}
 // Small deterministic PCM fixtures, independent of any module registering tests.
 function wav(sequences,{rate=8000,channels=1}={}){
  const chunks=[];
@@ -53,6 +56,7 @@ function fixture(t,handler){
  const saveRaw=io.saveRawAudio;
  io.saveRawAudio=async(...args)=>{const file=await saveRaw(...args);events.push({type:'archive',id:file.id});return file;};
  io.processSpeechAudio=async id=>{events.push({type:'process',id});const file=processNative(dir,id);processed.push({rawId:id,file});return file;};
+ io.truncateRepeatedSpeech=async(id,evidence)=>{events.push({type:'truncate',id,requests:calls.length});return truncateNative(dir,id,evidence);};
  const read=io.readAudio;
  io.readAudio=async id=>{reads.push(id);return read(id);};
  const saveState=io.saveState;
@@ -65,4 +69,4 @@ async function chapter(e,texts){
  c.segments=texts.map((text,id)=>({id,text,speaker:'旁白',confidence:1}));
  return {b,c};
 }
-module.exports={fixture,wav,audioReply,chapter,processNative};
+module.exports={fixture,wav,audioReply,chapter,processNative,truncateNative};

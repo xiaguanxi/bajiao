@@ -28,7 +28,7 @@ test('failed custom regeneration preserves audio, saves prompt, and can retry af
 });
 test('restoring defaults uses the annotation and removes the saved override',async()=>{
  const {e,b,c,calls}=await fixture();e.state.voices.push({id:'custom',sample:'ref.wav',format:'wav',description:'温和女声，不沙哑'});b.characters[0].voice='custom';b.characters[0].description='';c.segments[0].ttsPrompt='旧提示';
- const expected=e.speechDirection('custom',c.segments[0].emotion,'');assert.equal(expected,'轻声，不要愤怒');assert(!expected.includes('温和女声'));
+ const expected=e.speechDirection('custom',c.segments[0].emotion,'',undefined,c.segments[0]);assert.match(expected,/^轻声，不要愤怒\n/);assert.match(expected,/吐字务必清晰完整/);assert(!expected.includes('温和女声'));
  await e.regenerateSegment(b.id,c.id,0,{prompt:null});assert.equal(calls[0].body.messages[0].content,expected);assert.equal(calls[0].body.model,'mimo-v2.5-tts-voiceclone');assert.equal(c.segments[0].ttsPrompt,undefined);
 });
 test('split requests retain the exact custom direction and source text',async()=>{

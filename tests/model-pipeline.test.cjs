@@ -25,7 +25,7 @@ test('manual redo reaches the network scheduler ahead of an automatic clone alre
  const first=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'inflight'},null,{priority:20});await entered.promise;const automatic=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'automatic'},null,{priority:20});const manual=e.request('tts',{model:'mimo-v2.5-tts-voiceclone',label:'manual'},null,{priority:100});release.resolve();await Promise.all([first,automatic,manual]);assert.deepEqual(order,['inflight','manual','automatic']);
 });
 for(const edit of ['binding','delete','merge'])test(`pipeline discards stale in-flight audio after ${edit}`,{timeout:5000},async()=>{
- const {e,b}=await setup(),c=b.chapters[0],entered=gate(),release=gate();e.synthesize=async()=>{entered.resolve();await release.promise;return {id:'stale.wav',duration:1};};const run=e.enqueue(b.id,[c.id]);await entered.promise;
+ const {e,b}=await setup(),c=b.chapters[0],entered=gate(),release=gate();e.synthesize=async(text,voice)=>{entered.resolve();await release.promise;return {id:voice==='preset:茉莉'?'fresh.wav':'stale.wav',duration:1};};const run=e.enqueue(b.id,[c.id]);await entered.promise;
  if(edit==='binding')await e.bind(b.id,'旁白','preset:茉莉',false);
  if(edit==='delete')await e.deleteBook(b.id);
  if(edit==='merge'){b.characters.push({name:'新旁白',voice:'preset:茉莉',description:'女声'});await e.mergeRoles(b.id,'新旁白','旁白');}

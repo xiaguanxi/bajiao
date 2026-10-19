@@ -177,6 +177,31 @@ final class AudioFiles {
     private static int framesForMs(int rate,int ms) {
         return (int)((rate*(long)ms+999)/1000); // Never retain less than the requested context.
     }
+    JSONObject truncateRepeatedSpeech(String id,JSONObject evidence) throws Exception {
+        JSONObject unchanged=new JSONObject().put("applied",false);
+        double score=evidence.optDouble("score",Double.NaN);
+        if(evidence.optInt("version")!=3||!evidence.optBoolean("cropEligible")||!evidence.optBoolean("suspected")||!Double.isFinite(score)||score<-.00001||score>=.34)return unchanged;
+        JSONArray blocks=evidence.optJSONArray("blockScores");
+        if(blocks==null||blocks.length()!=4)return unchanged;
+        for(int i=0;i<4;i++)if(!Double.isFinite(blocks.getDouble(i))||blocks.getDouble(i)>=.5)return unchanged;
+        Wave source=parse(read(get(id),64*1024*1024));
+        ByteBuffer fmt=ByteBuffer.wrap(source.fmt).order(ByteOrder.LITTLE_ENDIAN);
+        int rate=fmt.getInt(4),align=fmt.getShort(12)&65535;
+        double left=evidence.optDouble("leftEndMs",-1),right=evidence.optDouble("rightStartMs",-1);
+        if(!Double.isFinite(left)||!Double.isFinite(right)||left<=0||right-left<3000)return unchanged;
+        int frames=source.pcm.length/align;
+        for(int[] run:scanSilence(source).quietRuns) {
+            double start=run[0]*1000.0/rate,end=run[1]*1000.0/rate;
+            if(run[0]<=0||run[1]>=frames||end-start<3000||Math.abs(start-left)>120||Math.abs(end-right)>120)continue;
+            int cut=run[0]+framesForMs(rate,250);
+            if(cut>run[1]-framesForMs(rate,150))continue;
+            Wave kept=new Wave();kept.fmt=source.fmt;kept.pcm=Arrays.copyOf(source.pcm,cut*align);
+            JSONObject file=write(encode(kept),"wav",kept.duration());
+            return file.put("applied",true).put("sourceAudio",id).put("keptEndMs",cut*1000.0/rate)
+                .put("removedMs",(frames-cut)*1000.0/rate).put("gapStartMs",start).put("gapEndMs",end);
+        }
+        return unchanged;
+    }
     private static void validateSpeechContainer(byte[] bytes) throws Exception {
         if(bytes.length<44)throw new Exception("WAV 文件被截断");
         ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -312,7 +337,7 @@ final class AudioFiles {
     JSONObject merge(List<String> ids,int[] pauses) throws Exception {
         if(ids.isEmpty())throw new Exception("没有可合并音频");
         if(pauses!=null){if(pauses.length!=ids.size())throw new Exception("停顿参数数量不匹配");for(int p:pauses)if(p<0||p>2000)throw new Exception("停顿参数越界");}
-        File temp=File.createTempFile("merge-",".tmp",dir);byte[] fmt=null;long total=0,added=0;int pad=0,previousTail=0;
+        File temp=File.createTempFile("merge-",".tmp",dir);byte[] fmt=null;long total=0,added=0;int pad=0,previousTail=0;JSONArray parts=new JSONArray();
         try{
             try(RandomAccessFile out=new RandomAccessFile(temp,"rw")){
                 for(int i=0;i<ids.size();i++){
@@ -329,6 +354,7 @@ final class AudioFiles {
                     int required=i==0||pauses==null?0:(int)Math.ceil(pauses[i-1]*rate/1000.0);
                     int missing=required==0?0:Math.max(0,required-previousTail-quietFrames(w,true,required));
                     long gapBytes=(long)missing*align;
+                    parts.put(new JSONObject().put("audio",ids.get(i)).put("startMs",(total+gapBytes)*1000.0/format.getInt(8)).put("endMs",(total+gapBytes+w.pcm.length)*1000.0/format.getInt(8)));
                     total+=gapBytes+w.pcm.length;
                     if(total>160L*1024*1024)throw new Exception("章节音频过大，请分章制作");
                     if(gapBytes>0){byte[] silence=new byte[(int)gapBytes];if((format.getShort(14)&65535)==8)Arrays.fill(silence,(byte)128);out.write(silence);added+=gapBytes;}
@@ -345,8 +371,46 @@ final class AudioFiles {
             StringBuilder name=new StringBuilder();for(byte b:digest.digest())name.append(String.format(Locale.ROOT,"%02x",b));name.append(".wav");
             File target=new File(dir,name.toString());long size=temp.length();if(!target.exists()&&!temp.renameTo(target))throw new IOException("章节音频保存失败");
             int byteRate=ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(8);
-            return new JSONObject().put("id",name.toString()).put("size",size).put("duration",total/(double)byteRate).put("addedPauseMs",added*1000.0/byteRate).put("format","wav");
+            return new JSONObject().put("id",name.toString()).put("size",size).put("duration",total/(double)byteRate).put("addedPauseMs",added*1000.0/byteRate).put("parts",parts).put("format","wav");
         }finally{if(temp.exists())temp.delete();}
+    }
+    // Reconstruct old chapter boundaries without rewriting audio. Check the actual PCM
+    // stream so changed/missing source clips can never produce a plausible but wrong map.
+    JSONObject timeline(String id,List<String> ids,int[] pauses) throws Exception {
+        if(ids.isEmpty())throw new IOException("没有可定位的片段");
+        if(pauses!=null){if(pauses.length!=ids.size())throw new IOException("停顿参数数量不匹配");for(int p:pauses)if(p<0||p>2000)throw new IOException("停顿参数越界");}
+        try(RandomAccessFile merged=new RandomAccessFile(get(id),"r")){
+            byte[] head=new byte[12];merged.readFully(head);
+            if(!new String(head,0,4,StandardCharsets.US_ASCII).equals("RIFF")||!new String(head,8,4,StandardCharsets.US_ASCII).equals("WAVE"))throw new IOException("仅支持 WAV 时间轴");
+            byte[] fmt=null;long dataAt=-1,dataLength=0;
+            for(long at=12;at+8<=merged.length();){
+                merged.seek(at);byte[] chunk=new byte[8];merged.readFully(chunk);
+                String tag=new String(chunk,0,4,StandardCharsets.US_ASCII);long length=Integer.toUnsignedLong(ByteBuffer.wrap(chunk).order(ByteOrder.LITTLE_ENDIAN).getInt(4));
+                if(at+8+length>merged.length())throw new IOException("WAV 文件被截断");
+                if(tag.equals("fmt ")){if(length<16||length>65536)throw new IOException("PCM 格式无效");fmt=new byte[(int)length];merged.readFully(fmt);}
+                if(tag.equals("data")){dataAt=at+8;dataLength=length;}
+                at+=8+length+(length%2);
+            }
+            if(fmt==null||dataAt<0)throw new IOException("缺少 PCM 数据");
+            int byteRate=ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(8);if(byteRate<=0)throw new IOException("PCM 速率无效");
+            merged.seek(dataAt);long total=0;int previousTail=0;JSONArray parts=new JSONArray();byte[] buffer=new byte[16384];
+            for(int i=0;i<ids.size();i++){
+                Wave w=parse(read(get(ids.get(i)),64*1024*1024));
+                if(!Arrays.equals(fmt,w.fmt))throw new IOException("片段与章节采样格式不匹配");
+                ByteBuffer format=ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN);int rate=format.getInt(4),align=format.getShort(12)&65535;
+                int required=i==0||pauses==null?0:(int)Math.ceil(pauses[i-1]*rate/1000.0);
+                int missing=required==0?0:Math.max(0,required-previousTail-quietFrames(w,true,required));long gapBytes=(long)missing*align;
+                if(total+gapBytes+w.pcm.length>dataLength)throw new IOException("片段与章节长度不匹配");
+                byte zero=(byte)((format.getShort(14)&65535)==8?128:0);
+                for(long remaining=gapBytes;remaining>0;){int n=(int)Math.min(buffer.length,remaining);merged.readFully(buffer,0,n);for(int j=0;j<n;j++)if(buffer[j]!=zero)throw new IOException("章节停顿不匹配");remaining-=n;}
+                long start=total+gapBytes;
+                for(int at=0;at<w.pcm.length;){int n=Math.min(buffer.length,w.pcm.length-at);merged.readFully(buffer,0,n);for(int j=0;j<n;j++)if(buffer[j]!=w.pcm[at+j])throw new IOException("片段与章节内容不匹配");at+=n;}
+                total=start+w.pcm.length;parts.put(new JSONObject().put("audio",ids.get(i)).put("startMs",start*1000.0/byteRate).put("endMs",total*1000.0/byteRate));
+                int next=i+1<ids.size()&&pauses!=null?(int)Math.ceil(pauses[i]*rate/1000.0):0;previousTail=next==0?0:quietFrames(w,false,next);
+            }
+            if(total!=dataLength)throw new IOException("章节仍有未定位音频");
+            return new JSONObject().put("id",id).put("duration",total/(double)byteRate).put("parts",parts);
+        }
     }
     static byte[] read(File file,int limit) throws Exception {try(InputStream in=new FileInputStream(file)){return read(in,limit);}}
     static byte[] read(InputStream in,int limit) throws Exception {ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[16384];int n;while((n=in.read(b))!=-1){if(out.size()+n>limit)throw new IOException("文件超过允许大小");out.write(b,0,n);}return out.toByteArray();}

@@ -34,7 +34,8 @@ const badReturns=[
  ['near silence',audioReply(nearSilent),/全近静音/],
  ['truncated response',audioReply(normal,'length'),/截断/],
  ['corrupt response',audioReply(Buffer.from('broken WAV payload')),/损坏|解码/],
- ['residual excessive duration',audioReply(wav([{seed:4,seconds:25}])),/时长/]
+ ['empty response',audioReply(Buffer.alloc(0)),/损坏|空音频|解码/],
+ ['residual excessive duration',audioReply(wav([{seed:4,seconds:8},{seed:7,seconds:8},{seed:9,seconds:9}])),/时长/]
 ];
 for(const [name,reply,issue] of badReturns)for(const auto of [false,true])for(const confirm of [false,true]){
  test(`${name}: qualityAutoRetry=${auto}, qualityConfirmRetry=${confirm} bounds native quality retries`,async t=>{
@@ -154,8 +155,8 @@ test('manual native quality failure preserves old playable segment and chapter r
 
 test('ordinary low gain, fading, deliberate repetition and short pauses preserve every WAV byte',async t=>{
  const cases=[normal,wav([{gain:.005}]),wav([{gain:.001}]),wav([{fade:true}]),wav([{seed:3},{silence:true,seconds:.6},{seed:3,gain:.8}]),wav([{seconds:1},{silence:true,noise:2,seconds:2.5},{seconds:1,seed:5}])];
- for(const source of cases){
-  const f=fixture(t,()=>audioReply(source)),file=await f.e.synthesize(text,'preset:白桦');
+ for(const [index,source] of cases.entries()){
+  const f=fixture(t,()=>audioReply(source)),file=await f.e.synthesize(index===4?text+text:text,'preset:白桦');
   assert.equal(f.calls.length,1);assert.equal(file.corrected,false);assert.equal(file.removedMs,0);assert.deepEqual(file.trimRanges,[]);
   assert(f.bytes(file.id).equals(source));assert.equal(file.id,file.rawAudioIds[0]);assert.equal(file.repetitionRemoved,false);
  }

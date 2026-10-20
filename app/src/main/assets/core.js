@@ -11,6 +11,7 @@ const GENERATION_VERSION=3;
 const SILENCE_PROCESSING_VERSION=1;
 const PAUSE_POLICY={sentence:350,ellipsis:450,semicolon:220,colon:180,comma:120};
 const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
+const COVER_STYLES=[{name:'松墨',color:'#284f3d'},{name:'黛青',color:'#2c4b5a'},{name:'绛朱',color:'#7a3b34'},{name:'陶土',color:'#96552a'},{name:'墨紫',color:'#4a3a56'},{name:'岩灰',color:'#5d615a'}];
 const DEFAULTS={wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',mode:'auto',usePresets:false,retries:2,qualityAutoRetry:true,qualityConfirmRetry:false,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:''};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 const normalize=s=>String(s).replace(/\s/g,'');
@@ -267,6 +268,11 @@ function shortVoiceName(description){
  const trait=((s.match(VOICE_TRAITS)||[]).find(x=>!['中文','英文','英语','普通话'].includes(x)&&!/^(不|无|没有)/.test(x))||'自然').match(VOICE_WORDS)?.[0]||'自然';
  return trait+stage+(gender==='f'?'女性':gender==='m'?'男性':'声音');
 }
+function nextBookCoverColor(books){
+ const counts=new Map(COVER_STYLES.map(s=>[s.color,0]));
+ for(const b of books){const color=/^#[a-f0-9]{6}$/i.test(b.coverColor||'')?b.coverColor.toLowerCase():COVER_STYLES[0].color;if(counts.has(color))counts.set(color,counts.get(color)+1);}
+ return COVER_STYLES.reduce((best,s)=>counts.get(s.color)<counts.get(best.color)?s:best).color;
+}
 function normalizeBookMetadata(b){if(!b.sourceFile)b.sourceFile=b.name;if(b.author==null){const name=String(b.name||'');const match=name.match(/^(.+?)\s+by\s+(.{1,40})$/i)||name.match(/^(.+?)by([\u3400-\u9fff·]{1,40})$/i);if(match){b.name=match[1].trim();b.author=match[2].trim();}}return b;}
 function normalizeVoice(v){v.description=cleanVoiceDescription(v.description);if(!v.name)v.name=shortVoiceName(v.description);return v;}
 class Engine{
@@ -503,7 +509,7 @@ class Engine{
   this.run();
   return added;
  }
- async addBook(name,text,splitOpts){const r=splitChapters(text,splitOpts);const b={id:uid(),name:name.replace(/\.(txt|epub)$/i,''),sourceFile:name,chapters:r.chapters,characters:[{name:'旁白',description:'声音清晰自然',aliases:[],voice:'preset:白桦'}],created:Date.now(),policy:null,presetLeadVoices:{version:1,maleLead:null,femaleLead:null},mergeSuggestions:[],splitReport:r.report,splitRule:(splitOpts&&splitOpts.ruleId)||'auto',splitCustom:(splitOpts&&splitOpts.customPattern)||'',_rawText:String(text)};normalizeBookMetadata(b);b.importWarnings=chapterWarnings(b.chapters);this.state.books.push(b);for(const c of b.chapters)this.touch(c);await this.persist();return b;}
+ async addBook(name,text,splitOpts){const r=splitChapters(text,splitOpts);const b={id:uid(),name:name.replace(/\.(txt|epub)$/i,''),sourceFile:name,coverColor:nextBookCoverColor(this.state.books),chapters:r.chapters,characters:[{name:'旁白',description:'声音清晰自然',aliases:[],voice:'preset:白桦'}],created:Date.now(),policy:null,presetLeadVoices:{version:1,maleLead:null,femaleLead:null},mergeSuggestions:[],splitReport:r.report,splitRule:(splitOpts&&splitOpts.ruleId)||'auto',splitCustom:(splitOpts&&splitOpts.customPattern)||'',_rawText:String(text)};normalizeBookMetadata(b);b.importWarnings=chapterWarnings(b.chapters);this.state.books.push(b);for(const c of b.chapters)this.touch(c);await this.persist();return b;}
   async resplitBook(bid,splitOpts){const b=this.book(bid);const made=b.chapters.some(c=>(c.segments||[]).length||c.audio);if(made)throw Error('已有标注或音频的书不能重切，请删书重导');const r=splitChapters(b._rawText||b.chapters.map(c=>c.title+'\n'+(c.text||'')).join('\n'),splitOpts);b.chapters=r.chapters;b.splitReport=r.report;b.splitRule=(splitOpts&&splitOpts.ruleId)||'auto';b.splitCustom=(splitOpts&&splitOpts.customPattern)||'';b.characters=b.characters.filter(x=>x.name==='旁白');b.importWarnings=chapterWarnings(b.chapters);for(const c of b.chapters)this.touch(c);await this.persist();return b;}
  async importVoice(file){if(!['wav','mp3'].includes(file.format))throw Error('仅支持 WAV / MP3 参考样本');if(Math.ceil(file.size/3)*4+32>10000000)throw Error('样本编码后超过 10 MB，请先压缩或截取');const d=cleanVoiceDescription(file.description||file.name.replace(/\.[^.]+$/,''));const v={id:uid(),name:shortVoiceName(d),description:d,sample:file.id,format:file.format,source:'import',enabled:true,tested:false};this.state.voices.push(v);await this.persist();return v;}
  taskPriority(t){const list=this.pendingOrder(),index=list.indexOf(t);return index<0?20:60-40*index/Math.max(1,list.length);}
@@ -1348,5 +1354,5 @@ function computeSegmentTimestamps(segments, totalDurationSec,timeline,audio){
   });
 }
 
-return {FEATURES,PROMPT_VERSION,DIRECTION_VERSION,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
+return {FEATURES,PROMPT_VERSION,DIRECTION_VERSION,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,COVER_STYLES,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
 });

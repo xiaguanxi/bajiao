@@ -45,6 +45,7 @@ public class PlaybackService extends Service {
     public static final String ACTION_SPEED = "speed";
     public static final String ACTION_SLEEP = "sleep";
     public static final String ACTION_PROMPT = "playback_prompt";
+    public static final String ACTION_WAIT = "wait";
 
     public interface PlaybackEventListener {
         void onPlaybackEvent(String action, long value, String audioId);
@@ -58,6 +59,7 @@ public class PlaybackService extends Service {
     private static MediaPlayer player;
     private static volatile boolean prepared = false;
     private boolean playWhenPrepared = true;
+    private boolean waitingForProduction = false;
     private static MediaSession mediaSession;
     private static String currentAudioId = "";
     private static String chapterTitle = "";
@@ -232,6 +234,15 @@ public class PlaybackService extends Service {
                 case ACTION_PROMPT:
                     handlePromptAction(intent);
                     break;
+                case ACTION_WAIT:
+                    // Completion ends the current file, but the listening session remains active.
+                    if (lastCompletionAt > 0 && player != null && prepared && playWhenPrepared && !player.isPlaying()) {
+                        waitingForProduction = true;
+                        registerNoisyReceiver();
+                        updatePlaybackState();
+                        updateNotification();
+                    }
+                    break;
                 case ACTION_PAUSE:
                     pausePlayback();
                     notifyClientEvent("pause", 0);
@@ -241,7 +252,7 @@ public class PlaybackService extends Service {
                     notifyClientEvent("play", 0);
                     break;
                 case ACTION_TOGGLE:
-                    if (player != null && prepared && player.isPlaying()) {
+                    if (isPlaybackActive()) {
                         pausePlayback();
                         notifyClientEvent("pause", 0);
                     } else {
@@ -292,6 +303,7 @@ public class PlaybackService extends Service {
     private void handlePlayAction(Intent intent) {
         saveProgress();
         cancelPlaybackPrompt();
+        waitingForProduction = false;
         lastCompletionAt = 0;
         String id = intent.getStringExtra("id");
         String path = intent.getStringExtra("path");
@@ -445,7 +457,7 @@ public class PlaybackService extends Service {
         notice.setOnCompletionListener(mp -> {
             if (mp != promptPlayer) return;
             cancelPlaybackPrompt();
-            if (player == null || !prepared || !player.isPlaying()) unregisterNoisyReceiver();
+            if (!isPlaybackActive()) unregisterNoisyReceiver();
             // Prompt audio never replaces chapter metadata or emits a chapter completion.
         });
         notice.setOnErrorListener((mp, what, extra) -> {
@@ -458,8 +470,14 @@ public class PlaybackService extends Service {
 
     private void resumePlayback() {
         cancelPlaybackPrompt();
-        lastCompletionAt = 0;
         playWhenPrepared = true;
+        if (waitingForProduction) {
+            registerNoisyReceiver();
+            updatePlaybackState();
+            updateNotification();
+            return; // The frontend advances when new content is ready; never replay the finished file.
+        }
+        lastCompletionAt = 0;
         if (player != null && prepared && !player.isPlaying()) {
             if (requestAudioFocus()) {
                 player.start();
@@ -486,6 +504,7 @@ public class PlaybackService extends Service {
     private void stopPlayback() {
         saveProgress();
         cancelPlaybackPrompt();
+        waitingForProduction = false;
         prepared = false;
         playWhenPrepared = false;
         if (player != null) {
@@ -499,13 +518,14 @@ public class PlaybackService extends Service {
     }
 
     private void seekToPosition(int posMs) {
+        boolean wasPlaying = isPlaybackActive();
         cancelPlaybackPrompt();
+        waitingForProduction = false;
         lastCompletionAt = 0;
         if (player != null && prepared) {
             int target = Math.max(0, Math.min(posMs, player.getDuration() > 0 ? player.getDuration() : posMs));
             pendingPosition = target;
             progressCompleted = false;
-            boolean wasPlaying = player.isPlaying();
             // SEEK_CLOSEST 在 24kHz 长音频上可能回退到关键帧附近;优先精确 seek,失败再退回普通 seek。
             try {
                 player.seekTo(target, android.media.MediaPlayer.SEEK_CLOSEST);
@@ -546,10 +566,15 @@ public class PlaybackService extends Service {
         }
     }
 
+    private static boolean isPlaybackActive() {
+        return player != null && prepared && (player.isPlaying()
+                || activeService != null && activeService.waitingForProduction && activeService.playWhenPrepared);
+    }
+
     private void updatePlaybackState() {
         if (mediaSession == null) return;
-        boolean isPlaying = player != null && prepared && player.isPlaying();
-        int state = isPlaying ? PlaybackState.STATE_PLAYING : (player != null ? (prepared ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_BUFFERING) : PlaybackState.STATE_STOPPED);
+        boolean isPlaying = isPlaybackActive();
+        int state = isPlaying ? (waitingForProduction ? PlaybackState.STATE_BUFFERING : PlaybackState.STATE_PLAYING) : (player != null ? (prepared ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_BUFFERING) : PlaybackState.STATE_STOPPED);
         long pos = player != null && prepared ? player.getCurrentPosition() : 0;
 
         long actions = PlaybackState.ACTION_PLAY
@@ -565,7 +590,7 @@ public class PlaybackService extends Service {
 
         PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, pos, playbackSpeed, SystemClock.elapsedRealtime());
+                .setState(state, pos, waitingForProduction ? 0 : playbackSpeed, SystemClock.elapsedRealtime());
 
         mediaSession.setPlaybackState(stateBuilder.build());
     }
@@ -591,7 +616,7 @@ public class PlaybackService extends Service {
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm == null) return;
 
-        boolean isPlaying = player != null && prepared && player.isPlaying();
+        boolean isPlaying = isPlaybackActive();
 
         Intent openIntent = new Intent(this, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -669,7 +694,7 @@ public class PlaybackService extends Service {
                         } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
                                    focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
                             boolean wasPromptPending = !promptGate.token.isEmpty();
-                            if (player != null && prepared && player.isPlaying()) {
+                            if (isPlaybackActive()) {
                                 resumeOnFocusGain = true;
                                 pausePlayback();
                                 notifyClientEvent("pause", 0);
@@ -800,7 +825,7 @@ public class PlaybackService extends Service {
     public static JSONObject status() {
         JSONObject j = new JSONObject();
         try {
-            boolean isPlaying = player != null && prepared && player.isPlaying();
+            boolean isPlaying = isPlaybackActive();
             j.put("sleepRemainingMs",Math.max(0,sleepUntil-System.currentTimeMillis())).put("playing", isPlaying);
             j.put("position", player == null || !prepared ? 0 : player.getCurrentPosition());
             j.put("duration", player == null || !prepared ? durationMs : player.getDuration());

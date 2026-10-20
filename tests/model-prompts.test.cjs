@@ -1,6 +1,20 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {Engine,LlmOutputError,ModelPrompts}=require('../app/src/main/assets/core.js');
 const make=()=>new Engine({saveState:async()=>{}});
+test('annotation and direction repair require explicit source cues for pace changes',()=>{
+ const batch=[{id:0,text:'他急声道：“快走！”'}],context=batch;
+ const prompts=[ModelPrompts.annotation({text:batch[0].text,characters:[],batch,threshold:.5}),ModelPrompts.annotation({characters:[],batch,context,threshold:.5,isolated:true}),ModelPrompts.direction({batch,context})];
+ for(const prompt of prompts){
+  assert(prompt.includes('默认保持正常语速'));
+  assert(prompt.includes('急声道')&&prompt.includes('一字一顿'));
+  assert(prompt.includes('明确的说话速度信号'));
+  assert(prompt.includes('情绪、场景气氛、动作快慢、悬念或标点本身不能作为改变语速的依据'));
+  assert(prompt.includes('旁白保持流畅叙述'));
+  assert(prompt.includes('不刻意拉长停顿'));
+ }
+ assert(!ModelPrompts.annotationRules.includes('‘没有怪你’放缓'));
+ assert(!ModelPrompts.annotationRules.includes('叙述节奏稍紧'));
+});
 test('known MiMo capabilities are explicit; generic and Anthropic requests stay compatible',async()=>{
  const e=make(),sent=[];e.io.request=async(_,b)=>{sent.push(b);return b.system?{content:[{type:'text',text:'{"ok":true}'}]}:{choices:[{message:{content:'{"ok":true}'},finish_reason:'stop'}]};};
  e.state.settings.llmModel='mimo-v2.6-flash';await e.llm('json',{maxTokens:3000});assert.deepEqual(sent[0].response_format,{type:'json_object'});assert.deepEqual(sent[0].thinking,{type:'disabled'});assert.equal(sent[0].max_completion_tokens,3000);assert.equal(sent[0].max_tokens,undefined);

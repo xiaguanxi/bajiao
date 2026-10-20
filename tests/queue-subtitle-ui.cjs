@@ -32,6 +32,8 @@ const V=require('../app/src/main/assets/core.js');
   await page.setViewportSize({width:393,height:873});await page.screenshot({path:path.join(out,'voices.png')});
   await page.evaluate(()=>{const e=window.bajiaoEngine;e.state.tasks=e.state.books[0].chapters.map((c,i)=>({id:'task'+i,bookId:'book',chapterId:c.id,status:'queued',prio:0,created:8-i,phase:'等待开始',done:0,total:18}));window.renderApp();});
   await click('go:tasks');assert.deepEqual(await page.locator('[data-task-id]').evaluateAll(rows=>rows.map(r=>r.dataset.taskId)),Array.from({length:8},(_,i)=>'task'+i));
+  assert.equal(await page.locator('[data-act^="taskup:"],[data-act^="taskdown:"]').count(),0);
+  assert.equal(await page.locator('[data-task-drag]').count(),8);
   for(const width of [320,393,768]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   await page.setViewportSize({width:393,height:873});
   const height=(await page.locator('[data-task-id="task1"]').boundingBox()).height;assert(height<220,'task cards must be compact: '+height);
@@ -43,6 +45,29 @@ const V=require('../app/src/main/assets/core.js');
   // Touch pointer path uses the same capture/drag events and remains scrollable elsewhere.
   await page.evaluate(()=>{const h=document.querySelector('[data-task-drag="task1"]');document.querySelector('#screen').setPointerCapture=()=>{};const r=h.getBoundingClientRect();h.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:77,button:0,clientX:r.x+16,clientY:r.y+16}));const target=document.querySelector('[data-task-id="task2"]').getBoundingClientRect();document.querySelector('#screen').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'touch',pointerId:77,clientX:target.x+30,clientY:target.y+8}));document.querySelector('#screen').dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:77}));});
   await page.waitForFunction(()=>window.bajiaoEngine.pendingOrder()[0].id==='task1');
+  await page.evaluate(()=>{
+   const e=window.bajiaoEngine;e.state.books[0].chapters[7].audio='completed.wav';
+   e.state.tasks=[{id:'finished',bookId:'book',chapterId:'c7',status:'done',phase:'完成',done:18,total:18},{id:'cancelled',bookId:'book',chapterId:'c6',status:'cancelled',phase:'已取消'},{id:'orphan',bookId:'removed',chapterId:'missing',status:'done',phase:'完成'}];window.renderApp();
+  });
+  await click('tasktab:done');
+  for(const width of [320,393,768]){
+   await page.setViewportSize({width,height:873});
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   for(const id of ['finished','cancelled','orphan']){
+    const clear=page.locator('[data-act="removetask:'+id+'"]'),card=page.locator('.vc-panel').filter({has:clear});
+    assert.equal(await card.locator('.vc-task-card-header [data-act="removetask:'+id+'"]').count(),1);
+    assert.equal(await card.locator('.vc-task-card-actions [data-act^="removetask:"]').count(),0);
+    assert.equal(await card.getByText('完成',{exact:true}).count(),0);
+    const button=await clear.boundingBox(),bounds=await card.boundingBox(),heading=await card.locator('h3').boundingBox();
+    assert(button.x>bounds.x+bounds.width/2);assert(button.y+button.height<=heading.y+1);
+   }
+   await page.screenshot({path:path.join(out,'completed-tasks-'+width+'.png')});
+  }
+  await click('removetask:finished');assert.equal(await page.locator('[data-task-id="finished"]').count(),0);
+  assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[7].audio),'completed.wav');
+  await click('removetask:cancelled');await click('removetask:orphan');
+  assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks.length),0);
+  await page.setViewportSize({width:393,height:873});await click('tasktab:active');
   await page.evaluate(()=>{window.bajiaoEngine.state.tasks=[];window.renderApp();});
   await click('go:shelf');await click('book:book');await click('read:c0');await click('go:listen');await page.locator('#playBtn').click();
   await page.waitForFunction(()=>document.querySelector('.vc-transcript-line.active')?.dataset.segstream==='0');
@@ -67,6 +92,6 @@ const V=require('../app/src/main/assets/core.js');
   await click('seekseg:1000');await page.waitForTimeout(150);playback.position=2050;
   await page.waitForFunction(()=>document.querySelector('.vc-transcript-line.active')?.dataset.segstream==='2',{},{timeout:500});
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({passed:true,taskCardHeight:height,starts,errors},null,2));
-  console.log('PASS description, responsive layout, compact tasks, mouse/touch reorder, immediate stream subtitles and merge continuity; card height '+height);
+  console.log('PASS description, responsive layout, compact tasks without up/down buttons, mouse/touch reorder, completed-card header clear preserving audio, immediate stream subtitles and merge continuity; card height '+height);
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

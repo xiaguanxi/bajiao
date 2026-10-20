@@ -228,6 +228,7 @@ body.vc-catalog-open{overflow:hidden}
 #app .vc-task-drag{display:flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--vc-muted);touch-action:none;cursor:grab}
 #app .vc-task-card>.vc-row{grid-column:1/-1;gap:8px;justify-content:flex-start}
 #app .vc-task-card>.vc-row>small{margin-left:auto;font-size:11px;min-width:0}
+#app .vc-task-card-header>.vc-link{margin-left:auto;flex:none;white-space:nowrap}
 #app .vc-task-card.is-dragging{outline:2px solid var(--vc-accent);background:var(--vc-soft);cursor:grabbing}
 #app .voice-batch-row[aria-pressed="true"]{background:var(--vc-soft);border-bottom-color:transparent;border-radius:10px}
 #app .voice-batch-row[aria-pressed="true"] .voice-batch-check{background:var(--vc-accent);border-color:var(--vc-accent)}

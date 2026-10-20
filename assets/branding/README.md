@@ -1,12 +1,13 @@
 # 芭蕉品牌资源
 
-`bajiao-master.png` 是用户选定的第一轮第一个方案「叶页成书」，保留生成原图。
+当前图标采用项目根目录 `aurora-blue-alpha_a_为有声书app：芭蕉设计_3_个_app.webp` 中间的方案：深青绿色雨景、芭蕉叶、米白色耳机与书本，以及水面涟漪。
 
-设计：深绿背景，奶油白与浅玉绿色的芭蕉叶融入展开的书页。
-由内置 image_gen 生成；原始提示词：
+`bajiao-rain-headphones.png` 是 imagegen 从参考图中间方案提取并补齐四角的方形源图，保留水彩质感，不预加圆角。`bajiao-master.png` 是统一导出的 1024 × 1024 图标。
 
-> Create one polished Android launcher app icon for 芭蕉, a Chinese app that turns novels into expressive multi-character audiobooks. Fuse an open book with two broad banana-plant leaves, using deep emerald, warm ivory and pale jade, a clean silhouette, generous negative space and restrained folded-paper shading. No text or additional symbols.
+之前的「听雨」矢量方案保留为 `bajiao-icon.svg`，更早的「叶页成书」原图保留为 `bajiao-leaf-book-original.png`，均不再用于当前导出。已有提示词仅作为探索记录。
 
-Android 的 `bajiao_icon.png` 仅做等比缩放。`bajiao_icon_adaptive.png` 增加同色背景留白，适配圆形、圆角方形等启动器蒙版，不改变选定图案。
+运行 `./scripts/build-brand-icons.ps1` 或 `node scripts/build-brand-icons.cjs` 从当前 PNG 源图重新导出 Android 资源。需要 Node、Playwright 和 Edge；`PLAYWRIGHT_MODULE` 可指定 Playwright 模块路径，默认沿用项目 UI 验证使用的本地运行库。
+
+`bajiao_icon.png` 为 512 × 512 完整图标；`bajiao_icon_adaptive.png` 为 432 × 432 不透明自适应前景，完整构图位于中央 288 × 288 的系统可见区域。外围仅延展边缘像素，供启动器动效使用，避免空白边角。系统按圆形或圆角蒙版裁切，背景兜底色为 `#173F43`，由脚本同步写入 `colors.xml`。圆形、圆角及 64 / 48px 预览保存至 `artifacts/bajiao-rain-icon-preview.png`。所有发布 PNG 均来自同一源图。
 
 显示品牌统一为「芭蕉」，英文代码标识使用 `Bajiao` / `bajiao`。安装 ID、原生组件包名与旧密钥别名保留，以维持覆盖升级和数据读取；历史 APK 和验收归档保持原文件名。

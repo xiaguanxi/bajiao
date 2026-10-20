@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">芭蕉 · 听雨</title>
+  <desc id="desc">三道斜雨落向舒展的芭蕉叶，三层开放短弧从同一落点荡漾开，既似水波，也似声波。</desc>
+  <rect id="background" width="512" height="512" fill="#244C40"/>
+  <g id="mark">
+    <g transform="translate(-40.96 -40.96) scale(1.16)">
+    <!-- A broad, asymmetric banana leaf, with two restrained edge splits. -->
+    <path fill="#F3EEDC" d="M140 362 C121 333 128 303 150 280 L177 291 L161 269 C185 253 215 248 249 251 C297 255 337 253 386 222 C378 269 360 302 333 326 L311 313 L321 336 C293 356 261 363 229 360 C196 356 169 345 140 362 Z"/>
+    <path fill="#A8C4A1" d="M140 362 C185 317 260 336 316 289 C345 266 367 244 386 222 C378 269 360 302 333 326 L311 313 L321 336 C293 356 261 363 229 360 C196 356 169 345 140 362 Z"/>
+    <path d="M125 377 C171 319 242 341 309 294 C342 271 366 245 386 222" fill="none" stroke="#244C40" stroke-width="6" stroke-linecap="round"/>
+    <path d="M125 377 C140 357 151 347 166 341" fill="none" stroke="#F3EEDC" stroke-width="9" stroke-linecap="round"/>
+    <!-- Three parallel gestures fall from upper left to lower right. -->
+    <path d="M145 157 L180 205 M204 139 L249 201 M195 222 L222 259" fill="none" stroke="#F3EEDC" stroke-width="7" stroke-linecap="round"/>
+    <!-- Three 100-degree elliptical arcs share one impact center (226, 259).
+         Increasing radii and spacing suggest water and sound unfolding together. -->
+    <g fill="none" stroke="#244C40" stroke-width="5.5" stroke-linecap="round">
+      <path d="M240.96 263.05 A18 11 -12 0 1 213.98 268.78"/>
+      <path d="M253.67 267.58 A33 22 -12 0 1 204.21 278.09"/>
+      <path d="M268.89 272.88 A51 35 -12 0 1 192.46 289.13"/>
+    </g>
+    </g>
+  </g>
+</svg>

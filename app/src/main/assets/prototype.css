@@ -120,7 +120,7 @@ body.vc-catalog-open{overflow:hidden}
 #app .vc-catalog-handle:focus-visible{outline:2px solid var(--vc-accent);outline-offset:-4px;border-radius:20px}
 #app .vc-detail-overview{overflow:hidden}
 #app .vc-detail-overview-content{display:flow-root;padding-bottom:12px}
-#app .vc-catalog-scroll{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;overflow-anchor:none;scrollbar-width:thin}
+#app .vc-catalog-scroll{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;scrollbar-width:thin}
 #app .vc-catalog-scroll:focus-visible{outline:2px solid var(--vc-accent);outline-offset:2px}
 #app .vc-main[data-page=detail] .vc-book-info{min-width:0}
 #app .vc-main[data-page=detail] .vc-book-info h3{overflow-wrap:anywhere}
@@ -527,9 +527,13 @@ body.vc-catalog-open{overflow:hidden}
 #app .production-section small,#app .production-choice small{font-size:var(--production-type);color:var(--vc-muted);font-weight:400;line-height:1.6}
 #app .production-flow{margin:0;padding-left:24px;display:grid;gap:8px}
 #app .production-setting{padding-block:8px;min-height:44px;cursor:pointer;gap:16px}
-#app .production-switch{appearance:none;display:block;flex:none;width:48px;height:28px;border:2px solid var(--vc-muted);border-radius:16px;background:var(--vc-paper);cursor:pointer;position:relative}
+#app input[type=checkbox].production-switch,
+#app .production-switch{appearance:none;-webkit-appearance:none;display:block;flex:none;width:48px;height:28px;border:2px solid var(--vc-muted);border-radius:16px;background:var(--vc-paper);cursor:pointer;position:relative;box-sizing:border-box}
+#app input[type=checkbox].production-switch::before,
 #app .production-switch::before{content:'';display:block;width:16px;height:16px;margin:4px;border-radius:50%;background:var(--vc-muted);transition:transform 180ms ease-out}
+#app input[type=checkbox].production-switch:checked,
 #app .production-switch:checked{background:var(--vc-accent);border-color:var(--vc-accent)}
+#app input[type=checkbox].production-switch:checked::before,
 #app .production-switch:checked::before{background:var(--vc-paper);transform:translateX(20px)}
 #app .production-choice{width:100%;min-height:64px;text-align:left;border:1px solid var(--vc-line);padding:16px;border-radius:var(--production-radius);background:transparent;color:var(--vc-text);font:inherit;cursor:pointer;gap:16px}
 #app .production-choice[aria-checked=true]{border-color:var(--vc-accent);background:var(--vc-soft)}

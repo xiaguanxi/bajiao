@@ -1,7 +1,6 @@
 /* The approved layout on factory Android WebViews without dynamic viewport units. */
-@supports not (appearance: none) {
- #app .production-switch { -webkit-appearance:none; }
-}
+#app input[type=checkbox].production-switch,
+#app .production-switch { -webkit-appearance:none; }
 .vc-no-focus-visible #app :focus { outline:none; }
 .vc-no-focus-visible.vc-keyboard-navigation #app :focus { outline:2px solid var(--vc-accent);outline-offset:3px; }
 @supports not (height: 100dvh) {

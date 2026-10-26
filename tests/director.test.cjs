@@ -6,7 +6,7 @@ const labels=batch=>({lines:batch.map(s=>({id:s.id,speaker:'旁白',confidence:1
 async function fixture(n=3){
  const calls=[],snapshots=[];let serial=0;
  const io={saveState:async text=>snapshots.push(JSON.parse(text)),request:async(provider,body)=>{calls.push({provider,body});return {choices:[{finish_reason:'stop',message:{audio:{data:wave}}}]};},saveRawAudio:async()=>({id:'raw-'+(++serial)+'.wav',duration:2}),saveAudio:async()=>({id:'saved-'+(++serial)+'.wav',duration:2}),readAudio:async()=>({base64:wave}),mergeAudio:async()=>({id:'chapter-'+(++serial)+'.wav',duration:3})};
- const e=new Engine(io),b=await e.addBook('导演测试',Array.from({length:n},(_,i)=>'原文'+i+'。').join('')),c=b.chapters[0];e.state.settings.retries=0;
+ const e=new Engine(io),b=await e.addBook('导演测试',Array.from({length:n},(_,i)=>'原文'+i+'。').join('')),c=b.chapters[0];e.state.settings.retries=0;e.state.settings.promptMode='director';
  return {e,b,c,io,calls,snapshots};
 }
 

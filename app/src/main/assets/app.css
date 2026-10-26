@@ -1221,7 +1221,7 @@ body {
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 #app .vc-switch.on { background: var(--vc-accent); }
-#app .vc-switch.on .vc-switch-knob { left: 23px; }
+#app .vc-switch.on .vc-switch-knob { left: 2px; }
 #app .vc-action-info {
   display: flex;
   flex-direction: column;

@@ -120,7 +120,7 @@ body.vc-catalog-open{overflow:visible}
 #app .vc-switch:before{content:'';position:absolute;inset:8px 0;background:var(--vc-line);border-radius:20px;transition:background .15s}
 #app .vc-switch>span{position:absolute;top:10px;left:2px;width:24px;height:24px;background:var(--vc-paper);border-radius:50%;box-shadow:0 1px 4px #0002;transition:transform .15s}
 #app .vc-switch[aria-checked=true]:before{background:var(--vc-accent)}
-#app .vc-switch[aria-checked=true]>span{transform:translateX(24px)}
+#app .vc-switch[aria-checked=true]>span{transform:translateX(24px)}#app .vc-switch.on>span,#app .vc-switch.on .vc-switch-knob{left:2px}
 #app .vc-sleep-options{background:var(--vc-bg);border-radius:22px;padding:16px}
 #app .vc-sleep-options h4{font-size:16px;font-weight:550;margin:0 0 14px}
 #app .vc-sleep-options h4:not(:first-child){margin-top:24px}

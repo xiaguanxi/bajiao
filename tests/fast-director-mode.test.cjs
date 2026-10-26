@@ -28,22 +28,24 @@ test('default settings has promptMode fast and FAST_SPEECH_PROMPT defined', ()=>
  assert.equal(FAST_SPEECH_PROMPT, '流利，吐字清晰。');
 });
 
-test('fast mode model prompt omits scene and delivery from schema and rules', ()=>{
+test('fast mode model prompt omits emotion, scene and delivery from schema and rules', ()=>{
  const batch=[{id:0,text:'“去哪里？”'}];
  const fastPrompt=ModelPrompts.annotation({text:batch[0].text,characters:[],batch,threshold:0.5,mode:'fast'});
  const directorPrompt=ModelPrompts.annotation({text:batch[0].text,characters:[],batch,threshold:0.5,mode:'director'});
 
  assert(!fastPrompt.includes('"scene":'));
  assert(!fastPrompt.includes('"delivery":'));
+ assert(!fastPrompt.includes('"emotion":'));
  assert(!fastPrompt.includes('必须同时生成 scene 和 delivery'));
- assert(fastPrompt.includes('快速模式下无需为片段生成场景和导演提示词'));
+ assert(fastPrompt.includes('快速模式下无需分析情感、无需生成场景和导演提示词'));
 
  assert(directorPrompt.includes('"scene":'));
  assert(directorPrompt.includes('"delivery":'));
+ assert(directorPrompt.includes('"emotion":'));
  assert(directorPrompt.includes('必须同时生成 scene 和 delivery'));
 });
 
-test('fast mode chapter analysis does not require scene/delivery and synthesizes with FAST_SPEECH_PROMPT', async()=>{
+test('fast mode chapter analysis does not require emotion/scene/delivery and synthesizes with FAST_SPEECH_PROMPT', async()=>{
  const {e,calls}=await createFixture();
  assert.equal(e.state.settings.promptMode, 'fast');
 
@@ -54,14 +56,16 @@ test('fast mode chapter analysis does not require scene/delivery and synthesizes
  e.llm=async p=>{
   assert(!p.includes('"scene"'));
   assert(!p.includes('"delivery"'));
+  assert(!p.includes('"emotion"'));
   return {
-   lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1}]
+   lines:[{id:0,speaker:'旁白',confidence:1}]
   };
  };
 
  await e.analyze(b.id, c.id);
  assert.equal(c.promptMode, 'fast');
  assert.equal(c.segments[0].promptMode, 'fast');
+ assert.equal(c.segments[0].emotion, '');
  assert.equal(c.segments[0].scene, '');
  assert.equal(c.segments[0].delivery, '');
  assert.equal(c.segments[0].directionStatus, undefined);
@@ -75,14 +79,14 @@ test('fast mode chapter analysis does not require scene/delivery and synthesizes
  assert.equal(ttsCall.body.messages[0].content, FAST_SPEECH_PROMPT);
 });
 
-test('fast mode appends single-character articulation instruction for 1-char sentences', async()=>{
+test('fast mode prompt is strictly fixed and omits single-character optimization', async()=>{
  const {e,calls}=await createFixture();
  e.state.settings.promptMode='fast';
  const b=await e.addBook('单字测试','第一章\n好。');
  const c=b.chapters[0];
  await e.bind(b.id,'旁白','preset:白桦');
 
- e.llm=async()=>({lines:[{id:0,speaker:'旁白',emotion:'赞同',confidence:1}]});
+ e.llm=async()=>({lines:[{id:0,speaker:'旁白',confidence:1}]});
  await e.analyze(b.id, c.id);
 
  calls.length=0;
@@ -91,7 +95,27 @@ test('fast mode appends single-character articulation instruction for 1-char sen
 
  const ttsCall=calls.find(call=>call.provider==='tts'||call.body?.messages);
  assert(ttsCall);
- assert(ttsCall.body.messages[0].content.startsWith(FAST_SPEECH_PROMPT));
+ assert.equal(ttsCall.body.messages[0].content, FAST_SPEECH_PROMPT);
+ assert(!ttsCall.body.messages[0].content.includes('本句只有一个字'));
+});
+
+test('director mode appends single-character articulation instruction for 1-char sentences', async()=>{
+ const {e,calls}=await createFixture();
+ e.state.settings.promptMode='director';
+ const b=await e.addBook('单字导演测试','第一章\n好。');
+ const c=b.chapters[0];
+ await e.bind(b.id,'旁白','preset:白桦');
+
+ e.llm=async()=>({lines:[{id:0,speaker:'旁白',emotion:'赞同',confidence:1,scene:'屋里',delivery:'肯定回答'}]});
+ await e.analyze(b.id, c.id);
+
+ calls.length=0;
+ await e.enqueue(b.id, [c.id]);
+ assert.equal(e.state.tasks[0].status, 'done');
+
+ const ttsCall=calls.find(call=>call.provider==='tts'||call.body?.messages);
+ assert(ttsCall);
+ assert(ttsCall.body.messages[0].content.includes('指导：肯定回答'));
  assert(ttsCall.body.messages[0].content.includes('本句只有一个字，吐字务必清晰完整'));
 });
 

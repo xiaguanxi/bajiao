@@ -10,7 +10,7 @@ function networkLabel(){return {wifi:'已连接 Wi-Fi',other:'当前不是 Wi-Fi
 function settingSwitch(id,label,help,checked){return `<label class="production-setting od-row"><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span><input class="production-switch od-fixed" type="checkbox" id="${id}" ${checked?'checked':''}></label>`;}
 function productionSettingsHtml(p){const st=productionDraftFor(p);let h='';
 if(p==='voicepolicy'){h=top('音色分配')+`<section class="production-section od-stack"><h2>优先沿用已有声音</h2><p class="vc-sub">新小说默认旁白用白桦，男主用苏打，女主用冰糖；其他角色按下方规则分配。</p><ol class="production-flow"><li>保留角色已绑定的音色</li><li>按角色描述匹配我的音色</li><li>没有合适音色时设计新声音</li></ol><p class="vc-sub">更改设置不会替换已有角色绑定。</p>${settingSwitch('productionPresets','允许使用 MiMo 预设','我的音色不合适时，也可匹配预设声音。',st.usePresets)}</section><section class="production-section od-stack"><h2>新声音如何启用</h2><div class="production-options od-stack" role="radiogroup" aria-label="新设计音色确认方式">${[['auto','自动采用（默认）','自动选择新声音，仅异常时需要处理。'],['manual','先试听确认','新设计样本由你确认后使用。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${(st.mode||'auto')===v}" data-act="settingchoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div></section><details class="production-section"><summary>高级：说话人确认</summary><p class="vc-sub">自动采用时，低于阈值的说话人以旁白兜底并保留原判断；先试听确认模式下，低于阈值的判断需要人工确认。</p>${dd('speakerThreshold','说话人确认阈值',[['0.3','宽松 · 0.3'],['0.5','适中 · 0.5'],['0.65','严格 · 0.65'],['0.8','很严格 · 0.8']],String(st.speakerThreshold??0.5))}</details>`;}
-if(p==='productionpolicy'){h=top('网络与制作')+`<section class="production-section od-stack"><h2>制作模式</h2><p class="vc-sub">可在快速模式与导演模式之间切换。已生成的章节不变，只对新生成章节生效。</p><div class="production-options od-stack" role="radiogroup" aria-label="制作模式">${[['fast','快速模式（默认）','不要求 LLM 生成提示词，使用固定提示词（流利，吐字清晰），制作更快。'],['director','导演模式','由 LLM 生成细致的场景和有声书导演指导提示词，演绎更丰富。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${(st.promptMode||'fast')===v}" data-act="promptmodechoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div></section><section class="production-section od-stack"><h2>制作网络</h2><p class="production-network-state" role="status">${E(networkLabel())}</p>${settingSwitch('productionWifiOnly','仅 Wi-Fi 下制作','限制章节制作及重新合成；已下载音频仍可播放。',st.wifiOnlyProduction)}<p class="vc-sub">离开 Wi-Fi 后，当前请求完成再等待，已完成进度会保留。无法确认网络时会先提醒。</p></section><section class="production-section od-stack"><h2>制作速度</h2>${dd('taskParallel','同时制作章节',[['1','1 章 · 稳定优先'],['2','2 章'],['3','3 章']],String(st.taskParallel??1))}<details><summary>高级：句子并发</summary><p class="vc-sub">并发越高，请求越密集，也更容易触发服务限流。</p>${dd('ttsParallel','同时合成句数',[['1','1 句 · 最稳'],['2','2 句 · 推荐'],['3','3 句'],['4','4 句 · 易限流']],String(st.ttsParallel??2))}</details></section>`;}
+if(p==='productionpolicy'){h=top('网络与制作')+`<section class="production-section od-stack"><h2>制作模式</h2><p class="vc-sub">可在快速模式与导演模式之间切换。已生成的章节不变，只对新生成章节生效。</p><div class="production-options od-stack" role="radiogroup" aria-label="制作模式">${[['fast','快速模式（默认）','LLM 无需分析情感与生成指导，使用写死提示词（流利，吐字清晰），制作更快。'],['director','导演模式','由 LLM 生成细致的场景和有声书导演指导提示词，演绎更丰富。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${(st.promptMode||'fast')===v}" data-act="promptmodechoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div></section><section class="production-section od-stack"><h2>制作网络</h2><p class="production-network-state" role="status">${E(networkLabel())}</p>${settingSwitch('productionWifiOnly','仅 Wi-Fi 下制作','限制章节制作及重新合成；已下载音频仍可播放。',st.wifiOnlyProduction)}<p class="vc-sub">离开 Wi-Fi 后，当前请求完成再等待，已完成进度会保留。无法确认网络时会先提醒。</p></section><section class="production-section od-stack"><h2>制作速度</h2>${dd('taskParallel','同时制作章节',[['1','1 章 · 稳定优先'],['2','2 章'],['3','3 章']],String(st.taskParallel??1))}<details><summary>高级：句子并发</summary><p class="vc-sub">并发越高，请求越密集，也更容易触发服务限流。</p>${dd('ttsParallel','同时合成句数',[['1','1 句 · 最稳'],['2','2 句 · 推荐'],['3','3 句'],['4','4 句 · 易限流']],String(st.ttsParallel??2))}</details></section>`;}
 if(p==='importpolicy'){h=top('新书导入')+`<section class="production-section od-stack"><h2>默认切章规则</h2><p class="vc-sub">只影响之后导入的新书。已有书的重新切章仍在书籍详情中操作。</p>${dd('splitRule','标题识别方式',[['auto','自动识别（推荐）'],['chapter_cn','第X章/节/回'],['volume_cn','第X卷'],['special_cn','楔子/番外/序章'],['chapter_en','Chapter N'],['number_dot','数字点标题'],['paren_num','括号序号'],['bare_num','纯数字行'],['bare_cn_num','纯汉字数字'],['num_chapter','第N+空格+标题'],['custom','自定义模板']],st.splitRule||'auto')}${st.splitRule==='custom'?field('自定义模板（* 代表章号）','productionSplitCustom',st.splitCustom||''):''}</section>`;}
 if(p==='quality'){const auto=st.qualityAutoRetry!==false&&st.qualityConfirmRetry!==true;h=top('合成异常处理')+`<p class="vc-sub">请求没成功，与音频生成后有问题，是两种不同的重试。</p><section class="production-section od-stack"><h2>请求失败重试</h2><p class="vc-sub">还没取得有效结果时，重新发送同一个请求。适用于文本分析、音色设计和语音合成。</p>${dd('retries','每个请求最多追加重试',[['0','不追加重试'],['1','追加 1 次'],['2','追加 2 次'],['3','追加 3 次']],String(st.retries??2))}<p class="vc-sub">首次请求不计入重试。当前最多尝试 ${1+Number(st.retries??2)} 次；成功即停止。</p><p class="vc-sub">仅处理可恢复的网络错误、超时或服务限流；鉴权失败、额度不足及内容审核拒绝不反复重试。达到上限后显示失败，保留已有进度。</p></section><section class="production-section od-stack"><h2>音频异常重合成</h2><p class="vc-sub">请求已经返回音频，但本地检查发现明确截断、损坏、空音频或全静音时，是否为该片段再合成一次。</p><div class="production-options od-stack" role="radiogroup" aria-label="音频异常处理方式">${[['auto','自动重合成一次','损坏、截断等异常最多追加一次；重复无法修复时保留原音频继续。'],['manual','需要确认','损坏、截断等异常由你重做；重复先重试和尝试截断，仍有问题则等待你确认。']].map(([v,label,help])=>`<button type="button" class="production-choice od-row" role="radio" aria-checked="${auto===(v==='auto')}" data-act="qualitychoice:${v}"><span class="production-radio" aria-hidden="true"></span><span class="od-field od-fill"><strong>${label}</strong><small>${help}</small></span></button>`).join('')}</div><p class="vc-sub">重合成会产生额外合成用量。手动重新合成失败时不会再自动追加一次。</p></section><section class="production-section od-stack"><h2>重复朗读处理</h2><p class="vc-sub">长停顿和时长偏离保留本地提示。疑似重复先重合成一次，仍异常时，仅在中间长静音、前后整段声学高度相似且原文没有对应重复的情况下尝试截断；原始返回始终保留。不使用 ASR。</p></section><p class="footer-note">两种重试独立计数：音频重合成发出的请求，也遵守上方的请求失败重试上限。重发请求可能增加服务用量；保存设置不会立即开始重试。</p>`;}
 return h+`<footer class="production-save od-stack"><p id="production-setting-error" role="alert"></p><p class="vc-sub" role="status">${productionDirty?'有未保存的修改':'设置已保存；保存不会启动制作'}</p><button type="button" class="vc-btn full" data-act="saveproductionsettings">保存设置</button></footer>`;
@@ -549,6 +549,16 @@ async function checkAutoProduceUpcoming(bid, cid){
     }
   }
 }
+function taskProductionMetrics(t, chapter){
+  const segs = Array.isArray(chapter?.segments) ? chapter.segments : null;
+  const segTotal = segs ? segs.length : 0;
+  const segDone = segs ? segs.filter(s => s.audio).length : 0;
+  const total = Math.max(0, Number(t?.total) || segTotal || Number(chapter?.segmentCount) || 0);
+  const rawDone = Math.max(Number(t?.done) || 0, segDone);
+  const done = total > 0 ? Math.min(total, rawDone) : rawDone;
+  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((done / total) * 100))) : 0;
+  return { done, total, pct };
+}
 async function syncProductionStatus(){
   if(!engine || !window.device?.productionStatus) return;
   const activeTasks = engine.state.tasks.filter(t => t.status === "running" || t.status === "queued");
@@ -556,8 +566,7 @@ async function syncProductionStatus(){
     const running = activeTasks.find(t => t.status === "running") || activeTasks[0];
     const b = engine.state.books.find(x => x.id === running.bookId);
     const c = b?.chapters.find(x => x.id === running.chapterId);
-    const totalSegs = c?.unloaded?(running.total||c.segmentCount||0):(c?.segments?.length||running.total||0);
-    const doneSegs = c?.unloaded?(running.done||0):(c?.segments?.filter(s => s.audio&&s.audio!=='skip').length||running.done||0);
+    const { done: doneSegs, total: totalSegs } = taskProductionMetrics(running, c);
     const queuedCount = activeTasks.length - 1;
     const title = b ? "后台制作中 · " + b.name : "芭蕉 正在后台制作";
     const queueText = queuedCount > 0 ? " (后排队 " + queuedCount + " 章)" : "";
@@ -826,9 +835,7 @@ if(page==='listen'){
   if (activeProdTask) {
     const tb = engine.state.books.find(x => x.id === activeProdTask.bookId);
     const tc = tb?.chapters.find(x => x.id === activeProdTask.chapterId);
-    const doneSegs = tc?.segments?.filter(seg => seg.audio).length || 0;
-    const totalSegs = tc?.segments?.length || 0;
-    const pct = totalSegs > 0 ? Math.round((doneSegs / totalSegs) * 100) : 0;
+    const { pct } = taskProductionMetrics(activeProdTask, tc);
     prodBanner = '<button class="vc-listening-prod-banner" data-act="gotasksactive"><span class="vc-pulse-dot"></span><span>正在制作 ' + E(tc?.title || '下一章') + ' ' + pct + '%，点此查看 →</span></button>';
   }
   h += prodBanner;
@@ -836,7 +843,11 @@ if(page==='listen'){
   h += c.audio?(()=>{ const segs = engine?.computeSegmentTimestamps ? engine.computeSegmentTimestamps(c.segments || [], c.duration || 0, c.audioStale?null:c.audioTimeline, c.audio) : (c.segments || []); if (!segs || !segs.length) { return '<div class="vc-center"><small>时长 ' + fmt(c.duration || 0) + ' · 多角色演绎</small></div>'; } return '<div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="逐句字幕跟读">' + segs.map((s, idx) => { return '<div class="vc-transcript-line' + (s.speaker && s.speaker !== '旁白' ? ' is-dialogue' : '') + '" data-act="seekseg:' + Math.round(s.startMs || 0) + '" data-segstream="' + E(String(s.id)) + '" data-start="' + Math.round(s.startMs || 0) + '" data-end="' + Math.round(s.endMs || 0) + '">' + '<span class="vc-transcript-speaker">' + E(s.speaker || '旁白') + '</span>' + '<span class="vc-transcript-text">' + E(s.text || '') + '</span>' + '</div>'; }).join('') + '</div>'; })():streamHtml(b,c);
   const streamReady=streamPrefix(c).length>0||engine?.state.tasks.some(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
   if(c.audio||streamState||streamReady){
-h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-timer-button" data-act="sleepmenu" aria-label="睡眠定时">' + I('timer') + '<span>定时</span><span data-sleep-status></span></button><button class="vc-tool-toggle' + (engine.state.settings?.autoProduceUpcoming!==false?' is-on':'') + '" aria-pressed="' + (engine.state.settings?.autoProduceUpcoming!==false) + '" data-act="autoproducesettings" aria-haspopup="dialog">自动制作后续章节</button><button class="vc-tool-toggle' + (engine.state.settings?.autoDeletePlayed?' is-on':'') + '" aria-pressed="' + (!!engine.state.settings?.autoDeletePlayed) + '" data-act="listensettings" aria-haspopup="dialog">完播自动释放</button></div><div class="vc-player-progress"><button class="vc-seek-step" data-act="seekback" aria-label="快退15秒">' + I('rotate-ccw') + '<span>15</span></button><div class="vc-seek-track"><input type="range" id="seek" class="big-progress" min="0" max="' + listenSeekDuration(c) + '" value="0" aria-label="播放进度"><div class="vc-seek-times"><small class="vc-seek-bubble"><span id="playtime">00:00</span><span aria-hidden="true">/</span><span id="playduration">' + fmt(listenSeekDuration(c)/1000) + '</span></small></div></div><button class="vc-seek-step" data-act="seekforward" aria-label="快进15秒">' + I('rotate-cw') + '<span>15</span></button></div>';
+const isStream = isChapterStreaming(c);
+  const totalUnits = isStream ? chapterSentenceCount(c) : listenSeekDuration(c);
+  const durationLabel = isStream ? (totalUnits + ' 句') : fmt(totalUnits / 1000);
+  const curLabel = isStream ? '0 句' : '00:00';
+  h += '<div class="vc-dock"><div class="vc-player-tools"><button class="vc-timer-button" data-act="sleepmenu" aria-label="睡眠定时">' + I('timer') + '<span>定时</span><span data-sleep-status></span></button><button class="vc-tool-toggle' + (engine.state.settings?.autoProduceUpcoming!==false?' is-on':'') + '" aria-pressed="' + (engine.state.settings?.autoProduceUpcoming!==false) + '" data-act="autoproducesettings" aria-haspopup="dialog">自动制作后续章节</button><button class="vc-tool-toggle' + (engine.state.settings?.autoDeletePlayed?' is-on':'') + '" aria-pressed="' + (!!engine.state.settings?.autoDeletePlayed) + '" data-act="listensettings" aria-haspopup="dialog">完播自动释放</button></div><div class="vc-player-progress"><button class="vc-seek-step" data-act="seekback" aria-label="快退15秒">' + I('rotate-ccw') + '<span>15</span></button><div class="vc-seek-track"><input type="range" id="seek" class="big-progress" min="0" max="' + totalUnits + '" value="0" aria-label="播放进度"><div class="vc-seek-times"><small class="vc-seek-bubble"><span id="playtime">' + curLabel + '</span><span aria-hidden="true">/</span><span id="playduration">' + durationLabel + '</span></small></div></div><button class="vc-seek-step" data-act="seekforward" aria-label="快进15秒">' + I('rotate-cw') + '<span>15</span></button></div>';
     h += '<div class="vc-ctlbar"><button class="vc-ctl vc-ctl-speed" data-act="speedmodal" title="倍速">' + I('gauge') + '<span class="vc-spd-val" id="speedBtnVal">' + curSpeed + 'x</span></button><button class="vc-ctl' + (hasPrev?'':' disabled') + '" data-act="prevchapter" title="上一章"' + (hasPrev?'':' disabled') + '>' + I('skip-back') + '</button><button class="vc-ctl primary" data-act="playchapter" id="playBtn" aria-label="播放">' + I('play') + '</button><button class="vc-ctl' + (hasNext?'':' disabled') + '" data-act="nextchapter" title="下一章"' + (hasNext?'':' disabled') + '>' + I('skip-forward') + '</button><button class="vc-ctl" data-act="playercatalog" title="章节目录" aria-label="章节目录">' + I('list') + '</button></div></div>';
 
     
@@ -854,8 +865,8 @@ case 'roles':{const b=book();const __sugs=(b.mergeSuggestions||[]);const __chTit
 case 'choose':h=top('为'+roleName+'选音色')+`<div class="vc-note">先试听再选用。更换音色后，已有音频保留，后续合成使用新音色。</div><h3>我的音色</h3>${state.voices.map(v=>`<div class="vc-panel"><div class="vc-row"><div style="flex:1"><h3>${E(v.name)}</h3><small>${E(v.description)}</small></div><button class="vc-preset-btn" data-act="trialvoice:${v.id}">${I('play')} 试听</button></div><div class="vc-row" style="margin-top:8px"><span></span>${B('选用','bind:'+v.id,true)}</div></div>`).join('')||'<div class="empty"><p>还没有自己的音色。</p></div>'}<h3 style="margin-top:22px">MiMo 预设</h3>${Bajiao.PRESETS.map(v=>`<div class="vc-preset-row"><div class="vc-preset-title">${I('volume-2')}${E(v)}</div><div style="display:flex;gap:8px"><button class="vc-preset-btn" data-act="preset:${E(v)}">${I('play')} 试听</button><button class="vc-btn secondary" data-act="bind:preset:${E(v)}">选用</button></div></div>`).join('')}`;break;
 case 'voicepolicy':case 'productionpolicy':case 'importpolicy':case 'quality':h=productionSettingsHtml(page);break;
 case 'make':h=top('批量制作')+`<h1 class="vc-title">制作 ${selected.length} 个章节</h1><div class="vc-panel"><h3>${E(book().name)}</h3><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).slice(0,3).map(c=>E(c.title)).join('、')}${selected.length>3?' 等 '+selected.length+' 章':''}</p>${selected.length>3?`<details><summary>查看全部所选章节</summary><p class="vc-sub">${book().chapters.filter(c=>selected.includes(c.id)).map(c=>E(c.title)).join('、')}</p></details>`:''}</div>${menu('clapperboard','制作模式',state.settings.promptMode==='director'?'导演模式 · 细致场景与指导':'快速模式 · 流利吐字清晰（默认）','go:productionpolicy')}${menu('brain-circuit','语言模型',E(state.settings.llmModel),'go:llm')}${menu('audio-lines','MiMo TTS','预设 / 参考音频克隆自动选择','go:mimo')}${(()=>{const pendRoles=book().characters.filter(r=>r.name!=='旁白'&&r.name!=='广告'&&!r.voice).length;return (state.settings.mode!=='auto'&&pendRoles)?`<div class="vc-note warn">有 ${pendRoles} 个角色音色待确认，先去角色页确认后再制作，未分配音色的角色将等待确认。<br>${L('去角色与音色确认 →','go:roles')}</div>`:'';})()}${menu('workflow','新角色音色策略',state.settings.mode==='auto'?'全自动，失败后处理':'新设计候选样本等待确认','go:voicepolicy')}<button class="vc-btn full vc-bottom" data-act="enqueue">加入队列并开始制作</button><p class="footer-note">制作使用前台服务在后台继续，系统通知显示进度。你可以主动暂停；被系统终止后可从保存片段继续。</p>`;break;
-case 'tasks':{const isMaking=t=>['running','queued','waiting','paused','failed'].includes(t.status);const isFinished=t=>['done','cancelled'].includes(t.status);const isActive=t=>['running','queued','paused'].includes(t.status);const isAttention=t=>t.status==='waiting';const hasProducing=state.tasks.some(t=>['queued','running'].includes(t.status)&&!t.pauseRequested);const hasPausedTasks=state.tasks.some(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested);const ord=(a,b)=>engine.queueOrder(a,b);const makingList=state.tasks.filter(isMaking).sort(ord);const finishedList=state.tasks.filter(isFinished).sort((a,b)=>(b.created||0)-(a.created||0));const activeList=state.tasks.filter(isActive).sort(ord);const attentionList=state.tasks.filter(isAttention).sort(ord);const failedList=state.tasks.filter(t=>t.status==='failed').sort(ord);const cardHeader=(t,draggable=false)=>`<div class="vc-row vc-task-card-header">${draggable?`<button type="button" class="vc-task-drag" data-task-drag="${E(t.id)}" aria-label="拖动调整制作优先级">${I('grip-vertical')}</button>`:''}${T(t.retryWaiting?'自动重试':t.networkWaiting?'等待网络':status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}${isFinished(t)?L(I('x')+'清除','removetask:'+t.id):`<small>${E(t.phase||'')}</small>`}</div>`;const card=t=>{const missingData=isMissingData(t.message);let b=null,c=null;try{b=engine.book(t.bookId);c=engine.chapter(t.bookId,t.chapterId);}catch(e){b=null;c=null;}if(!b||!c){const pct0=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;return `<div class="vc-panel">${cardHeader(t)}<h3 style="margin-top:14px">关联内容已移除</h3><p>该任务对应的书籍或章节已不存在，可安全移除此条记录，不影响其他任务。</p><div class="vc-meter"><span style="width:${pct0}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':(Number(t.done)||0)+' / '+(t.total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}${isFinished(t)?'':`<div class="vc-row"><span></span>${L(I('x')+'清除','removetask:'+t.id)}</div>`}</div>`;}const pct=t.total?Math.min(100,Math.max(0,Math.round((Number(t.done)||0)/t.total*100))):0;let acts='';const pendOrder=!['done','cancelled'].includes(t.status);if(pendOrder){const sibs=engine.pendingOrder();const si=sibs.findIndex(o=>o.id===t.id);if(si>0)acts+=`<button class="vc-link" data-act="tasktop:${t.id}" aria-label="优先级置顶" title="置顶">${I('chevrons-up')}</button>`;}
-if(t.status==='waiting')acts+=L('去标注页确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('恢复本章','recovertask:'+t.id)+L('移除任务','removetask:'+t.id);}else if(['paused','failed'].includes(t.status)){acts+=L('处理标注','task:'+t.id);acts+=L('继续 / 重试','resume:'+t.id);}else if(t.status==='running')acts+=t.resumeRequested?T('正在接续'):t.pauseRequested?L('继续','resume:'+t.id):L('暂停','pause:'+t.id);else if(t.status==='queued')acts+=L(t.retryWaiting?'立即重试':'开始','resume:'+t.id)+L('暂停','pause:'+t.id);else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;acts+=L('重新制作','remake:'+t.id);}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);return `<div class="vc-panel vc-card-clickable vc-task-card" data-task-id="${E(t.id)}" data-act="task:${t.id}">${cardHeader(t,pendOrder)}<h3 class="vc-task-title">${E(c.title)}</h3><p class="vc-task-book">${E(b.name)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':(Number(t.done)||0)+' / '+(t.total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}<div class="vc-task-card-actions">${acts}</div></div>`;};
+case 'tasks':{const isMaking=t=>['running','queued','waiting','paused','failed'].includes(t.status);const isFinished=t=>['done','cancelled'].includes(t.status);const isActive=t=>['running','queued','paused'].includes(t.status);const isAttention=t=>t.status==='waiting';const hasProducing=state.tasks.some(t=>['queued','running'].includes(t.status)&&!t.pauseRequested);const hasPausedTasks=state.tasks.some(t=>['paused','failed'].includes(t.status)||t.status==='running'&&t.pauseRequested);const ord=(a,b)=>engine.queueOrder(a,b);const makingList=state.tasks.filter(isMaking).sort(ord);const finishedList=state.tasks.filter(isFinished).sort((a,b)=>(b.created||0)-(a.created||0));const activeList=state.tasks.filter(isActive).sort(ord);const attentionList=state.tasks.filter(isAttention).sort(ord);const failedList=state.tasks.filter(t=>t.status==='failed').sort(ord);const cardHeader=(t,draggable=false)=>`<div class="vc-row vc-task-card-header">${draggable?`<button type="button" class="vc-task-drag" data-task-drag="${E(t.id)}" aria-label="拖动调整制作优先级">${I('grip-vertical')}</button>`:''}${T(t.retryWaiting?'自动重试':t.networkWaiting?'等待网络':status(t.status),['failed','waiting'].includes(t.status)?'warn':t.status==='running'?'running':'')}${isFinished(t)?L(I('x')+'清除','removetask:'+t.id):`<small>${E(t.phase||'')}</small>`}</div>`;const card=t=>{const missingData=isMissingData(t.message);let b=null,c=null;try{b=engine.book(t.bookId);c=engine.chapter(t.bookId,t.chapterId);}catch(e){b=null;c=null;}const { done, total, pct } = taskProductionMetrics(t, c);if(!b||!c){return `<div class="vc-panel">${cardHeader(t)}<h3 style="margin-top:14px">关联内容已移除</h3><p>该任务对应的书籍或章节已不存在，可安全移除此条记录，不影响其他任务。</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':done+' / '+(total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}${isFinished(t)?'':`<div class="vc-row"><span></span>${L(I('x')+'清除','removetask:'+t.id)}</div>`}</div>`;}let acts='';const pendOrder=!['done','cancelled'].includes(t.status);if(pendOrder){const sibs=engine.pendingOrder();const si=sibs.findIndex(o=>o.id===t.id);if(si>0)acts+=`<button class="vc-link" data-act="tasktop:${t.id}" aria-label="优先级置顶" title="置顶">${I('chevrons-up')}</button>`;}
+if(t.status==='waiting')acts+=L('去标注页确认','task:'+t.id);else if(missingData&&(t.status==='paused'||t.status==='failed')){acts+=L('恢复本章','recovertask:'+t.id)+L('移除任务','removetask:'+t.id);}else if(['paused','failed'].includes(t.status)){acts+=L('处理标注','task:'+t.id);acts+=L('继续 / 重试','resume:'+t.id);}else if(t.status==='running')acts+=t.resumeRequested?T('正在接续'):t.pauseRequested?L('继续','resume:'+t.id):L('暂停','pause:'+t.id);else if(t.status==='queued')acts+=L(t.retryWaiting?'立即重试':'开始','resume:'+t.id)+L('暂停','pause:'+t.id);else if(t.status==='done'){let canListen=false;try{canListen=!!engine.chapter(t.bookId,t.chapterId).audio;}catch(e){}if(canListen)acts+=`<button class="vc-btn primary" data-act="listentask:${t.id}">开始听书</button>`;acts+=L('重新制作','remake:'+t.id);}else if(t.status==='cancelled')acts+=L('重新制作','remake:'+t.id);if(!['done','cancelled'].includes(t.status))acts+=L(I('x')+'取消','cancel:'+t.id);return `<div class="vc-panel vc-card-clickable vc-task-card" data-task-id="${E(t.id)}" data-act="task:${t.id}">${cardHeader(t,pendOrder)}<h3 class="vc-task-title">${E(c.title)}</h3><p class="vc-task-book">${E(b.name)}</p><div class="vc-meter"><span style="width:${pct}%"></span></div><p class="vc-sub">${t.skipped?'全部跳过 '+t.skipped+' 段，未生成音频':done+' / '+(total||'—')+' 句'}${missingData?'<br><small>可恢复本章，其他章节和音频会保留</small>':''}</p>${t.message?'<div class="vc-sub vc-task-error" role="status">'+errorMarkup(t.error||t.message)+'</div>':''}<div class="vc-task-card-actions">${acts}</div></div>`;};
 const tabBtn=(id,label,n)=>`<button class="${taskTab===id?'active':''}" data-act="tasktab:${id}">${label} · ${n}</button>`;
 const tabList=taskTab==='active'?activeList:taskTab==='attention'?attentionList:taskTab==='failed'?failedList:finishedList;
 let topBtn='';if(taskTab==='attention'){const waitN=attentionList.filter(t=>t.status==='waiting').length;topBtn=B('全部自动确认','autoconfirmall',true,!waitN);}else if(taskTab==='done'){topBtn=B('全部清除','clearfinished',true,!finishedList.length);}else if(hasProducing)topBtn=B('全部暂停','pauseall',true);else if(taskTab==='failed')topBtn=B('重试失败任务','retryfailed',true,!failedList.length);else if(hasPausedTasks)topBtn=B('继续制作','resumeall',true);
@@ -989,9 +1000,19 @@ if (page !== 'listen' && page !== 'splitpreview' && playingBookId && playingChap
   const mBook = engine?.state.books.find(b => b.id === playingBookId);
   const mChap = mBook?.chapters.find(c => c.id === playingChapterId);
   if (mBook && mChap && (mChap.audio||streamState)) {
-    const pos = miniPlayingState?.position || 0;
-    const dur = (mChap.duration || 0) * 1000;
-    const pct = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+    const isStream = isChapterStreaming(mChap);
+    let pct = 0;
+    if(isStream){
+      const tot = chapterSentenceCount(mChap);
+      const segs = mChap.segments || [];
+      const curIdx = streamState ? segs.findIndex(s => s.id === streamState.segId) : (mChap.playbackCompleted ? tot : (mChap.playbackResume?.segmentId >= 0 ? segs.findIndex(s => s.id === mChap.playbackResume.segmentId) : 0));
+      const played = curIdx >= 0 ? curIdx : 0;
+      pct = tot > 0 ? Math.min(100, Math.round((played / tot) * 100)) : 0;
+    }else{
+      const pos = miniPlayingState?.position || 0;
+      const dur = (mChap.duration || 0) * 1000;
+      pct = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+    }
     const isPlaying = playbackIsActive(miniPlayingState);
     miniHtml = `<div class="vc-mini-player" data-act="minigolisten">
       <div class="vc-mini-progress"><div class="vc-mini-progress-bar" style="width:${pct}%"></div></div>
@@ -1156,29 +1177,49 @@ window.addEventListener('blur',()=>{if(taskDrag)finishTaskDrag({pointerId:taskDr
 function playablePrefix(c){return c.audio?[{audio:c.audio,whole:true}]:streamPrefix(c);}
 function streamAudible(c){return (c.segments||[]).filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd&&s.speaker!=='广告');}
 function streamPrefix(c){const out=[];for(const s of (c.segments||[])){if(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip')continue;if(s.generationVersion&&s.qualityStatus&&!['passed','corrected','passed_with_warnings'].includes(s.qualityStatus))break;if(s.audio)out.push(s);else if((s.text||'').trim())break;}return out;}
+function isChapterStreaming(c){
+  if(!c)return false;
+  if(!c.audio)return true;
+  if(streamState&&streamState.bid===bookId&&streamState.cid===c.id)return true;
+  return false;
+}
+function chapterSentenceCount(c, task){
+  if(task&&task.total>0)return task.total;
+  if(Array.isArray(c?.segments)&&c.segments.length>0)return c.segments.length;
+  if(c?.segmentCount>0)return c.segmentCount;
+  return 0;
+}
 function streamHtml(b,c){
   const task=engine?.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
-  const ready=streamPrefix(c),finished=streamAudible(c);
+  const ready=streamPrefix(c);
   if(!task&&!ready.length)return '<div class="empty"><p>本章尚未生成完整音频。</p>'+B('制作本章','makeone')+'</div>';
-  const total=(c.segments||[]).filter(s=>(s.text||'').trim()&&!s.skip&&!s.isAd&&s.speaker!=='广告').length;
+  const { done, total } = taskProductionMetrics(task, c);
   const lines=(c.segments||[]).map(s=>{
     const ok=!!(s.audio&&s.audio!=='skip'),skipped=!!(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip');
     return '<div class="vc-transcript-line'+(s.speaker&&s.speaker!=='旁白'?' is-dialogue':'')+(skipped?' is-skip':'')+'" data-act="streamsegment:'+s.id+'" data-segstream="'+s.id+'"><span class="vc-transcript-speaker">'+E(s.speaker||'旁白')+'</span><span class="vc-transcript-text">'+E(s.text||'')+'</span><small>'+(ok?(ready.includes(s)?'连续可播':'已生成，等待前句'):skipped?'跳过':'制作中')+'</small></div>';
   }).join('');
-  return '<div class="vc-note">边做边听 · 已完成 '+finished.length+' / '+total+' 句，开头连续可播 '+ready.length+' 句'+(task?'（'+(status(task.status)||task.phase||'制作中')+'）':'')+'</div><div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="边做边听">'+lines+'</div>';
+  return '<div class="vc-note">边做边听 · 已完成 '+done+' / '+total+' 句，开头连续可播 '+ready.length+' 句'+(task?'（'+(status(task.status)||task.phase||'制作中')+'）':'')+'</div><div class="vc-lyric vc-transcript-panel" id="transcriptPanel" role="region" aria-label="边做边听">'+lines+'</div>';
 }
 function listenSeekDuration(c){
  if(!c)return 0;
- if(!c.audio||(streamState&&streamState.bid===bookId&&streamState.cid===c.id))return streamPrefix(c).reduce((sum,s)=>sum+Math.max(0,s.durMs||0),0);
+ if(isChapterStreaming(c))return chapterSentenceCount(c);
  return Math.round((c.duration||0)*1000);
 }
-function syncSeekDisplay(position,duration){
+function syncSeekDisplay(position,duration,isStream){
  const seek=$('#seek');if(!seek)return;
+ if(isStream==null)isStream=isChapterStreaming(chapter());
  const total=Math.max(0,Number(duration)||0),current=Math.max(0,Math.min(total,Number(position)||0));
  seek.max=total;seek.value=current;
  const time=$('#playtime'),end=$('#playduration');
- if(time)time.textContent=fmt(current/1000);if(end)end.textContent=fmt(total/1000);
- seek.setAttribute('aria-valuetext',fmt(current/1000)+' / '+fmt(total/1000));
+ if(isStream){
+   const timeText=current+' 句',endText=total+' 句';
+   if(time)time.textContent=timeText;if(end)end.textContent=endText;
+   seek.setAttribute('aria-valuetext',timeText+' / '+endText);
+ }else{
+   const timeText=fmt(current/1000),endText=fmt(total/1000);
+   if(time)time.textContent=timeText;if(end)end.textContent=endText;
+   seek.setAttribute('aria-valuetext',timeText+' / '+endText);
+ }
  const track=seek.closest('.vc-seek-track'),label=track?.querySelector('.vc-seek-times');if(!track)return;
  const fraction=total>0?current/total:0;
  // The range thumb is 12px wide, so its centre travels between 6px and width - 6px.
@@ -1329,9 +1370,28 @@ function syncDisplayedPlayback(p,forceFollow=false){
   const ch = chapter();
   const streamActive = !!(streamState&&p.id===streamState.audioId&&streamState.bid===bookId&&streamState.cid===chapterId);
   const active = (!!ch?.audio&&p.id===ch.audio)||streamActive;
-  const position = active?(streamActive?streamState.posBefore+pos:pos):engine.playbackResumePosition(ch);
+  const isStream = isChapterStreaming(ch);
+  let position = 0, duration = 0;
+  if(isStream){
+    duration = chapterSentenceCount(ch);
+    const segs = ch?.segments || [];
+    if(streamActive){
+      const curIdx = segs.findIndex(s => s.id === streamState.segId);
+      position = curIdx >= 0 ? curIdx : 0;
+    }else if(ch?.playbackCompleted){
+      position = duration;
+    }else if(ch?.playbackResume?.segmentId >= 0){
+      const resumeIdx = segs.findIndex(s => s.id === ch.playbackResume.segmentId);
+      position = resumeIdx >= 0 ? resumeIdx : 0;
+    }else{
+      position = 0;
+    }
+  }else{
+    duration = Math.round((ch?.duration || 0) * 1000);
+    position = active ? pos : engine.playbackResumePosition(ch);
+  }
   if(!seekDragging){
-    syncSeekDisplay(position,listenSeekDuration(ch));
+    syncSeekDisplay(position, duration, isStream);
   }
   const btn=$('#playBtn'),isPlay=active&&playbackIsActive(p);if(btn)btn.setAttribute('aria-label',isPlay?'暂停':'播放');
   if(btn&&btn.dataset.playing!==String(isPlay)){btn.dataset.playing=String(isPlay);btn.innerHTML=`${I(isPlay?'pause':'play')}`;lucide.createIcons({attrs:{width:20,height:20}});}
@@ -1397,9 +1457,7 @@ function syncDisplayedPlayback(p,forceFollow=false){
     if(runningTask){
       const tb=engine.state.books.find(x=>x.id===runningTask.bookId);
       const tc=tb?.chapters.find(x=>x.id===runningTask.chapterId);
-      const segs=tc?.segments||[];
-      const doneN=segs.filter(s=>s.audio).length,totalN=segs.length;
-      const pct=totalN>0?Math.round(doneN/totalN*100):0;
+      const { pct } = taskProductionMetrics(runningTask, tc);
       const txt='正在制作 '+(tc?.title||'下一章')+' '+pct+'%，点此查看 →';
       if(existingBanner){
         if(existingBanner.__txt!==txt){existingBanner.__txt=txt;const label=existingBanner.querySelector('span:last-child');if(label)label.textContent=txt;}
@@ -1423,15 +1481,27 @@ async function seekDisplayedChapter(op,value,delta=null){
   listenUserHoldUntil=0;
   const c=chapter(),streaming=streamState&&streamState.bid===bid&&streamState.cid===cid;
   if(streaming||!c.audio){
-    const prefix=streamPrefix(c),duration=prefix.reduce((sum,s)=>sum+Math.max(0,s.durMs||0),0);
-    if(!duration){toast('还没有连续可播的音频');return;}
-    const current=streaming?streamState.posBefore+(p.id===streamState.audioId?p.position||0:0):0;
-    const target=Math.max(0,Math.min(duration-1,delta===null?value:current+delta));
+    const prefix=streamPrefix(c);
+    if(!prefix.length){toast('还没有连续可播的音频');return;}
+    const totalSentences = chapterSentenceCount(c);
+    if(delta===null){
+      let targetIdx = Math.max(0, Math.min(Math.max(0, totalSentences - 1), Math.round(value)));
+      if(targetIdx < prefix.length){
+        await playStreamSeg(bid, cid, targetIdx, 0, { startPaused: !(streaming && p.id === streamState.audioId && p.playing) });
+      }else{
+        await playStreamSeg(bid, cid, prefix.length - 1, 0, { startPaused: !(streaming && p.id === streamState.audioId && p.playing) });
+        toast('已跳至最新已生成句子（第 ' + prefix.length + ' 句）');
+      }
+      return;
+    }
+    const duration=prefix.reduce((sum,s)=>sum+Math.max(0,s.durMs||0),0);
+    const currentMs=streaming?streamState.posBefore+(p.id===streamState.audioId?p.position||0:0):0;
+    const targetMs=Math.max(0,Math.min(duration-1,currentMs+delta));
     let acc=0;
     for(let i=0;i<prefix.length;i++){
       const seg=prefix[i],end=acc+Math.max(0,seg.durMs||0);
-      if(target<end){
-        const offset=target-acc;
+      if(targetMs<end){
+        const offset=targetMs-acc;
         if(streaming&&p.id===seg.audio&&streamState.segId===seg.id){
           streamState.waiting=false;playbackRevision++;lastSeekTime=0;
           miniPlayingState={...p,position:offset};syncDisplayedPlayback(miniPlayingState,true);
@@ -1867,8 +1937,18 @@ setInterval(async()=>{
       if(miniProgress&&playingBookId&&playingChapterId){
         const b=engine?.state.books.find(b=>b.id===playingBookId);
         const c=b?.chapters.find(c=>c.id===playingChapterId);
-        const dur=(c?.duration||0)*1000;
-        const pct=dur>0?Math.min(100,(p.position/dur)*100):0;
+        const isStream = isChapterStreaming(c);
+        let pct = 0;
+        if(isStream){
+          const tot = chapterSentenceCount(c);
+          const segs = c?.segments || [];
+          const curIdx = streamState ? segs.findIndex(s => s.id === streamState.segId) : (c?.playbackCompleted ? tot : (c?.playbackResume?.segmentId >= 0 ? segs.findIndex(s => s.id === c.playbackResume.segmentId) : 0));
+          const played = curIdx >= 0 ? curIdx : 0;
+          pct = tot > 0 ? Math.min(100, (played / tot) * 100) : 0;
+        }else{
+          const dur=(c?.duration||0)*1000;
+          pct=dur>0?Math.min(100,(p.position/dur)*100):0;
+        }
         miniProgress.style.width=pct+'%';
       }
       const miniBtn=$('[data-act="miniplaypause"]');

@@ -10,14 +10,23 @@ root.BajiaoCatalogSheet=class {
   this.sheet=main.querySelector('.vc-catalog-sheet');
   this.list=main.querySelector('#catalog-scroll');
   this.handle=main.querySelector('.vc-catalog-handle');
-  this.listeners=[];this.frame=0;this.wheelTimer=0;this.suppressUntil=0;
+  this.listeners=[];this.frame=0;this.wheelTimer=0;this.suppressUntil=0;this.nativeScrolling=false;this.scrollIdle=0;
+  this.listMove=e=>this.move(e);this.listWheel=e=>this.wheel(e);
   if(!this.handle)return;
   this.measure();
   this.listen(this.sheet,'touchstart',e=>this.start(e),{passive:true});
-  this.listen(this.sheet,'touchmove',e=>this.move(e),{passive:false});
-  this.listen(this.sheet,'touchend',e=>this.end(e),{passive:false});
+  // Only panel gestures need a blocking listener. The expanded list uses the
+  // browser's compositor scrolling and native fling, independent of JS work.
+  this.listen(this.handle,'touchmove',e=>this.move(e),{passive:false});
+  this.listen(this.sheet,'touchend',e=>this.end(e),{passive:true});
   this.listen(this.sheet,'touchcancel',()=>this.cancel(),{passive:true});
-  this.listen(this.sheet,'wheel',e=>this.wheel(e),{passive:false});
+  this.listen(this.handle,'wheel',e=>this.wheel(e),{passive:false});
+  this.listen(this.list,'wheel',e=>{
+   if(!this.wheelControlled&&!this.blocked()&&!e.ctrlKey&&Math.abs(e.deltaY)>=Math.abs(e.deltaX)){this.stop();this.markNativeScroll();}
+  },{passive:true});
+  this.listen(this.list,'scroll',()=>{
+   this.syncWheel();if(!this.touch?.manual&&!this.frame&&!this.wheelTimer)this.markNativeScroll();
+  },{passive:true});
   this.listen(this.sheet,'click',e=>{
    if(Date.now()<this.suppressUntil){e.preventDefault();e.stopImmediatePropagation();return;}
    if(e.target.closest('.vc-catalog-handle'))this.snap(this.offset<(this.minOffset+this.max)/2?this.max:0);
@@ -48,8 +57,21 @@ root.BajiaoCatalogSheet=class {
   if(root.ResizeObserver){this.observer=new ResizeObserver(()=>{this.measure();onResize();});this.observer.observe(this.content);this.observer.observe(this.list);}
   this.listen(root,'resize',()=>{this.measure();onResize();});
  }
- get interacting(){return !!(this.touch||this.mouse||this.frame||this.wheelTimer);}
+ get interacting(){return !!(this.touch||this.mouse||this.frame||this.wheelTimer||this.nativeScrolling);}
  listen(el,type,fn,options){el.addEventListener(type,fn,options);this.listeners.push(()=>el.removeEventListener(type,fn,options));}
+ syncWheel(){
+  const controlled=this.offset<this.max-1||this.list.scrollTop<=128;
+  if(controlled===this.wheelControlled)return;
+  this.wheelControlled=controlled;
+  if(controlled)this.list.addEventListener('wheel',this.listWheel,{passive:false});
+  else this.list.removeEventListener('wheel',this.listWheel);
+ }
+ releaseListMove(){this.list.removeEventListener('touchmove',this.listMove);}
+ markNativeScroll(){
+  this.nativeScrolling=true;clearTimeout(this.scrollIdle);
+  // Do not replace the scroller during native momentum or between touch moves.
+  this.scrollIdle=setTimeout(()=>{this.scrollIdle=0;this.nativeScrolling=false;if(!this.touch)this.onIdle();},180);
+ }
  measure(){
   const progress=this.state.progress||0,style=getComputedStyle(this.main);
   let room=this.main.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom);
@@ -64,13 +86,16 @@ root.BajiaoCatalogSheet=class {
   this.setOffset(this.minOffset+progress*(this.max-this.minOffset));
  }
  setOffset(value){
-  this.offset=clamp(value,this.minOffset,this.max);this.state.progress=this.max>this.minOffset?(this.offset-this.minOffset)/(this.max-this.minOffset):1;
+  const next=clamp(value,this.minOffset,this.max);
+  if(next===this.offset)return;
+  this.offset=next;this.state.progress=this.max>this.minOffset?(this.offset-this.minOffset)/(this.max-this.minOffset):1;
   this.overview.style.height=(this.max-this.offset)+'px';
   this.content.style.transform='translateY('+(-this.offset)+'px)';
   const expanded=this.offset>=this.max-1;
   this.overview.inert=expanded;
   this.handle.setAttribute('aria-expanded',String(expanded));
   this.handle.setAttribute('aria-label',expanded?'下拉收回章节目录，显示书籍信息':'上推展开章节目录');
+  this.syncWheel();
  }
  // Positive delta moves up: expand the sheet first, then advance the list.
  // Negative delta rewinds the list first; only its real top can lower the sheet.
@@ -95,28 +120,35 @@ root.BajiaoCatalogSheet=class {
   if(e.touches.length!==1||this.blocked()){this.cancel();return;}
   const handle=!!e.target.closest('.vc-catalog-handle');
   if(!handle&&!this.list.contains(e.target))return;
-  this.stop();const p=e.touches[0];
-  this.touch={id:p.identifier,x:p.clientX,y:p.clientY,lastY:p.clientY,time:performance.now(),velocity:0,active:false,handle,startOffset:this.offset};
+  this.stop();this.releaseListMove();clearTimeout(this.scrollIdle);this.nativeScrolling=false;const p=e.touches[0];
+  const native=!handle&&this.offset>=this.max-1&&this.list.scrollTop>128;
+  this.touch={id:p.identifier,x:p.clientX,y:p.clientY,lastY:p.clientY,time:performance.now(),velocity:0,active:false,handle,native,startOffset:this.offset};
+  if(!handle&&!native)this.list.addEventListener('touchmove',this.listMove,{passive:false});
  }
  move(e){
-  const t=this.touch;if(!t)return;
+  const t=this.touch;if(!t||t.native)return;
   if(e.touches.length!==1||this.blocked()){this.cancel();return;}
   const p=e.touches[0];if(p.identifier!==t.id)return;
   if(!t.active){
    const dx=p.clientX-t.x,dy=p.clientY-t.y;
    if(Math.max(Math.abs(dx),Math.abs(dy))<6)return;
-   if(Math.abs(dx)>Math.abs(dy)){this.touch=null;this.onIdle();return;}
+   if(Math.abs(dx)>Math.abs(dy)){this.releaseListMove();this.touch=null;this.onIdle();return;}
    t.active=true;
   }
-  e.preventDefault();const now=performance.now(),delta=t.lastY-p.clientY;
+  const now=performance.now(),delta=t.lastY-p.clientY;
+  if(!t.handle&&((this.offset>=this.max-1&&delta>0&&!t.manual)||!e.cancelable)){
+   t.native=true;this.releaseListMove();this.markNativeScroll();return;
+  }
+  e.preventDefault();t.manual=true;
   t.velocity=delta/Math.max(8,now-t.time);t.time=now;t.lastY=p.clientY;
   this.consume(delta,t.handle);
  }
  end(e){
   const t=this.touch;if(!t||e.touches.length)return;
-  this.touch=null;
+  this.touch=null;this.releaseListMove();
+  if(t.native){this.markNativeScroll();return;}
   if(!t.active){this.onIdle();return;}
-  e.preventDefault();this.suppressUntil=Date.now()+400;
+  this.suppressUntil=Date.now()+400;
   const delta=t.y-t.lastY,velocity=performance.now()-t.time<100?t.velocity:0;
   if(this.offset>this.minOffset&&this.offset<this.max){
    const moved=this.offset-t.startOffset;
@@ -136,15 +168,17 @@ root.BajiaoCatalogSheet=class {
    else{this.frame=0;this.onIdle();}
   };this.frame=requestAnimationFrame(step);
  }
- cancel(){const active=this.touch?.active;this.touch=null;if(active)this.snap();else this.onIdle();}
+ cancel(){const t=this.touch;this.touch=null;this.releaseListMove();if(t?.native)this.markNativeScroll();else if(t?.active)this.snap();else this.onIdle();}
  wheel(e){
   if(this.blocked()||e.ctrlKey||Math.abs(e.deltaX)>Math.abs(e.deltaY))return;
   if(!e.target.closest('.vc-catalog-handle')&&!this.list.contains(e.target))return;
-  e.preventDefault();this.stop();
   const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?this.list.clientHeight:1);
-  this.consume(delta,!!e.target.closest('.vc-catalog-handle'));
+  const handle=!!e.target.closest('.vc-catalog-handle');
+  if(!handle&&this.offset>=this.max-1&&delta>0){this.stop();this.markNativeScroll();return;}
+  e.preventDefault();this.stop();
+  this.consume(delta,handle);
   this.wheelTimer=setTimeout(()=>{this.wheelTimer=0;this.snap();},140);
  }
- destroy(){this.stop();this.observer?.disconnect();this.listeners.forEach(off=>off());this.touch=null;this.mouse=null;}
+ destroy(){this.stop();clearTimeout(this.scrollIdle);this.releaseListMove();this.list.removeEventListener('wheel',this.listWheel);this.observer?.disconnect();this.listeners.forEach(off=>off());this.touch=null;this.mouse=null;}
 };
 })(window);

@@ -27,7 +27,7 @@ test('confirmation mode waits; resume never pays; explicit confirmation uses exi
  await e.regenerateSegment(b.id,c.id,s.id,{acceptRepeated:true});s=e.chapter(b.id,c.id).segments[0];assert.equal(f.calls.length,count);assert(s.repetitionConfirmed&&s.repetitionUnresolved);assert(f.bytes(s.audio).equals(shortGap));assert(e.chapter(b.id,c.id).audio);assert.equal(e.state.tasks[0].status,'done');
 });
 test('confirmation rejects changed source and releases busy lock',async t=>{
- const f=fixture(t,()=>audioReply(shortGap));f.e.state.settings.qualityConfirmRetry=true;const {b,c}=await chapter(f.e,[text]);await f.e.enqueue(b.id,[c.id]);c.segments[0].emotion='修改后的情绪';
+ const f=fixture(t,()=>audioReply(shortGap));f.e.state.settings.qualityConfirmRetry=true;const {b,c}=await chapter(f.e,[text]);await f.e.enqueue(b.id,[c.id]);c.segments[0].ttsPrompt='修改后的朗读提示词';
  await assert.rejects(f.e.regenerateSegment(b.id,c.id,0,{acceptRepeated:true}),/已修改/);assert(!f.e.segmentBusy(b.id,c.id,0));assert.equal(f.calls.length,2);
 });
 

@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,normalize}=require('../app/src/main/assets/core.js');
+const {Engine,normalize,FAST_SPEECH_PROMPT}=require('../app/src/main/assets/core.js');
 const audio=require('./wav-fixture.cjs')();
 async function fixture(handler){
  const calls=[],snapshots=[],merges=[];let n=0;
@@ -26,9 +26,9 @@ test('failed custom regeneration preserves audio, saves prompt, and can retry af
  const next=new Engine({...io,request:async(_,body)=>{assert.equal(body.messages[0].content,'低声，放慢尾音。');return {choices:[{finish_reason:'stop',message:{audio:{data:audio}}}]};}},snapshots.at(-1));
  assert.equal(next.state.tasks.length,0);assert(await next.regenerateSegment(b.id,c.id,0));assert.equal(next.chapter(b.id,c.id).segments[0].lastSpeechRequest.prompt,'低声，放慢尾音。');
 });
-test('restoring defaults uses the annotation and removes the saved override',async()=>{
+test('restoring narrator defaults uses the fixed prompt and removes the saved override',async()=>{
  const {e,b,c,calls}=await fixture();e.state.voices.push({id:'custom',sample:'ref.wav',format:'wav',description:'温和女声，不沙哑'});b.characters[0].voice='custom';b.characters[0].description='';c.segments[0].ttsPrompt='旧提示';
- const expected=e.speechDirection('custom',c.segments[0].emotion,'',undefined,c.segments[0]);assert.match(expected,/^轻声，不要愤怒\n/);assert.match(expected,/吐字务必清晰完整/);assert(!expected.includes('温和女声'));
+ const expected=e.speechDirection('custom',c.segments[0].emotion,'',undefined,c.segments[0]);assert.equal(expected,FAST_SPEECH_PROMPT);assert(!expected.includes('温和女声'));
  await e.regenerateSegment(b.id,c.id,0,{prompt:null});assert.equal(calls[0].body.messages[0].content,expected);assert.equal(calls[0].body.model,'mimo-v2.5-tts-voiceclone');assert.equal(c.segments[0].ttsPrompt,undefined);
 });
 test('split requests retain the exact custom direction and source text',async()=>{

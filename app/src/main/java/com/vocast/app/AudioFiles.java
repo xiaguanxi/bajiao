@@ -334,6 +334,21 @@ final class AudioFiles {
         }
         return count;
     }
+    // Match merge's minimum seam silence without rewriting either source clip.
+    int gapBefore(String previousId,String nextId,int pauseMs) {
+        int requiredMs=Math.max(0,Math.min(2000,pauseMs));
+        if(requiredMs==0)return 0;
+        try {
+            Wave previous=parse(read(get(previousId),64*1024*1024));
+            Wave next=parse(read(get(nextId),64*1024*1024));
+            if(!Arrays.equals(previous.fmt,next.fmt))return requiredMs;
+            int rate=ByteBuffer.wrap(next.fmt).order(ByteOrder.LITTLE_ENDIAN).getInt(4);
+            if(rate<=0)return requiredMs;
+            int required=(int)Math.ceil(requiredMs*rate/1000.0);
+            int missing=Math.max(0,required-quietFrames(previous,false,required)-quietFrames(next,true,required));
+            return (int)Math.ceil(missing*1000.0/rate);
+        } catch(Exception ignored) { return requiredMs; }
+    }
     JSONObject merge(List<String> ids,int[] pauses) throws Exception {
         if(ids.isEmpty())throw new Exception("没有可合并音频");
         if(pauses!=null){if(pauses.length!=ids.size())throw new Exception("停顿参数数量不匹配");for(int p:pauses)if(p<0||p>2000)throw new Exception("停顿参数越界");}

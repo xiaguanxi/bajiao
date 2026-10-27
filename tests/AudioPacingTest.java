@@ -26,6 +26,13 @@ public class AudioPacingTest {
    String z=files.save(wav(bits,channels,0,350),"wav").getString("id");
    check(files.merge(Arrays.asList(z,y),new int[]{350,0}).getDouble("addedPauseMs")==0,"existing gap preserved");
    check(files.merge(Arrays.asList(x),new int[]{350}).getDouble("addedPauseMs")==0,"no pause after final sentence");checks+=7;
+   check(files.gapBefore(x,y,300)==200,"streaming subtracts existing edge silence");
+   check(files.gapBefore(z,y,300)==0,"streaming does not duplicate an existing breath");
+   check(files.gapBefore(x,y,0)==0,"direct seeks need no gap");
+   JSONObject breath=files.merge(Arrays.asList(x,y),new int[]{300,0});
+   check(breath.getDouble("addedPauseMs")==files.gapBefore(x,y,300),"stream and chapter use the same missing gap");
+   check(files.timeline(breath.getString("id"),Arrays.asList(x,y),new int[]{300,0}).getJSONArray("parts").toString().equals(breath.getJSONArray("parts").toString()),"breathing gap preserves exact subtitle boundaries");
+   checks+=5;
   }
   String x=files.save(wav(16,1,0,0),"wav").getString("id");
   for(int[] bad:new int[][]{new int[]{},new int[]{-1},new int[]{2001}}){try{files.merge(Arrays.asList(x),bad);throw new AssertionError("bad pauses accepted");}catch(Exception expected){checks++;}}

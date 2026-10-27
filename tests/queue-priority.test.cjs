@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,ModelPrompts}=require('../app/src/main/assets/core.js');
+const {Engine,ModelPrompts,FAST_SPEECH_PROMPT}=require('../app/src/main/assets/core.js');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 async function fixture(n=5){
  const e=new Engine({saveState:async()=>{}}),b=await e.addBook('排序测试',Array.from({length:n},(_,i)=>`第${i+1}章\n章节内容。`).join('\n'));
@@ -45,16 +45,16 @@ test('bulk resume and confirmed tasks keep chapter order and prior manual orderi
 test('pipeline respects manual priority even when a later chapter is moved above an earlier one',async()=>{
  const {e,t}=await fixture();e.features.pipeline=true;await e.reorderTask('t4','t0');assert.equal(e.nextQueued(),t[4]);
 });
-test('narrator restraint is scoped to narration; single-character speech keeps clear articulation',()=>{
+test('narrator uses fixed fluency prompt; single-character dialogue keeps clear articulation',()=>{
  const e=new Engine({}),direction={directionVersion:1,scene:'门口',delivery:'先急后缓，轻轻强调。'};
  const character={...direction,speaker:'林晚',text:'别走。'};
  assert.equal(e.speechDirection('preset:茉莉','担心','',undefined,character),'场景：门口\n指导：先急后缓，轻轻强调。');
  const narrator=e.speechDirection('preset:白桦','担心','',undefined,{...character,speaker:'旁白'});
- assert.equal(narrator,'场景：门口\n指导：先急后缓，轻轻强调。');assert.match(ModelPrompts.annotationRules,/旁白的 emotion 与 delivery 必须从生成时就采用克制/);
+ assert.equal(narrator,FAST_SPEECH_PROMPT);assert.match(ModelPrompts.annotationRules,/旁白仅标注说话人和置信度/);
  for(const text of ['“啊！”','嗯。','「不」','好','A!'])assert.match(e.speechDirection('preset:茉莉','', '',undefined,{...direction,speaker:'林晚',text}),/吐字务必清晰完整/);
  assert(!e.speechDirection('preset:茉莉','', '',undefined,{...character,text:'……'}).includes('本句只有一个字'));
  assert.equal(e.speechDirection('preset:白桦','', '', ' 自定义\n指导 ',{speaker:'旁白',text:'嗯'}),' 自定义\n指导 ');
- assert.match(ModelPrompts.annotationRules,/单字语句/);assert.match(ModelPrompts.direction({batch:[],context:[]}),/旁白自然克制/);
+ assert.match(ModelPrompts.annotationRules,/单字语句/);assert.match(ModelPrompts.direction({batch:[],context:[]}),/旁白不属于补写目标/);
 });
 test('single-character character speech sends clear-articulation guidance without changing its acting direction',async()=>{
  const calls=[],wave=require('./wav-fixture.cjs')();

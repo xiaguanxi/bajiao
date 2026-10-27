@@ -111,6 +111,8 @@ public class PlaybackService extends Service {
     private MediaPlayer promptPlayer;
     private String promptPath = "";
     private long lastCompletionAt;
+    private long segmentStartAt;
+    private Runnable segmentStartRunnable;
     private final PlaybackPromptGate promptGate = new PlaybackPromptGate();
     private final Runnable promptRunnable = this::startPlaybackPrompt;
     private static long sleepUntil=0;
@@ -304,6 +306,8 @@ public class PlaybackService extends Service {
 
     private void handlePlayAction(Intent intent) {
         saveProgress();
+        long previousCompletion = currentAudioId.equals(intent.getStringExtra("previousAudio")) ? lastCompletionAt : 0;
+        cancelSegmentStart();
         cancelPlaybackPrompt();
         waitingForProduction = false;
         lastCompletionAt = 0;
@@ -324,6 +328,7 @@ public class PlaybackService extends Service {
         pendingPosition = null;
         progressCompleted = false;
         if (intent.hasExtra("speed")) { float s = intent.getFloatExtra("speed", 1.0f); if (s > 0) playbackSpeed = Math.max(0.5f, Math.min(s, 3.0f)); }
+        if (previousCompletion > 0 && startPosition == 0) segmentStartAt = previousCompletion + (long)Math.ceil(intent.getIntExtra("gapMs", 0) / playbackSpeed);
         hasPrevious = intent.getBooleanExtra("hasPrev", false);
         hasNext = intent.getBooleanExtra("hasNext", false);
         lastError = "";
@@ -359,19 +364,10 @@ public class PlaybackService extends Service {
                     pendingPosition = Math.min(startPosition, durationMs - 1);
                     mp.seekTo(pendingPosition, MediaPlayer.SEEK_CLOSEST);
                 }
-                if (playWhenPrepared && requestAudioFocus()) {
-                    mp.start();
-                    applyPlaybackSpeed();
-                    registerNoisyReceiver();
-                    updatePlaybackState();
-                    updateMetadata();
-                    updateNotification();
-                    notifyClientEvent("play", 0);
-                } else {
-                    updatePlaybackState();
-                    updateMetadata();
-                    updateNotification();
-                }
+                startPreparedPlayback();
+                updatePlaybackState();
+                updateMetadata();
+                updateNotification();
                 saveProgress();
             });
             player.setOnSeekCompleteListener(mp -> {
@@ -390,6 +386,7 @@ public class PlaybackService extends Service {
             });
             player.setOnErrorListener((mp, what, extra) -> {
                 if (mp != player) return true;
+                cancelSegmentStart();
                 prepared = false;
                 player = null;
                 mp.release();
@@ -470,6 +467,34 @@ public class PlaybackService extends Service {
         catch (Exception ignored) { cancelPlaybackPrompt(); }
     }
 
+    private void cancelSegmentStart() {
+        if (segmentStartRunnable != null) handler.removeCallbacks(segmentStartRunnable);
+        segmentStartRunnable = null;
+        segmentStartAt = 0;
+    }
+
+    private void startPreparedPlayback() {
+        if (player == null || !prepared || !playWhenPrepared || player.isPlaying()) return;
+        long delay = segmentStartAt - SystemClock.elapsedRealtime();
+        if (delay > 0) {
+            if (segmentStartRunnable != null) handler.removeCallbacks(segmentStartRunnable);
+            segmentStartRunnable = () -> { segmentStartRunnable = null; startPreparedPlayback(); };
+            handler.postDelayed(segmentStartRunnable, delay);
+            registerNoisyReceiver();
+            return;
+        }
+        cancelSegmentStart();
+        if (requestAudioFocus()) {
+            player.start();
+            applyPlaybackSpeed();
+            registerNoisyReceiver();
+            updatePlaybackState();
+            updateMetadata();
+            updateNotification();
+            notifyClientEvent("play", 0);
+        }
+    }
+
     private void resumePlayback() {
         cancelPlaybackPrompt();
         playWhenPrepared = true;
@@ -480,18 +505,11 @@ public class PlaybackService extends Service {
             return; // The frontend advances when new content is ready; never replay the finished file.
         }
         lastCompletionAt = 0;
-        if (player != null && prepared && !player.isPlaying()) {
-            if (requestAudioFocus()) {
-                player.start();
-                applyPlaybackSpeed();
-                registerNoisyReceiver();
-                updatePlaybackState();
-                updateNotification();
-            }
-        }
+        startPreparedPlayback();
     }
 
     private void pausePlayback() {
+        cancelSegmentStart();
         cancelPlaybackPrompt();
         playWhenPrepared = false;
         if (player != null && prepared && player.isPlaying()) {
@@ -504,6 +522,7 @@ public class PlaybackService extends Service {
     }
 
     private void stopPlayback() {
+        cancelSegmentStart();
         saveProgress();
         cancelPlaybackPrompt();
         waitingForProduction = false;
@@ -521,6 +540,7 @@ public class PlaybackService extends Service {
 
     private void seekToPosition(int posMs) {
         boolean wasPlaying = isPlaybackActive();
+        cancelSegmentStart();
         cancelPlaybackPrompt();
         waitingForProduction = false;
         lastCompletionAt = 0;
@@ -570,7 +590,8 @@ public class PlaybackService extends Service {
 
     private static boolean isPlaybackActive() {
         return player != null && prepared && (player.isPlaying()
-                || activeService != null && activeService.waitingForProduction && activeService.playWhenPrepared);
+                || activeService != null && activeService.playWhenPrepared
+                && (activeService.waitingForProduction || activeService.segmentStartRunnable != null));
     }
 
     private void updatePlaybackState() {

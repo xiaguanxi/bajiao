@@ -1,16 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {Engine,units,parseJson,ApiError,LlmOutputError,PROMPT_VERSION}=require('../app/src/main/assets/core.js');
+const {Engine,units,parseJson,ApiError,LlmOutputError,PROMPT_VERSION,FAST_SPEECH_PROMPT}=require('../app/src/main/assets/core.js');
 const wave=require('./wav-fixture.cjs')();
 const batchOf=p=>JSON.parse(p.split('本批片段：')[1]);
-const labels=batch=>({lines:batch.map(s=>({id:s.id,speaker:'旁白',confidence:1,emotion:'没有生气，略带担忧',scene:'对方正要离开，叙述者描述挽留的经过。',delivery:'节奏先急后缓，轻轻强调挽留，收住尾音。'}))});
+const labels=batch=>({lines:batch.map(s=>({id:s.id,speaker:'林晚',confidence:1,emotion:'没有生气，略带担忧',scene:'对方正要离开，叙述者描述挽留的经过。',delivery:'节奏先急后缓，轻轻强调挽留，收住尾音。'}))});
 async function fixture(n=3){
  const calls=[],snapshots=[];let serial=0;
  const io={saveState:async text=>snapshots.push(JSON.parse(text)),request:async(provider,body)=>{calls.push({provider,body});return {choices:[{finish_reason:'stop',message:{audio:{data:wave}}}]};},saveRawAudio:async()=>({id:'raw-'+(++serial)+'.wav',duration:2}),saveAudio:async()=>({id:'saved-'+(++serial)+'.wav',duration:2}),readAudio:async()=>({base64:wave}),mergeAudio:async()=>({id:'chapter-'+(++serial)+'.wav',duration:3})};
- const e=new Engine(io),b=await e.addBook('导演测试',Array.from({length:n},(_,i)=>'原文'+i+'。').join('')),c=b.chapters[0];e.state.settings.retries=0;e.state.settings.promptMode='director';
+ const e=new Engine(io),b=await e.addBook('导演测试',Array.from({length:n},(_,i)=>'“原文'+i+'。”').join('')),c=b.chapters[0];e.state.settings.retries=0;e.state.settings.promptMode='director';b.characters.push({name:'林晚',description:'女声',voice:'preset:茉莉'});
  return {e,b,c,io,calls,snapshots};
 }
 
-test('new annotations persist and send scene/direction with restrained narration after reload',async()=>{
+test('dialogue annotations persist and send scene/direction after reload',async()=>{
  const {e,b,c,io,calls,snapshots}=await fixture();let requests=0;e.llm=async p=>{requests++;return labels(batchOf(p));};await e.analyze(b.id,c.id);assert.equal(requests,1);
  const restored=new Engine(io,snapshots.at(-1)),s=restored.chapter(b.id,c.id).segments[0];assert.equal(s.directionVersion,1);
  await restored.regenerateSegment(b.id,c.id,s.id);const body=calls[0].body;
@@ -34,7 +34,7 @@ test('missing, invalid and oversized director fields repair only affected IDs on
 });
 
 test('failed repair preserves a confirmed dialogue speaker and falls back to emotion',async()=>{
- const {e,b,c}=await fixture(1);c.text='“别走。”';b.characters.push({name:'林晚',description:'女声',voice:'preset:茉莉'});let count=0;
+ const {e,b,c}=await fixture(1);c.text='“别走。”';let count=0;
  e.llm=async(p,options)=>{count++;return options.task==='annotation'?{lines:[{id:0,speaker:'林晚',confidence:.96,emotion:'挽留，非责备',scene:'门口'}]}:{lines:[]};};
  await e.analyze(b.id,c.id);const s=c.segments[0];assert.equal(count,2);assert.equal(s.speaker,'林晚');assert.equal(s.confidence,.96);assert.equal(s.annotationStatus,'complete');assert.equal(s.directionStatus,'fallback');assert(s.directionError);assert.equal(s.directionVersion,undefined);
  assert.equal(e.speechDirection('preset:茉莉',s.emotion,'',undefined,s),'挽留，非责备');
@@ -50,7 +50,7 @@ test('repair checkpoint survives pause/reload and never repeats completed annota
 
 test('manual role correction wins during repair and keeps explicit custom prompts',async()=>{
  const {e,b,c}=await fixture(1);b.characters.push({name:'新角色',voice:'preset:茉莉'});let release,entered;const started=new Promise(r=>entered=r);
- e.llm=async(p,options)=>{if(options.task==='annotation')return {lines:[{id:0,speaker:'旁白',emotion:'平静',confidence:1}]};entered();await new Promise(r=>release=r);return labels(batchOf(p));};
+ e.llm=async(p,options)=>{if(options.task==='annotation')return {lines:[{id:0,speaker:'林晚',emotion:'平静',confidence:1}]};entered();await new Promise(r=>release=r);return labels(batchOf(p));};
  const pending=e.analyze(b.id,c.id);await started;c.segments[0].ttsPrompt='用户自己的指导';await e.correct(b.id,c.id,0,'新角色','疑惑');release();await pending;
  const s=c.segments[0];assert.equal(s.speaker,'新角色');assert.equal(s.delivery,undefined);assert.equal(s.directionVersion,undefined);assert.equal(s.ttsPrompt,'用户自己的指导');
 });
@@ -65,16 +65,16 @@ test('isolated annotation adds two neighbours and rejects context before target-
 
 test('repair context rejection falls back to target-only without losing queue or speakers',async()=>{
  const {e,b,c}=await fixture(3),jobs=[];e.llm=async(p,options)=>{const batch=batchOf(p);jobs.push(options.task);
-  if(options.task==='annotation')return {lines:labels(batch).lines.map(s=>s.id===1?{id:1,speaker:'旁白',confidence:1,emotion:'担忧'}:s)};
+  if(options.task==='annotation')return {lines:labels(batch).lines.map(s=>s.id===1?{id:1,speaker:'林晚',confidence:1,emotion:'担忧'}:s)};
   if(p.includes('原文0。'))throw new ApiError('内容审核未通过 (1026)',1026,false);
   return labels(batch);
  };await e.analyze(b.id,c.id);assert.deepEqual(jobs,['annotation','direction','direction']);assert.equal(c.segments[1].directionVersion,1);
 });
 
 test('truncated repair degrades once; authentication errors retain the pending job',async()=>{
- for(const kind of ['truncated','auth']){const {e,b,c}=await fixture(1);e.llm=async(p,o)=>{if(o.task==='annotation')return {lines:[{id:0,speaker:'旁白',emotion:'克制',confidence:1}]};throw kind==='truncated'?new LlmOutputError('截断','truncated'):new ApiError('unauthorized',401,false);};
+ for(const kind of ['truncated','auth']){const {e,b,c}=await fixture(1);e.llm=async(p,o)=>{if(o.task==='annotation')return {lines:[{id:0,speaker:'林晚',emotion:'克制',confidence:1}]};throw kind==='truncated'?new LlmOutputError('截断','truncated'):new ApiError('unauthorized',401,false);};
   if(kind==='auth'){await assert.rejects(e.analyze(b.id,c.id),/unauthorized/);assert.equal(c.analysisDraft.pending[0].kind,'direction');assert.equal(c.segments[0].directionStatus,'pending');}
-  else{await e.analyze(b.id,c.id);assert.equal(c.segments[0].directionStatus,'fallback');assert.equal(c.segments[0].speaker,'旁白');}
+  else{await e.analyze(b.id,c.id);assert.equal(c.segments[0].directionStatus,'fallback');assert.equal(c.segments[0].speaker,'林晚');}
  }
 });
 
@@ -86,7 +86,7 @@ test('malformed envelope recovery preserves director strings, escapes and field 
 
 test('legacy annotations never auto-upgrade; unguided speech omits user message',async()=>{
  const {e,b,c,calls}=await fixture(1);c.segments=[{id:0,text:c.text,speaker:'旁白',emotion:'不生气',confidence:1,scene:'旧场景',delivery:'旧的未启用指导',audio:'old.wav'}];c.audio='chapter.wav';const before=JSON.stringify(c);
- e.llm=async()=>{throw Error('must not annotate');};await e.analyze(b.id,c.id);assert.equal(JSON.stringify(c),before);assert.equal(e.speechDirection('preset:白桦','不生气','低沉男声',undefined,c.segments[0]),'不生气');
+ e.llm=async()=>{throw Error('must not annotate');};await e.analyze(b.id,c.id);assert.equal(JSON.stringify(c),before);assert.equal(e.speechDirection('preset:白桦','不生气','低沉男声',undefined,c.segments[0]),FAST_SPEECH_PROMPT);
  await e.synthesize('测试。','preset:白桦');assert.deepEqual(calls[0].body.messages,[{role:'assistant',content:'测试。'}]);
 });
 
@@ -109,5 +109,5 @@ test('director edits during TTS invalidate in-flight audio',async()=>{
 
 test('automatic narrator fallback discards character-specific director metadata',async()=>{
  const {e,b,c}=await fixture(1);e.llm=async()=>({lines:[{id:0,speaker:'未知角色',emotion:'惊恐',confidence:.1,scene:'门后有人',delivery:'惊恐尖叫'}]});
- await e.analyze(b.id,c.id);const s=c.segments[0];assert.equal(s.speaker,'旁白');assert.equal(s.directionVersion,undefined);assert.equal(s.delivery,undefined);assert.equal(e.speechDirection('preset:白桦',s.emotion,'',undefined,s),'自然朗读');
+ await e.analyze(b.id,c.id);const s=c.segments[0];assert.equal(s.speaker,'旁白');assert.equal(s.directionVersion,undefined);assert.equal(s.delivery,undefined);assert.equal(e.speechDirection('preset:白桦',s.emotion,'',undefined,s),FAST_SPEECH_PROMPT);
 });

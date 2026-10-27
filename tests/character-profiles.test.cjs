@@ -28,9 +28,9 @@ test('unsupported evidence and concurrent manual edits are never overwritten by 
  assert.equal(await e.ensureCharacterProfiles(b.id),0);assert.equal(r.background,undefined);assert.equal(r.description,mode==='edit'?'人工指定的男声':'自然清晰的声音');}
 });
 
-test('both LLM annotation and director repair require internally consistent restrained narration',()=>{
- assert.match(ModelPrompts.annotationRules,/旁白的 emotion 与 delivery 必须从生成时就采用克制/);
- assert.match(ModelPrompts.direction({batch:[],context:[]}),/不能先要求尖叫、哭喊、夸张表演再追加克制要求/);
+test('both LLM annotation and director repair reserve acting for dialogue',()=>{
+ assert.match(ModelPrompts.annotationRules,/旁白仅标注说话人和置信度/);
+ assert.match(ModelPrompts.direction({batch:[],context:[]}),/旁白不属于补写目标/);
 });
 
 test('verified insufficient background stays explicit and does not trigger repeated model requests',async()=>{

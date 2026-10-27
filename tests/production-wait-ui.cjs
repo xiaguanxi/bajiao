@@ -89,6 +89,17 @@ const { Engine } = require('../app/src/main/assets/core.js');
     };
 
     await start();
+    assert.equal(calls.filter(c => c.action === 'play').at(-1).pauseMs, 0, 'explicit start has no leading delay');
+    await page.evaluate(() => { window.bajiaoEngine.state.books[0].chapters[0].segments[0].text = '没有标点'; });
+    await produce(1); await complete();
+    let seam = calls.filter(c => c.action === 'play').at(-1);
+    assert.equal(seam.previousAudio, 'line0.wav'); assert.equal(seam.pauseMs, 300);
+    await page.locator('[data-act="streamsegment:0"]').click();
+    seam = calls.filter(c => c.action === 'play').at(-1);
+    assert.equal(seam.previousAudio, ''); assert.equal(seam.pauseMs, 0, 'manual jumps do not insert a breathing delay');
+    checks.push('streaming requests a 300ms minimum breath only on automatic segment transitions');
+
+    await start();
     await complete(); await label('暂停');
     const initialPlays = plays();
     await click('playchapter'); await label('播放');

@@ -10,6 +10,8 @@ const FAST_SPEECH_PROMPT='流利，吐字清晰。';
 const ANNOTATION_BATCH_LIMIT=24;
 const GENERATION_VERSION=3;
 const SILENCE_PROCESSING_VERSION=1;
+const SEGMENT_PACING_VERSION=2;
+const SEGMENT_BREATH_MS=300;
 const PAUSE_POLICY={sentence:350,ellipsis:450,semicolon:220,colon:180,comma:120};
 const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
 const COVER_STYLES=[{name:'松墨',color:'#284f3d'},{name:'黛青',color:'#2c4b5a'},{name:'绛朱',color:'#7a3b34'},{name:'陶土',color:'#96552a'},{name:'墨紫',color:'#4a3a56'},{name:'岩灰',color:'#5d615a'}];
@@ -38,6 +40,7 @@ function directionIssue(value){
 function clearDirection(segment){for(const key of ['scene','delivery','directionVersion','directionStatus','directionError'])delete segment[key];}
 function applyDirection(segment,value){
  clearDirection(segment);
+ if(segment.speaker==='旁白'){segment.emotion='';return;}
  if(segment.skip||segment.isAd||segment.speaker==='广告'||isPunctOnly(segment.text))return;
  const error=directionIssue(value);
  if(error){segment.directionStatus='pending';segment.directionError=error;return;}
@@ -154,6 +157,8 @@ function isPunctOnly(text){const t=String(text||'').trim();return t.length>0&&/^
 function skipSymbolSegment(s){if(!s.audio&&isPunctOnly(s.text)){Object.assign(s,{speaker:'旁白',emotion:'',confidence:1,isAd:false,skip:true,audio:'skip',annotationStatus:'complete',skipReason:'symbols'});delete s.annotationError;return true;}return false;}
 function punctSilenceMs(text){const t=String(text||'').trim();if(/(?:…|\.\.\.|。{3,}|—{2,}|——)$/.test(t))return 800;if(/[？！?!]$/.test(t))return 500;return 300;}
 function pausesFor(texts){return texts.map((text,i)=>i===texts.length-1?0:pauseAfter(text));}
+function segmentPauseAfter(text){return Math.max(SEGMENT_BREATH_MS,pauseAfter(text));}
+function segmentPausesFor(texts){return texts.map((text,i)=>i===texts.length-1?0:segmentPauseAfter(text));}
 // Duration is a diagnostic estimate; anomalies require content verification.
 function expectedSpeechSec(text){const n=String(text||'').replace(/\s/g,'').length;return Math.max(1,n/280*60);}
 function isAudioTooLong(text,durationSec){if(!(durationSec>0))return false;const exp=expectedSpeechSec(text);return durationSec>Math.max(8,exp*3+5);}
@@ -658,7 +663,7 @@ class Engine{
  segmentBusy(bid,cid,id){return this._activeSegments?.has(JSON.stringify([bid,cid,id]))||false;}
  speechDirection(voice,style='',description='',prompt,context={}){
   if(typeof prompt==='string'&&prompt.trim())return prompt;
-  if(context.promptMode==='fast')return FAST_SPEECH_PROMPT;
+  if(context.promptMode==='fast'||context.speaker==='旁白')return FAST_SPEECH_PROMPT;
   const direction=this.features.direction&&context.directionVersion===DIRECTION_VERSION&&!directionIssue(context)?[context.scene?.trim()?'场景：'+context.scene.trim():'','指导：'+context.delivery?.trim()].filter(Boolean).join('\n'):buildSpeechDirection(style);
   const rules=[];
   if(Array.from(String(context.text||'').replace(/[\p{P}\p{S}\s]/gu,'')).length===1)rules.push('本句只有一个字，吐字务必清晰完整，声母、韵母和声调准确；保留字头字尾，不吞字，不让气声或情绪掩盖发音，不额外添加字词。');
@@ -699,7 +704,7 @@ class Engine{
    const version=JSON.stringify(c.segments),audible=c.segments.filter(x=>!x.skip&&!x.isAd&&x.audio!=='skip');
    let merged=null;
    if(audible.every(x=>x===s||x.audio)){
-    merged=await this.io.mergeAudio(audible.map(x=>x===s?file.id:x.audio),pausesFor(audible.map(x=>x.text)));
+    merged=await this.io.mergeAudio(audible.map(x=>x===s?file.id:x.audio),segmentPausesFor(audible.map(x=>x.text)));
     if(!unchanged()||JSON.stringify(c.segments)!==version){s.retryError='章节在合并期间发生修改，请重新合成此句';return false;}
    }
    s.audio=file.id;s.durMs=Math.round(file.duration*1000);s.generationVersion=GENERATION_VERSION;
@@ -709,7 +714,7 @@ class Engine{
    s.speechCheckedAudio=file.id;s.speechCheckedText=source.text;
    if(typeof file.speechPrompt==='string')s.lastSpeechRequest={promptVersion:PROMPT_VERSION,prompt:file.speechPrompt,text:source.text,voice:source.voice,audio:file.id};
    delete s.speechDraft;delete s.retryDraft;delete s.retryError;delete s.failReason;
-   c.audio=merged?.id||null;if(merged){c.duration=merged.duration;c.audioTimeline=makeAudioTimeline(c.segments,merged);c.status='ready';c.pacingVersion=1;c.audioStale=false;}
+   c.audio=merged?.id||null;if(merged){c.duration=merged.duration;c.audioTimeline=makeAudioTimeline(c.segments,merged);c.status='ready';c.pacingVersion=SEGMENT_PACING_VERSION;c.audioStale=false;}
    else if(!this.state.tasks.some(t=>t.bookId===bid&&t.chapterId===cid&&t.status==='running'))c.status='waiting';
    for(const t of this.state.tasks.filter(t=>t.bookId===bid&&t.chapterId===cid&&!['cancelled'].includes(t.status))){t.done=c.segments.filter(x=>x.audio).length;if(merged&&!t.synthActive&&!this._frontActive.has(t)){t.status='done';t.phase='完成';t.message='';}}
    return true;
@@ -832,7 +837,8 @@ class Engine{
  }
  bookForChapter(c){return this.state.books.find(b=>b.chapters.includes(c));}
  async repairDirections(c,input,job,shouldPause){
-  const batch=job.targets.filter(target=>{const s=c.segments.find(s=>s.id===target.id);return s&&s.directionStatus==='pending'&&!s.audio&&!s.skip&&!s.isAd&&s.text===target.text&&s.speaker===target.speaker&&s.emotion===target.emotion;});
+  for(const target of job.targets){const s=c.segments.find(s=>s.id===target.id);if(s?.speaker==='旁白'&&!s.audio)applyDirection(s,{});}
+  const batch=job.targets.filter(target=>{const s=c.segments.find(s=>s.id===target.id);return s&&s.speaker!=='旁白'&&s.directionStatus==='pending'&&!s.audio&&!s.skip&&!s.isAd&&s.text===target.text&&s.speaker===target.speaker&&s.emotion===target.emotion;});
   if(!batch.length)return true;
   let result,error='';
   try{
@@ -1248,16 +1254,16 @@ try{
    if(!audible.length){c.audio=null;c.status='skipped';t.status='done';t.phase='全部跳过';t.skipped=c.segments.length;t.done=0;t.message='本章 '+c.segments.length+' 段全部跳过，未生成音频。请检查广告标注，可取消跳过后重新制作';}
    else{
     t.phase='合并章节';await this.persist();const version=JSON.stringify(c.segments);
-    const result=await this.io.mergeAudio(audible.map(s=>s.audio),pausesFor(audible.map(s=>s.text)));
+    const result=await this.io.mergeAudio(audible.map(s=>s.audio),segmentPausesFor(audible.map(s=>s.text)));
     if(!this.state.tasks.includes(t)||t.status==='cancelled')return;
     if(t.pauseRequested){t.status='paused';await this.persist();return;}
     if(JSON.stringify(c.segments)!==version){c.status='waiting';t.status=policy.mode==='auto'?'queued':'waiting';if(t.status==='queued')t.nextRetryAt=Date.now()+1000;t.phase=t.status==='queued'?'修改后自动继续':'制作待继续';t.message=t.status==='queued'?'合并期间有片段修改，稍后自动继续':'合并期间有片段修改，请继续制作';}
-    else{c.audio=result.id;c.audioStale=false;c.duration=result.duration;c.audioTimeline=makeAudioTimeline(c.segments,result);c.pacingVersion=1;c.status='ready';t.status='done';t.phase='完成';t.message='';}
+    else{c.audio=result.id;c.audioStale=false;c.duration=result.duration;c.audioTimeline=makeAudioTimeline(c.segments,result);c.pacingVersion=SEGMENT_PACING_VERSION;c.status='ready';t.status='done';t.phase='完成';t.message='';}
    }
   }
   this.touch(c);await this.persist();
  }
- async optimizePauses(bid,cid){await this.ensureChapter(bid,cid);const c=this.chapter(bid,cid);if(!c.audio||!c.segments.length||c.segments.some(s=>!s.audio))throw Error('请先完成本章制作');if(c.pacingVersion===1)return;if(this.state.tasks.some(t=>t.bookId===bid&&t.chapterId===cid&&['running','queued'].includes(t.status)))throw Error('本章正在制作');let t=this.state.tasks.slice().reverse().find(t=>t.bookId===bid&&t.chapterId===cid&&t.status!=='cancelled');if(!t){t={id:uid(),bookId:bid,chapterId:cid,created:Date.now(),prio:0};this.state.tasks.push(t);}Object.assign(t,{status:'queued',phase:'优化句末停顿',message:'',done:c.segments.length,total:c.segments.length,pauseRequested:false,repace:true});await this.persist();return this.kick();}
+ async optimizePauses(bid,cid){await this.ensureChapter(bid,cid);const c=this.chapter(bid,cid);if(!c.audio||!c.segments.length||c.segments.some(s=>!s.audio))throw Error('请先完成本章制作');if(c.pacingVersion>=SEGMENT_PACING_VERSION)return;if(this.state.tasks.some(t=>t.bookId===bid&&t.chapterId===cid&&['running','queued'].includes(t.status)))throw Error('本章正在制作');let t=this.state.tasks.slice().reverse().find(t=>t.bookId===bid&&t.chapterId===cid&&t.status!=='cancelled');if(!t){t={id:uid(),bookId:bid,chapterId:cid,created:Date.now(),prio:0};this.state.tasks.push(t);}Object.assign(t,{status:'queued',phase:'优化句末停顿',message:'',done:c.segments.length,total:c.segments.length,pauseRequested:false,repace:true});await this.persist();return this.kick();}
  async finishTaskRun(t){
   if(this._frontActive.has(t)||t.synthActive)return;
   if((t.resumeRequested||t.yieldRequested)&&this.state.tasks.includes(t)&&!['done','cancelled'].includes(t.status)){
@@ -1310,7 +1316,8 @@ try{
     const audio=c.audio,audible=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.audio!=='skip');
     const sources=JSON.stringify(audible.map(s=>[s.id,s.audio,s.text]));
     if(audible.length&&audible.every(s=>s.audio))try{
-     const result=await this.io.audioTimeline(audio,audible.map(s=>s.audio),c.pacingVersion===1?pausesFor(audible.map(s=>s.text)):[]);
+     const texts=audible.map(s=>s.text);
+     const result=await this.io.audioTimeline(audio,audible.map(s=>s.audio),c.pacingVersion>=SEGMENT_PACING_VERSION?segmentPausesFor(texts):c.pacingVersion===1?pausesFor(texts):[]);
      const current=(c.segments||[]).filter(s=>!s.skip&&!s.isAd&&s.audio!=='skip');
      if(this.state.books.some(b=>b.id===bid&&b.chapters.includes(c))&&c.audio===audio&&!c.audioStale&&sources===JSON.stringify(current.map(s=>[s.id,s.audio,s.text]))){
       const timeline=makeAudioTimeline(c.segments,result);if(timeline&&timeline.audio===audio){c.audioTimeline=timeline;c.duration=result.duration;n++;}
@@ -1372,5 +1379,5 @@ function computeSegmentTimestamps(segments, totalDurationSec,timeline,audio){
   });
 }
 
-return {FEATURES,PROMPT_VERSION,DIRECTION_VERSION,FAST_SPEECH_PROMPT,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,COVER_STYLES,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
+return {FEATURES,PROMPT_VERSION,DIRECTION_VERSION,FAST_SPEECH_PROMPT,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,SEGMENT_PACING_VERSION,SEGMENT_BREATH_MS,segmentPauseAfter,segmentPausesFor,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,COVER_STYLES,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
 });

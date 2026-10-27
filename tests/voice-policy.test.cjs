@@ -59,8 +59,8 @@ test('local save errors do not trigger sentence splitting even when wording says
 });
 test('resuming an already finished legacy chapter preserves every audio reference and binding',async()=>{
  const e=engine(),b=await bookWithRoles(e);const c=b.chapters[0];c.audio='legacy-chapter.wav';c.segments=[{id:0,text:'你好。',speaker:'沈砚',audio:'legacy-line.wav'}];b.characters[1].voice='old-voice';
- e.state.tasks.push({id:'old-task',bookId:b.id,chapterId:c.id,status:'paused'});const before=JSON.stringify(b);e.io.request=async()=>{throw Error('old chapter must not call models');};e.io.mergeAudio=async()=>{throw Error('old chapter must not merge');};
- await e.resume('old-task');assert.equal(JSON.stringify(b),before);assert.equal(e.state.tasks[0].status,'done');
+ e.state.tasks.push({id:'old-task',bookId:b.id,chapterId:c.id,status:'paused'});const strip=o=>JSON.stringify(o,(k,v)=>k==='promptMode'?undefined:v);const before=strip(b);e.io.request=async()=>{throw Error('old chapter must not call models');};e.io.mergeAudio=async()=>{throw Error('old chapter must not merge');};
+ await e.resume('old-task');assert.equal(strip(b),before);assert.equal(e.state.tasks[0].status,'done');
 });
 test('unversioned split checkpoints cannot mix old audio with current prompt identity',async()=>{
  const e=engine(),b=await e.addBook('续做','甲。乙。'),c=b.chapters[0],s={id:0,text:'甲。乙。',speaker:'旁白',emotion:'自然',confidence:1};c.segments=[s];

@@ -236,9 +236,11 @@ public class PlaybackService extends Service {
                     break;
                 case ACTION_WAIT:
                     // Completion ends the current file, but the listening session remains active.
-                    if (lastCompletionAt > 0 && player != null && prepared && playWhenPrepared && !player.isPlaying()) {
+                    String expectedWaitAudioId = intent.getStringExtra("expectedAudioId");
+                    if ((expectedWaitAudioId == null || expectedWaitAudioId.isEmpty() || expectedWaitAudioId.equals(currentAudioId))
+                            && lastCompletionAt > 0 && player != null && prepared && !player.isPlaying()) {
                         waitingForProduction = true;
-                        registerNoisyReceiver();
+                        if (playWhenPrepared) registerNoisyReceiver();
                         updatePlaybackState();
                         updateNotification();
                     }

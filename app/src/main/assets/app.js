@@ -87,6 +87,15 @@ function syncCatalogSheet(entering){
  });
 }
 function catalogRow(id){return Array.from(document.querySelectorAll('#chapter-list [data-chapter-id]')).find(el=>el.dataset.chapterId===id);}
+function scrollPlayerCatalogToCurrent(){
+ const list=document.getElementById('player-catalog-scroll'),row=list?.querySelector('.vc-chapter-current');
+ if(!row)return;
+ // Leave enough room to align even the final chapter with the viewport top.
+ const last=list.querySelector('.vc-chapter:last-child');
+ list.style.paddingBottom=Math.max(0,list.clientHeight-last.offsetHeight)+'px';
+ // The browser resolves content-visibility row heights when scrolling into view.
+ row.scrollIntoView({block:'start',behavior:'instant'});
+}
 function prepareCatalog(b,chapters,entering){
  catalogProgressId=BajiaoCatalog.progressChapter(b,engine.state.lastPlayback,{bookId:playingBookId,chapterId:playingChapterId,playing:miniPlayingState?.playing});
  const key=JSON.stringify([b.id,chapters.map(c=>c.id)]);
@@ -1163,7 +1172,7 @@ if(page==='listen'){renderedListenSignature=listenSignature();if(miniPlayingStat
 syncCatalogSheet(enteringCatalog);
 syncCatalogViewport(catalogAnchor);
 loadListenTranscript();
-if(page==='roles')loadRoleProfiles();
+if(page==='roles'){loadRoleAppearances();loadRoleProfiles();}
 try{if(page==='listen'&&bookId&&chapterId){const __ck=bookId+':'+chapterId+':'+chapter().audio;if(window.__calibKey!==__ck){window.__calibKey=__ck;engine.calibrateDurations(bookId,chapterId).then(n=>{if(n>0&&page==='listen')render();}).catch(()=>{});}}}catch(__e){}
 }
 const value=id=>$('#'+id)?.value||'';
@@ -1852,9 +1861,9 @@ if(a==='selectnone'){selected=[];render();return;}
 if(a==='selectall'){selected=book().chapters.map(c=>c.id);render();return;}
 if(a==='clearchapters'){await busy(async()=>{const ids=[...selected];for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&ids.includes(t.chapterId)&&['running','queued'].includes(t.status)))await engine.cancel(t.id);let n=0;for(const cid of ids){const cc=engine.chapter(bookId,cid);if(cc?.audio){await engine.clearChapterAudio(bookId,cid);n++;}}selected=[];multi=false;try{storageStats=await device.call('audioStats');}catch(e){}toast('已释放 '+n+' 章音频，标注保留，可直接重听时重合');},'正在释放所选章节音频…');return;}
 if(a==='resetchapters'){await busy(async()=>{const ids=[...selected];for(const t of engine.state.tasks.filter(t=>t.bookId===bookId&&ids.includes(t.chapterId)&&['running','queued'].includes(t.status)))await engine.cancel(t.id);const n=await engine.resetChapters(bookId,ids);selected=[];multi=false;try{storageStats=await device.call('audioStats');}catch(e){}toast('已清除 '+n+' 章的标注与音频，原文保留，可重新制作');},'正在清除所选章节的标注与音频…');return;}
-if(a==='playercatalog'){playerCatalogOpen=true;render();requestAnimationFrame(()=>{const list=document.getElementById('player-catalog-scroll'),row=list?.querySelector('.vc-chapter-current');if(list&&row)list.scrollTop=row.getBoundingClientRect().top-list.getBoundingClientRect().top+list.scrollTop;});return;}
+if(a==='playercatalog'){playerCatalogOpen=true;render();requestAnimationFrame(scrollPlayerCatalogToCurrent);return;}
 if(a==='closeplayercatalog'){playerCatalogOpen=false;render();return;}
-if(a==='catalogcurrent'){const list=document.getElementById('player-catalog-scroll'),row=list?.querySelector('.vc-chapter-current');if(list&&row)list.scrollTop+=row.getBoundingClientRect().top-list.getBoundingClientRect().top;return;}
+if(a==='catalogcurrent'){scrollPlayerCatalogToCurrent();return;}
 if(a==='listenpick'){playerCatalogOpen=false;chapterId=x;page='listen';render();await playCurrentChapter(bookId,x);return;}
 if(a==='openepisodes'){episodeModalOpen=true;render();return;}
 if(a==='dropdown'){openDropdown=x;render();return;}

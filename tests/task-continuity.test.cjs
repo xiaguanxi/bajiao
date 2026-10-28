@@ -6,16 +6,18 @@ async function fixture(pipeline=false){
  c.segments=units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));e.state.settings.ttsParallel=1;
  return {e,b,c};
 }
-for(const pipeline of [false,true])test(`transient failure retains checkpoint and retries beyond ten rounds (pipeline=${pipeline})`,async()=>{
+for(const pipeline of [false,true])test(`transient failure stops after three retries and manual resume retains checkpoint (pipeline=${pipeline})`,async()=>{
  const {e,b,c}=await fixture(pipeline),calls=[];let failing=true;
  e.synthesize=async text=>{calls.push(text);if(text==='乙。'&&failing)throw new ApiError('connection reset',503,true);return {id:text,duration:1};};
  await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
- for(let i=0;i<12;i++){
+ for(let i=0;i<3;i++){
   assert.equal(t.status,'queued');assert.equal(t.retryWaiting,true);assert.equal(t.pauseRequested,false);
   assert.equal(c.segments[0].audio,'甲。');assert(t.nextRetryAt>Date.now());assert.equal(e.nextQueued(),null);
   t.nextRetryAt=0;await e.kick();
  }
- assert(t.retryCount>10);failing=false;t.nextRetryAt=0;await e.kick();
+ assert.equal(t.retryCount,3);assert.equal(t.status,'failed');assert.equal(t.retryExhausted,true);
+ assert.equal(t.message,'重试3次后仍然失败，请手动处理。');assert.equal(e._productionRetryTimer,null);
+ failing=false;await e.resume(t.id);
  assert.equal(t.status,'done');assert.equal(c.audio,'chapter.wav');assert.equal(calls.filter(s=>s==='甲。').length,1);
  assert.equal(e._ttsActive,0);assert.equal(e._synthRunning,0);
 });

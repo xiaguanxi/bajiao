@@ -1605,8 +1605,28 @@ function finishSeekGesture(){
 }
 
 let playbackNavigationBusy=false;
+async function seekStreamFromSystem(value,relative=false){
+  const stream=streamState;
+  if(!stream)return;
+  const p=await device.call('playbackState');
+  if(stream!==streamState||p.id!==stream.audioId)return;
+  const c=engine.chapter(stream.bid,stream.cid),prefix=streamPrefix(c);
+  if(!prefix.length)return;
+  let index,offset=0;
+  if(relative){
+    let remaining=Math.max(0,stream.posBefore+(p.position||0)+value);
+    index=prefix.findIndex(s=>{const duration=Math.max(0,s.durMs||0);if(remaining<duration){offset=remaining;return true;}remaining-=duration;return false;});
+    if(index<0){index=prefix.length-1;offset=Math.max(0,(prefix[index].durMs||0)-1);}
+  }else{
+    const segments=c.segments||[],target=Math.max(0,Math.min(segments.length-1,Math.round(value)));
+    index=prefix.findIndex(s=>segments.indexOf(s)>=target);
+    if(index<0){index=prefix.length-1;toast('已跳至最新已生成句子');}
+  }
+  await playStreamSeg(stream.bid,stream.cid,index,offset,{continueSession:true,startPaused:!playbackIsActive(p)});
+}
 window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
-  if(['play','pause','stop','completion'].includes(act)&&sourceAudioId&&playingId&&sourceAudioId!==playingId)return;
+  if(['play','pause','stop','completion','streamseek','streamskip'].includes(act)&&sourceAudioId&&playingId&&sourceAudioId!==playingId)return;
+  if(act==='streamseek'||act==='streamskip'){playbackPrompts?.cancel();await seekStreamFromSystem(val||0,act==='streamskip');return;}
   if(['pause','stop'].includes(act))saveCurrentPlayback().then(()=>engine.persist()).catch(()=>{});
   if(['play','pause','stop','seek','next','prev'].includes(act))playbackPrompts?.cancel();
   if(act==='play'){setProductionWaitPaused(false);continueProductionPlayback();}
@@ -1926,6 +1946,7 @@ if(a==='savebookinfo'){
 if(a==='closeepisodes'){episodeModalOpen=false;render();return;}
 if(a==='setchpage'){chapterPage=Number(x)||0;catalogRequestId=book().chapters[chapterPage*50]?.id;episodeModalOpen=false;render();return;}
 if(a==='fillroleprofiles'){loadRoleProfiles(true);return;}
+if(a==='refreshroleappearances'){loadRoleAppearances(true);return;}
 if(a==='analyze'){await busy(()=>engine.analyze(bookId,chapterId),'正在实际调用语言模型，识别角色…');return;}
 if(a==='makeone'){selected=[chapterId];go('make');return;}
 if(a==='enqueue'){if(!configured.llmConfigured||!configured.ttsConfigured){toast('请先配置语言模型和 MiMo 密钥');go('models');return;}const ids=[...selected];go('tasks');engine.enqueue(bookId,ids).catch(e=>toast(e.message));return;}
@@ -2086,6 +2107,7 @@ device.call('load').then(result=>{configured=result;engine=new Bajiao.Engine(dev
 engine.recoverProduction().catch(()=>{});
 
 engine.onChange(()=>{
+  syncStreamMediaProgress();
   playbackPrompts?.reconcile();
   syncProductionStatus().catch(()=>{});
   continueProductionPlayback();

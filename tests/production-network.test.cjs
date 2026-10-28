@@ -33,9 +33,12 @@ test('offline segment regeneration does not send a request or replace existing a
  const f=fixture('none'),{e}=f,b=await book(e),c=b.chapters[0];c.segments[0].audio='original.wav';let calls=0;e.synthesize=async()=>{calls++;return {id:'new.wav'};};
  await assert.rejects(e.regenerateSegment(b.id,c.id,0),/当前无网络/);assert.equal(calls,0);assert.equal(c.segments[0].audio,'original.wav');
 });
-test('request retry setting bounds each burst; transient task failures remain scheduled',async()=>{
+test('request retry setting bounds all automatic attempts and exhaustion survives reload and reconnect',async()=>{
  const {e,V}=fixture(),b=await book(e);e.state.settings.retries=2;let calls=0;e.io.sleep=async()=>{};e.io.request=async()=>{calls++;throw new V.ApiError('network timeout',408,true);};
- e.synthesize=async()=>e.performRequest('tts',{model:'test'});await e.enqueue(b.id,[b.chapters[0].id]);assert.equal(calls,3);assert.equal(e.state.tasks[0].status,'queued');assert.equal(e.state.tasks[0].retryWaiting,true);assert(e.state.tasks[0].nextRetryAt>Date.now());
+ e.synthesize=async()=>e.performRequest('tts',{model:'test'});await e.enqueue(b.id,[b.chapters[0].id]);assert.equal(calls,3);assert.equal(e.state.tasks[0].status,'failed');assert.equal(e.state.tasks[0].retryWaiting,false);assert.equal(e.state.tasks[0].nextRetryAt,undefined);
+ assert.equal(e.state.tasks[0].message,'重试2次后仍然失败，请手动处理。');
+ const restored=new V.Engine(e.io,JSON.parse(JSON.stringify(e.state)));await restored.recoverProduction();assert.equal(restored.state.tasks[0].status,'failed');assert.equal(calls,3);
+ await e.refreshProductionNetwork(true);await e.kick();assert.equal(calls,3);
  calls=0;e.io.request=async()=>{calls++;throw new V.ApiError('unauthorized',401,false);};await assert.rejects(e.performRequest('tts',{}));assert.equal(calls,1);
 });
 

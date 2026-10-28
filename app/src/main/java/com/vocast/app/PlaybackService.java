@@ -78,6 +78,8 @@ public class PlaybackService extends Service {
     private boolean resumeOnFocusGain = false;
     private boolean noisyReceiverRegistered = false;
     private static PlaybackService activeService;
+    private long appSession;
+    private final PlaybackMediaProgress mediaProgress = new PlaybackMediaProgress();
     private PlaybackCheckpoint checkpoint;
     private final ExecutorService checkpointWriter = Executors.newSingleThreadExecutor();
     private String progressBookId = "", progressChapterId = "";
@@ -121,6 +123,7 @@ public class PlaybackService extends Service {
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (!AppSession.isActive(appSession)) return;
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
                 pausePlayback();
                 notifyClientEvent("pause", 0);
@@ -136,6 +139,7 @@ public class PlaybackService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        appSession = AppSession.current();
         activeService = this;
         checkpoint = new PlaybackCheckpoint(getFilesDir());
         handler.postDelayed(progressRunnable, 1000);
@@ -197,6 +201,10 @@ public class PlaybackService extends Service {
 
             @Override
             public void onSeekTo(long pos) {
+                if (mediaProgress.isStreaming()) {
+                    notifyClientEvent("streamseek", mediaProgress.sentenceAt(pos));
+                    return;
+                }
                 seekToPosition((int) pos);
                 notifyClientEvent("seek", pos);
             }
@@ -214,7 +222,7 @@ public class PlaybackService extends Service {
         if (action.equals("next") || action.equals("prev")) cancelPlaybackPrompt();
         final String eventAudioId = currentAudioId;
         handler.post(() -> {
-            if (eventListener != null) {
+            if (AppSession.isActive(appSession) && eventListener != null) {
                 try {
                     eventListener.onPlaybackEvent(action, value, eventAudioId);
                 } catch (Exception ignored) {}
@@ -224,6 +232,16 @@ public class PlaybackService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        long requestedSession = intent == null ? appSession : intent.getLongExtra("appSession", appSession);
+        if (!AppSession.isActive(requestedSession)) {
+            if (!AppSession.isActive(appSession) || player == null) {
+                AppNotifications.acknowledgeRejectedStart(this, 1, "playback");
+                stopPlayback();
+                stopSelf();
+            }
+            return START_NOT_STICKY;
+        }
+        appSession = requestedSession;
         if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
         if (action == null) return START_NOT_STICKY;
@@ -235,6 +253,12 @@ public class PlaybackService extends Service {
                     break;
                 case ACTION_PROMPT:
                     handlePromptAction(intent);
+                    break;
+                case "streamprogress":
+                    if (progressSegmentId >= 0 && currentAudioId.equals(intent.getStringExtra("expectedAudioId"))) {
+                        updateMediaProgress(intent);
+                        updateMetadata();updatePlaybackState();updateNotification();
+                    }
                     break;
                 case ACTION_WAIT:
                     // Completion ends the current file, but the listening session remains active.
@@ -325,6 +349,7 @@ public class PlaybackService extends Service {
         if (progressChapterId == null) progressChapterId = "";
         progressSegmentId = intent.getIntExtra("segmentId", -1);
         progressBase = intent.getIntExtra("positionBase", 0);
+        updateMediaProgress(intent);
         pendingPosition = null;
         progressCompleted = false;
         if (intent.hasExtra("speed")) { float s = intent.getFloatExtra("speed", 1.0f); if (s > 0) playbackSpeed = Math.max(0.5f, Math.min(s, 3.0f)); }
@@ -474,6 +499,7 @@ public class PlaybackService extends Service {
     }
 
     private void startPreparedPlayback() {
+        if (!AppSession.isActive(appSession)) return;
         if (player == null || !prepared || !playWhenPrepared || player.isPlaying()) return;
         long delay = segmentStartAt - SystemClock.elapsedRealtime();
         if (delay > 0) {
@@ -528,14 +554,23 @@ public class PlaybackService extends Service {
         waitingForProduction = false;
         prepared = false;
         playWhenPrepared = false;
+        resumeOnFocusGain = false;
+        handler.removeCallbacks(sleepRunnable);sleepUntil = 0;
         if (player != null) {
             player.release();
             player = null;
         }
+        currentAudioId = "";durationMs = 0;pendingPosition = null;lastCompletionAt = 0;
+        chapterTitle = "";bookTitle = "";artist = "";cachedCoverBitmap = null;
+        hasPrevious = false;hasNext = false;
+        mediaProgress.update(0, 0, 0, false);
         abandonAudioFocus();
         unregisterNoisyReceiver();
         updatePlaybackState();
+        if (mediaSession != null) { mediaSession.setMetadata(null);mediaSession.setActive(false); }
         stopForeground(true);
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) manager.cancel(1);
     }
 
     private void seekToPosition(int posMs) {
@@ -566,6 +601,7 @@ public class PlaybackService extends Service {
     }
 
     private void seekRelative(int deltaMs) {
+        if (mediaProgress.isStreaming()) { notifyClientEvent("streamskip", deltaMs); return; }
         if (player != null && prepared) {
             int current = player.getCurrentPosition();
             int target = Math.max(0, current + deltaMs);
@@ -598,7 +634,8 @@ public class PlaybackService extends Service {
         if (mediaSession == null) return;
         boolean isPlaying = isPlaybackActive();
         int state = isPlaying ? (waitingForProduction ? PlaybackState.STATE_BUFFERING : PlaybackState.STATE_PLAYING) : (player != null ? (prepared ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_BUFFERING) : PlaybackState.STATE_STOPPED);
-        long pos = player != null && prepared ? player.getCurrentPosition() : 0;
+        long pos = mediaProgress.isStreaming() ? mediaProgress.position()
+                : player != null && prepared ? (pendingPosition != null ? pendingPosition : player.getCurrentPosition()) : 0;
 
         long actions = PlaybackState.ACTION_PLAY
                 | PlaybackState.ACTION_PAUSE
@@ -613,19 +650,20 @@ public class PlaybackService extends Service {
 
         PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, pos, waitingForProduction ? 0 : playbackSpeed, SystemClock.elapsedRealtime());
+                .setState(state, pos, mediaProgress.isStreaming() || !isPlaying || waitingForProduction ? 0 : playbackSpeed, SystemClock.elapsedRealtime());
 
         mediaSession.setPlaybackState(stateBuilder.build());
     }
 
     private void updateMetadata() {
         if (mediaSession == null) return;
-        long duration = durationMs > 0 ? durationMs : (player != null && prepared ? player.getDuration() : 0);
+        long duration = mediaProgress.isStreaming() ? mediaProgress.chapterDuration
+                : durationMs > 0 ? durationMs : (player != null && prepared ? player.getDuration() : 0);
 
         MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, chapterTitle != null && !chapterTitle.isEmpty() ? chapterTitle : "有声书播放")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "芭蕉")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist != null && !artist.isEmpty() ? artist : "多角色演绎 · 芭蕉")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, mediaArtist())
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
 
         if (cachedCoverBitmap != null) {
@@ -636,6 +674,7 @@ public class PlaybackService extends Service {
     }
 
     private void updateNotification() {
+        if (!AppSession.isActive(appSession)) return;
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm == null) return;
 
@@ -665,11 +704,12 @@ public class PlaybackService extends Service {
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setLargeIcon(cachedCoverBitmap)
                 .setContentTitle(chapterTitle != null && !chapterTitle.isEmpty() ? chapterTitle : "芭蕉 听书")
-                .setContentText((bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "芭蕉") + " · " + artist)
+                .setContentText((bookTitle != null && !bookTitle.isEmpty() ? bookTitle : "芭蕉") + " · " + mediaArtist())
                 .setSubText("芭蕉 有声书")
                 .setContentIntent(contentPi)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setOngoing(isPlaying)
+                .setOnlyAlertOnce(true)
                 .setShowWhen(false);
 
         nb.addAction(new Notification.Action.Builder(
@@ -695,8 +735,28 @@ public class PlaybackService extends Service {
 
     private PendingIntent createActionPendingIntent(String action) {
         Intent intent = new Intent(this, PlaybackService.class);
-        intent.setAction(action);
+        intent.setAction(action).putExtra("appSession", appSession);
         return PendingIntent.getService(this, action.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private void updateMediaProgress(Intent intent) {
+        mediaProgress.update(intent.getIntExtra("sentenceIndex", 0),
+                progressSegmentId >= 0 ? intent.getIntExtra("sentenceCount", 0) : 0,
+                intent.getLongExtra("chapterDuration", 0), intent.getBooleanExtra("durationEstimated", false));
+        if (mediaSession != null) mediaSession.setActive(true);
+    }
+
+    private String mediaArtist() {
+        String value = artist != null && !artist.isEmpty() ? artist : "多角色演绎 · 芭蕉";
+        return mediaProgress.isStreaming() ? value + " · " + mediaProgress.label() : value;
+    }
+
+    static void closeAppSession() {
+        if (activeService == null) return;
+        activeService.stopPlayback();
+        activeService.handler.removeCallbacksAndMessages(null);
+        if (mediaSession != null) { mediaSession.release(); mediaSession = null; }
+        activeService.stopSelf();
     }
 
     private boolean requestAudioFocus() {
@@ -711,6 +771,7 @@ public class PlaybackService extends Service {
                     .setAudioAttributes(playbackAttributes)
                     .setAcceptsDelayedFocusGain(true)
                     .setOnAudioFocusChangeListener(focusChange -> {
+                        if (!AppSession.isActive(appSession)) return;
                         if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
                             pausePlayback();
                             notifyClientEvent("pause", 0);
@@ -860,19 +921,25 @@ public class PlaybackService extends Service {
             j.put("error", lastError);
             j.put("hasPrev", hasPrevious);
             j.put("hasNext", hasNext);
+            if (activeService != null && activeService.mediaProgress.isStreaming()) {
+                j.put("mediaPosition", activeService.mediaProgress.position());
+                j.put("mediaDuration", activeService.mediaProgress.chapterDuration);
+                j.put("sentenceIndex", activeService.mediaProgress.sentenceIndex);
+                j.put("sentenceCount", activeService.mediaProgress.sentenceCount);
+            }
         } catch (Exception ignored) {}
         return j;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        saveProgress();
+        AppNotifications.close(this, appSession);
         super.onTaskRemoved(rootIntent);
     }
 
     @Override
     public void onDestroy() {
-        saveProgress();
+        stopPlayback();
         activeService = null;
         checkpointWriter.shutdown();
         cancelPlaybackPrompt();

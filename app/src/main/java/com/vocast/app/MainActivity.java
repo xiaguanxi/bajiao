@@ -20,6 +20,7 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private long appSession;
     private final ExecutorService executor=Executors.newFixedThreadPool(3);
     private final ExecutorService networkExecutor=Executors.newFixedThreadPool(5);
     private SecretStore vault;private AudioFiles audio;private AtomicFile store;private SnapshotStore snapshots;
@@ -45,9 +46,10 @@ public class MainActivity extends Activity {
         networkHandler.postDelayed(refreshNetwork,1000);
     }
     private final Map<String,byte[]> importBytes=new ConcurrentHashMap<>();
+    private void startSessionService(Intent intent,boolean foreground){AppSession.runIfActive(appSession,()->{if(foreground)startForegroundService(intent);else startService(intent);});}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String nav=intent!=null?intent.getStringExtra("nav"):null;if(nav!=null){pendingNav=nav;forwardNav(nav);}}
     private void forwardNav(String nav){if(web==null||nav==null)return;final String js="window.__applyInitialNav&&window.__applyInitialNav('"+nav.replace("'","")+"')";web.post(()->{if(web!=null)web.evaluateJavascript(js,null);});}
-    @Override public void onCreate(Bundle state){super.onCreate(state);vault=new SecretStore(this);audio=new AudioFiles(new File(getFilesDir(),"audio"));store=new AtomicFile(new File(getFilesDir(),"state.json"));snapshots=new SnapshotStore(getFilesDir());
+    @Override public void onCreate(Bundle state){super.onCreate(state);appSession=AppSession.open();vault=new SecretStore(this);audio=new AudioFiles(new File(getFilesDir(),"audio"));store=new AtomicFile(new File(getFilesDir(),"state.json"));snapshots=new SnapshotStore(getFilesDir());
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0){try{File f=new File(getFilesDir(),"credentials-import.json");if(f.isFile()){vault.save(new JSONObject(new String(AudioFiles.read(f,100000),StandardCharsets.UTF_8)));if(!f.delete())throw new IOException("Credential import cleanup failed");}}catch(Exception e){android.widget.Toast.makeText(this,"测试配置导入失败",android.widget.Toast.LENGTH_SHORT).show();}}
         web=new WebView(this);setContentView(web);web.setBackgroundColor(0xfff8f7f2);WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setMediaPlaybackRequiresUserGesture(true);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);settings.setTextZoom(100);
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
@@ -74,7 +76,7 @@ public class MainActivity extends Activity {
     class Bridge {
         @JavascriptInterface public void call(String id,String action,String json){
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
-            ("request".equals(action)?networkExecutor:executor).execute(()->{try{JSONObject p=new JSONObject(json);Object result;
+            ("request".equals(action)?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
                     case "networkState":result=productionNetworkState();break;
                     case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
@@ -94,17 +96,17 @@ public class MainActivity extends Activity {
                     case "silence":result=audio.silence(p.optInt("ms",500),p.optString("ref",""));break;
                     case "pick":runOnUiThread(()->pick(id,p.optString("kind")));return;
                     case "export":{audio.get(p.getString("id"));runOnUiThread(()->export(id,p));return;}
-                    case "play":{String audioId=p.getString("id");String path=audio.get(audioId).getAbsolutePath();Intent i=new Intent(MainActivity.this,PlaybackService.class).setAction(PlaybackService.ACTION_PLAY).putExtra("id",audioId).putExtra("path",path).putExtra("title",p.optString("title","芭蕉")).putExtra("bookTitle",p.optString("bookTitle","芭蕉")).putExtra("artist",p.optString("artist","多角色演绎 · 芭蕉")).putExtra("duration",p.optInt("duration",0)).putExtra("position",p.optInt("position",0)).putExtra("startPaused",p.optBoolean("startPaused",false)).putExtra("previousAudio",p.optString("previousAudio","")) .putExtra("gapMs",p.optString("previousAudio","").isEmpty()?0:audio.gapBefore(p.optString("previousAudio"),audioId,p.optInt("pauseMs",0))).putExtra("bookId",p.optString("bookId","")).putExtra("chapterId",p.optString("chapterId","")).putExtra("segmentId",p.optInt("segmentId",-1)).putExtra("positionBase",p.optInt("positionBase",0)).putExtra("speed",(float)p.optDouble("speed",1.0)).putExtra("hasPrev",p.optBoolean("hasPrev",false)).putExtra("hasNext",p.optBoolean("hasNext",false)).putExtra("coverPath",p.optString("coverPath",""));startForegroundService(i);result=true;break;}
+                    case "play":{String audioId=p.getString("id");String path=audio.get(audioId).getAbsolutePath();Intent i=new Intent(MainActivity.this,PlaybackService.class).putExtra("appSession",appSession).setAction(PlaybackService.ACTION_PLAY).putExtra("id",audioId).putExtra("path",path).putExtra("title",p.optString("title","芭蕉")).putExtra("bookTitle",p.optString("bookTitle","芭蕉")).putExtra("artist",p.optString("artist","多角色演绎 · 芭蕉")).putExtra("duration",p.optInt("duration",0)).putExtra("position",p.optInt("position",0)).putExtra("startPaused",p.optBoolean("startPaused",false)).putExtra("previousAudio",p.optString("previousAudio","")) .putExtra("gapMs",p.optString("previousAudio","").isEmpty()?0:audio.gapBefore(p.optString("previousAudio"),audioId,p.optInt("pauseMs",0))).putExtra("bookId",p.optString("bookId","")).putExtra("chapterId",p.optString("chapterId","")).putExtra("segmentId",p.optInt("segmentId",-1)).putExtra("positionBase",p.optInt("positionBase",0)).putExtra("sentenceIndex",p.optInt("sentenceIndex",0)).putExtra("sentenceCount",p.optInt("sentenceCount",0)).putExtra("chapterDuration",p.optLong("chapterDuration",0)).putExtra("durationEstimated",p.optBoolean("durationEstimated",false)).putExtra("speed",(float)p.optDouble("speed",1.0)).putExtra("hasPrev",p.optBoolean("hasPrev",false)).putExtra("hasNext",p.optBoolean("hasNext",false)).putExtra("coverPath",p.optString("coverPath",""));startSessionService(i,true);result=true;break;}
                     case "audioDurations":{java.util.List<String> ids=new java.util.ArrayList<>();org.json.JSONArray a=p.getJSONArray("ids");for(int i=0;i<a.length();i++)ids.add(a.getString(i));result=audio.durations(ids);break;}
                     case "deleteAudio":{List<String> toDelete=new ArrayList<>();if(p.has("ids")){JSONArray a=p.getJSONArray("ids");for(int i=0;i<a.length();i++)toDelete.add(a.getString(i));}else if(p.has("id")){toDelete.add(p.getString("id"));}int count=0;long freed=0;for(String aid:toDelete){long sz=audio.deleteAndGetSize(aid);if(sz>0){count++;freed+=sz;}}JSONObject delRes=new JSONObject();delRes.put("count",count);delRes.put("freedBytes",freed);delRes.put("freedMb",Math.round(freed/1024.0/1024.0*10.0)/10.0);result=delRes;break;}
                     case "audioStats":{result=audio.getStats();break;}
                     case "cleanupAudio":{Set<String> keepSet=new HashSet<>();if(p.has("keepIds")){JSONArray a=p.getJSONArray("keepIds");for(int i=0;i<a.length();i++)keepSet.add(a.getString(i));}result=audio.cleanup(keepSet);break;}
-                    case "playback":{String op=p.optString("op");if(!Arrays.asList("pause","resume","toggle","stop","seek","speed","sleep","prev","next","rewind","fast_forward","wait").contains(op))throw new Exception("无效播放操作");Intent i=new Intent(MainActivity.this,PlaybackService.class).setAction(op).putExtra("value",p.optDouble("value")).putExtra("expectedAudioId",p.optString("expectedAudioId"));startService(i);result=true;break;}
-                    case "playbackPrompt":{Intent i=new Intent(MainActivity.this,PlaybackService.class).setAction(PlaybackService.ACTION_PROMPT).putExtra("op",p.optString("op")).putExtra("token",p.optString("token")).putExtra("expectedAudioId",p.optString("expectedAudioId"));if(p.optString("op").equals("ready"))i.putExtra("path",audio.get(p.getString("id")).getAbsolutePath());startService(i);result=true;break;}
+                    case "playback":{String op=p.optString("op");if(!Arrays.asList("pause","resume","toggle","stop","seek","speed","sleep","prev","next","rewind","fast_forward","wait","streamprogress").contains(op))throw new Exception("无效播放操作");Intent i=new Intent(MainActivity.this,PlaybackService.class).putExtra("appSession",appSession).setAction(op).putExtra("value",p.optDouble("value")).putExtra("expectedAudioId",p.optString("expectedAudioId")).putExtra("sentenceIndex",p.optInt("sentenceIndex",0)).putExtra("sentenceCount",p.optInt("sentenceCount",0)).putExtra("chapterDuration",p.optLong("chapterDuration",0)).putExtra("durationEstimated",p.optBoolean("durationEstimated",false));startSessionService(i,false);result=true;break;}
+                    case "playbackPrompt":{Intent i=new Intent(MainActivity.this,PlaybackService.class).putExtra("appSession",appSession).setAction(PlaybackService.ACTION_PROMPT).putExtra("op",p.optString("op")).putExtra("token",p.optString("token")).putExtra("expectedAudioId",p.optString("expectedAudioId"));if(p.optString("op").equals("ready"))i.putExtra("path",audio.get(p.getString("id")).getAbsolutePath());startSessionService(i,false);result=true;break;}
                     case "playbackState":result=PlaybackService.status();break;
                     case "productionStatus":{
                         boolean active=p.optBoolean("active",false);
-                        Intent i=new Intent(MainActivity.this,ProductionService.class);
+                        Intent i=new Intent(MainActivity.this,ProductionService.class).putExtra("appSession",appSession);
                         if(active){
                             i.setAction(ProductionService.ACTION_UPDATE)
                              .putExtra("title",p.optString("title","芭蕉 正在后台制作"))
@@ -112,13 +114,13 @@ public class MainActivity extends Activity {
                              .putExtra("progress",p.optInt("progress",0))
                              .putExtra("total",p.optInt("total",0));
                             if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
-                                startForegroundService(i);
+                                startSessionService(i,true);
                             }else{
-                                startService(i);
+                                startSessionService(i,false);
                             }
                         }else{
                             i.setAction(ProductionService.ACTION_STOP);
-                            startService(i);
+                            startSessionService(i,false);
                         }
                         result=true;
                         break;
@@ -144,7 +146,7 @@ public class MainActivity extends Activity {
                             .setContentIntent(pi)
                             .setAutoCancel(true)
                             .build();
-                        nm.notify(notifId,notif);
+                        AppSession.runIfActive(appSession,()->nm.notify(notifId,notif));
                         result=true;
                         break;
                     }
@@ -181,5 +183,5 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack&&window.appBack()",null);}
     @Override protected void onStop(){super.onStop();PlaybackService.checkpointNow();if(web!=null)web.evaluateJavascript("window.appBackground&&window.appBackground()",null);}
-    @Override protected void onDestroy(){super.onDestroy();networkHandler.removeCallbacks(refreshNetwork);if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);try{stopService(new Intent(this,ProductionService.class));}catch(Exception ignored){}PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}networkExecutor.shutdown();executor.shutdown();}
+    @Override protected void onDestroy(){AppNotifications.close(this,appSession);super.onDestroy();networkHandler.removeCallbacks(refreshNetwork);if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);if(!AppSession.isActive(AppSession.current()))PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}networkExecutor.shutdownNow();executor.shutdown();}
 }

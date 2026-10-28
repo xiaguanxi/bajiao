@@ -24,9 +24,10 @@ public class ProductionService extends Service {
     private NotificationManager notificationManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean productionActive;
+    private long appSession;
     private final Runnable renewWakeLock = new Runnable() {
         @Override public void run() {
-            if (!productionActive) return;
+            if (!productionActive || !AppSession.isActive(appSession)) return;
             acquireWakeLock();
             handler.postDelayed(this, 30 * 60 * 1000L);
         }
@@ -35,6 +36,7 @@ public class ProductionService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        appSession = AppSession.current();
         notificationManager = getSystemService(NotificationManager.class);
         createNotificationChannel();
     }
@@ -55,6 +57,15 @@ public class ProductionService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        long requestedSession = intent == null ? appSession : intent.getLongExtra("appSession", appSession);
+        if (!AppSession.isActive(requestedSession)) {
+            if (!AppSession.isActive(appSession) || !productionActive) {
+                AppNotifications.acknowledgeRejectedStart(this, NOTIFICATION_ID, CHANNEL_ID);
+                stopForegroundProduction();
+            }
+            return START_NOT_STICKY;
+        }
+        appSession = requestedSession;
         if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
         if (ACTION_STOP.equals(action)) {
@@ -89,7 +100,7 @@ public class ProductionService extends Service {
             }
         }
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private Notification buildNotification(String title, String message, int progress, int total) {
@@ -148,10 +159,18 @@ public class ProductionService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        AppNotifications.close(this, appSession);
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
     public void onDestroy() {
         productionActive = false;
         handler.removeCallbacks(renewWakeLock);
         releaseWakeLock();
+        stopForeground(true);
+        if (notificationManager != null) notificationManager.cancel(NOTIFICATION_ID);
         super.onDestroy();
     }
 

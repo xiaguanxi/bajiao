@@ -8,6 +8,7 @@ const PROMPT_VERSION=4;
 const DIRECTION_VERSION=1;
 const FAST_SPEECH_PROMPT='流利，吐字清晰。';
 const ANNOTATION_BATCH_LIMIT=24;
+const VOICE_REUSE_MAX_CHAPTERS=3,VOICE_REUSE_RECENT_CHAPTERS=5;
 const GENERATION_VERSION=3;
 const SILENCE_PROCESSING_VERSION=1;
 const SEGMENT_PACING_VERSION=2;
@@ -302,10 +303,52 @@ class Engine{
     const segDone=c.segments.filter(s=>s.audio).length;
     if(segDone>(t.done||0))t.done=segDone;
   }
-}this.running=false;this.listeners=[];this._ttsActive=0;this._ttsQueue=[];this._synthRunning=0;this._frontActive=new Set();this.saveChain=Promise.resolve();for(const b of this.state.books){normalizeBookMetadata(b);for(const r of b.characters){r.description=cleanVoiceDescription(r.description);if(r.candidate)normalizeVoice(r.candidate);r.aliases=safeAliases(r.aliases);if(r.aliasSpans==null)r.aliasSpans={};}if(!Array.isArray(b.mergeSuggestions))b.mergeSuggestions=[];}for(const v of this.state.voices)normalizeVoice(v);for(const t of this.state.tasks){if(t.status==='queued'&&isContentRejected(t.error||t.message)){t.status='failed';t.phase='内容审核未通过';}delete t._waiters;delete t.frontError;t.frontPreparing=false;t.synthQueued=false;t.synthActive=false;t.resumeRequested=false;if(t.status==='running'){t.status='paused';t.message='上次制作中断，点击继续可从已保存片段恢复';}}}
+}this.running=false;this.listeners=[];this._ttsActive=0;this._ttsQueue=[];this._synthRunning=0;this._frontActive=new Set();this.saveChain=Promise.resolve();for(const b of this.state.books){normalizeBookMetadata(b);for(const r of b.characters){r.description=cleanVoiceDescription(r.description);if(r.candidate)normalizeVoice(r.candidate);r.aliases=safeAliases(r.aliases);if(r.aliasSpans==null)r.aliasSpans={};}if(!Array.isArray(b.mergeSuggestions))b.mergeSuggestions=[];}for(const v of this.state.voices)normalizeVoice(v);for(const t of this.state.tasks){if(t.status==='queued'&&isContentRejected(t.error||t.message)){t.status='failed';t.phase='内容审核未通过';}delete t._waiters;delete t.frontError;delete t.requestRetryCount;t.frontPreparing=false;t.synthQueued=false;t.synthActive=false;t.resumeRequested=false;if(t.status==='running'){t.status='paused';t.message='上次制作中断，点击继续可从已保存片段恢复';}}}
  onChange(fn){this.listeners.push(fn);}
- touch(chapter){if(!chapter||typeof chapter.id!=='string')return;if(chapter.unloaded)return;if(typeof chapter.text!=='string'||!Array.isArray(chapter.segments))return;if(!this.dirtyChapters)this.dirtyChapters=new Set();this.dirtyChapters.add(chapter);}
- async persist(){const stateSnapshot=this.io.saveSnapshot?null:JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return rest;})});const write=async()=>{if(this.io.saveSnapshot){if(!this.snapshotStarted){this.snapshotStarted=true;for(const b of this.state.books)for(const c of b.chapters)if(!c.unloaded)this.touch(c);}const dirty=[...(this.dirtyChapters||[])];const header=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return {...rest,chapters:b.chapters.map(c=>({id:c.id,title:c.title,status:c.status,audio:c.audio||null,originalAudio:c.originalAudio||null,duration:c.duration||0,pacingVersion:c.pacingVersion||0,summary:c.summary||'',promptMode:c.promptMode||null,textLength:c.unloaded?(c.textLength||0):(typeof c.text==='string'?c.text.length:(c.textLength||0)),segmentCount:c.unloaded?(c.segmentCount||0):(Array.isArray(c.segments)?c.segments.length:(c.segmentCount||0)),listened:!!c.listened,audioCleared:!!c.audioCleared,audioStale:!!c.audioStale,sourceHeading:!!c.sourceHeading,lastCompletedAt:c.lastCompletedAt||0,lastPlayedPosition:c.lastPlayedPosition||0,playbackCompleted:!!c.playbackCompleted,playbackResume:c.playbackResume||null}))};})});const chapters=JSON.stringify(dirty);this.dirtyChapters=new Set();return this.io.saveSnapshot(header,chapters).catch(e=>{for(const c of dirty)this.touch(c);throw e;});}else{return this.io.saveState(stateSnapshot);}};this.saveChain=this.saveChain.catch(()=>{}).then(write).catch(e=>{if(!/ENOSPC|EACCES|EPERM|EROFS|磁盘.*满|空间不足|存储.*不足|权限|损坏|索引|不匹配|invalid|missing|不存在|丢失|过大|超过/i.test(String(e.message||e.code||'')))e.checkpointRetryable=true;throw e;});await this.saveChain;this.listeners.forEach(fn=>fn());}
+ updateCharacterAppearances(c){
+  if(c.unloaded||typeof c.text!=='string'||!Array.isArray(c.segments))return;
+  // Pending/default speakers, rejected annotations and skipped text are not appearances.
+  c.characterAppearances=[...new Set(c.segments.filter(s=>s.speaker&&!s.skip&&!s.isAd&&s.audio!=='skip'&&!s.annotationError&&!['pending','failed','fallback'].includes(s.annotationStatus)&&!['广告','未知角色','未识别角色'].includes(s.speaker)&&!isPunctOnly(s.text)).map(s=>s.speaker))];
+ }
+ touch(chapter){if(!chapter||typeof chapter.id!=='string')return;if(chapter.unloaded)return;if(typeof chapter.text!=='string'||!Array.isArray(chapter.segments))return;this.updateCharacterAppearances(chapter);if(!this.dirtyChapters)this.dirtyChapters=new Set();this.dirtyChapters.add(chapter);}
+ characterAppearances(b){
+  const stats=new Map(b.characters.map(role=>[role.name,{chapterCount:0,firstChapter:null,lastChapter:null,recentlySeen:false,canBorrowVoice:false,canLendVoice:false}]));
+  const names=new Map();for(const role of b.characters){for(const alias of role.aliases||[])if(!names.has(alias))names.set(alias,role.name);}for(const role of b.characters)names.set(role.name,role.name);
+  let complete=true;const annotated=[];
+  b.chapters.forEach((c,index)=>{
+   if(!c.unloaded)this.updateCharacterAppearances(c);
+   if(!Array.isArray(c.characterAppearances)){if((c.unloaded||typeof c.text!=='string'||!Array.isArray(c.segments))&&(c.segmentCount||['annotated','ready','waiting','skipped'].includes(c.status)))complete=false;return;}
+   if(c.characterAppearances.length||['annotated','ready','waiting','skipped'].includes(c.status))annotated.push(c);
+   const seen=new Set(c.characterAppearances.map(name=>names.get(name)).filter(Boolean));
+   for(const name of seen){const stat=stats.get(name);stat.chapterCount++;stat.lastChapter=index+1;if(stat.firstChapter==null)stat.firstChapter=index+1;}
+  });
+  for(const c of annotated.slice(-VOICE_REUSE_RECENT_CHAPTERS))for(const name of c.characterAppearances){const stat=stats.get(names.get(name));if(stat)stat.recentlySeen=true;}
+  for(const role of b.characters){const stat=stats.get(role.name),eligible=complete&&!['旁白','广告','未知角色','未识别角色'].includes(role.name);
+   stat.canBorrowVoice=eligible&&role.bitPart===true&&role.bitPartSource==='llm';
+   stat.canLendVoice=eligible&&stat.chapterCount>0&&stat.chapterCount<=VOICE_REUSE_MAX_CHAPTERS&&!stat.recentlySeen;
+  }
+  return stats;
+ }
+ async ensureCharacterAppearances(bid){
+  this.appearanceJobs=this.appearanceJobs||new Map();
+  if(this.appearanceJobs.has(bid))return this.appearanceJobs.get(bid);
+  const job=(async()=>{
+   const b=this.book(bid);let changed=false;
+   for(const c of b.chapters){
+    if(!this.state.books.includes(b))return;
+    const unloaded=c.unloaded||typeof c.text!=='string'||!Array.isArray(c.segments);
+    if(unloaded&&!Array.isArray(c.characterAppearances)&&(c.segmentCount||['annotated','ready','waiting','skipped'].includes(c.status))){
+     if(!this.io.loadChapter)throw Error('章节读取接口不可用');
+     const full=await this.io.loadChapter(c.id);if(full.id!==c.id||typeof full.text!=='string'||!Array.isArray(full.segments))throw Error('角色出场统计读取失败：章节数据不完整');
+     this.updateCharacterAppearances(full);c.characterAppearances=full.characterAppearances;changed=true;
+    }
+    else if(!unloaded&&!Array.isArray(c.characterAppearances)){this.touch(c);changed=true;}
+   }
+   if(changed)await this.persist();return this.characterAppearances(b);
+  })().finally(()=>this.appearanceJobs.delete(bid));
+  this.appearanceJobs.set(bid,job);return job;
+ }
+ async persist(){const stateSnapshot=this.io.saveSnapshot?null:JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return rest;})});const write=async()=>{if(this.io.saveSnapshot){if(!this.snapshotStarted){this.snapshotStarted=true;for(const b of this.state.books)for(const c of b.chapters)if(!c.unloaded)this.touch(c);}const dirty=[...(this.dirtyChapters||[])];const header=JSON.stringify({...this.state,books:this.state.books.map(b=>{const { _rawText, ...rest }=b;return {...rest,chapters:b.chapters.map(c=>({id:c.id,title:c.title,status:c.status,audio:c.audio||null,originalAudio:c.originalAudio||null,duration:c.duration||0,pacingVersion:c.pacingVersion||0,summary:c.summary||'',characterAppearances:c.characterAppearances,promptMode:c.promptMode||null,textLength:c.unloaded?(c.textLength||0):(typeof c.text==='string'?c.text.length:(c.textLength||0)),segmentCount:c.unloaded?(c.segmentCount||0):(Array.isArray(c.segments)?c.segments.length:(c.segmentCount||0)),listened:!!c.listened,audioCleared:!!c.audioCleared,audioStale:!!c.audioStale,sourceHeading:!!c.sourceHeading,lastCompletedAt:c.lastCompletedAt||0,lastPlayedPosition:c.lastPlayedPosition||0,playbackCompleted:!!c.playbackCompleted,playbackResume:c.playbackResume||null}))};})});const chapters=JSON.stringify(dirty);this.dirtyChapters=new Set();return this.io.saveSnapshot(header,chapters).catch(e=>{for(const c of dirty)this.touch(c);throw e;});}else{return this.io.saveState(stateSnapshot);}};this.saveChain=this.saveChain.catch(()=>{}).then(write).catch(e=>{if(!/ENOSPC|EACCES|EPERM|EROFS|磁盘.*满|空间不足|存储.*不足|权限|损坏|索引|不匹配|invalid|missing|不存在|丢失|过大|超过/i.test(String(e.message||e.code||'')))e.checkpointRetryable=true;throw e;});await this.saveChain;this.listeners.forEach(fn=>fn());}
  book(id){const b=this.state.books.find(b=>b.id===id);if(!b)throw Error('书籍不存在');return b;}
  chapter(bid,cid){const c=this.book(bid).chapters.find(c=>c.id===cid);if(!c)throw Error('章节不存在');return c;}
  async ensureChapter(bid,cid){const c=this.chapter(bid,cid);if(c.unloaded||typeof c.text!=='string'||!Array.isArray(c.segments)){if(!this.io.loadChapter)throw Error('章节读取接口不可用');if(!this.loadingChapters)this.loadingChapters=new Map();if(!this.loadingChapters.has(cid))this.loadingChapters.set(cid,this.io.loadChapter(cid).then(full=>{if(full.id!==cid)throw Error('章节索引不匹配');if(typeof full.text!=='string'||!Array.isArray(full.segments))throw Error('章节文本缺失，请重新导入书籍');const progress=Object.fromEntries(["lastPlayedPosition","playbackCompleted","playbackResume","promptMode"].filter(k=>Object.prototype.hasOwnProperty.call(c,k)).map(k=>[k,c[k]]));Object.assign(c,full,progress);delete c.unloaded;delete c.textLength;delete c.segmentCount;if(!c.audio&&c.segments.length&&c.segments.every(s=>s.skip||s.isAd||s.audio==='skip')){c.status='skipped';for(const t of this.state.tasks.filter(t=>t.bookId===bid&&t.chapterId===cid&&t.status==='done')){t.phase='全部跳过';t.skipped=c.segments.length;t.done=0;t.total=c.segments.length;t.message='本章 '+c.segments.length+' 段全部跳过，未生成音频。可检查原文并取消跳过。';}this.touch(c);}return c;}).finally(()=>this.loadingChapters.delete(cid)));return this.loadingChapters.get(cid);}return c;}
@@ -950,7 +993,7 @@ class Engine{
  }
  const batch=job.ids.map(id=>input[id]).filter(x=>x&&all[x.id]?.annotationStatus==='pending');if(!batch.length)continue;const offset=batch[0].id;const prev=b.chapters.slice(0,b.chapters.indexOf(c)).map(x=>x.summary||'').filter(Boolean).slice(-3).join('\n');
 this.touch(c);c.analysisDraft.pending=[job,...queue].map(x=>({...x,ids:[...x.ids]}));await this.persist();
-const promptText=ModelPrompts.annotation({text:c.text,characters:b.characters.map(({name,description,background,aliases,storyRole})=>({name,description,background,aliases,storyRole})),previous:prev,summary:c.summary,judged:all.slice(0,offset).filter(s=>s.annotationStatus!=='pending').slice(-8).map(s=>s.speaker+'：'+String(s.text||'').slice(0,60)).join('\n'),batch,threshold:this.spkThr(),isolated:job.isolated,context:job.targetOnly||!this.features.direction?batch:nearbyContext(input,job.ids),mode:c.promptMode});
+const promptText=ModelPrompts.annotation({text:c.text,characters:b.characters.map(({name,description,background,aliases,storyRole,bitPart,bitPartSource})=>({name,description,background,aliases,storyRole,bitPart:bitPartSource==='llm'?bitPart:undefined})),previous:prev,summary:c.summary,judged:all.slice(0,offset).filter(s=>s.annotationStatus!=='pending').slice(-8).map(s=>s.speaker+'：'+String(s.text||'').slice(0,60)).join('\n'),batch,threshold:this.spkThr(),isolated:job.isolated,context:job.targetOnly||!this.features.direction?batch:nearbyContext(input,job.ids),mode:c.promptMode});
 let result;
 try{
   result=await this.llm(promptText,{task:'annotation',maxTokens:12000});
@@ -971,15 +1014,15 @@ try{
   x.description=cleanVoiceDescription(x.description);x.background=typeof x.background==='string'?cleanVoiceDescription(x.background).slice(0,1200):'';
   if(typeof x.name!=='string'||!x.name||['未知角色','未识别角色','广告'].includes(x.name)||splitEnsemble(x.name)||x.name.length>50||(!c.text.includes(x.name)&&!b.characters.some(y=>y.name===x.name||(y.aliases||[]).includes(x.name))))continue;
   const old=b.characters.find(y=>y.name===x.name||(y.aliases||[]).includes(x.name));
-  if(!old)b.characters.push({name:x.name,description:x.description||'自然清晰的声音',background:x.background,aliases:safeAliases(x.aliases),voice:null,bitPart:isBitPart(x.name,b.characters)});
+  if(!old)b.characters.push({name:x.name,description:x.description||'自然清晰的声音',background:x.background,aliases:safeAliases(x.aliases),voice:null,bitPart:x.bitPart===true,bitPartSource:typeof x.bitPart==='boolean'?'llm':null});
   else{
    if(missingVoiceDescription(old.description)&&!missingVoiceDescription(x.description))old.description=x.description;
    if(!old.background&&x.background)old.background=x.background;
-   if(isBitPart(x.name,b.characters)&&!old.bitPart){old.bitPart=true;if(missingVoiceDescription(old.description))old.description=bitPartVoiceDesc(x.name);}
+   if(typeof x.bitPart==='boolean'){old.bitPart=x.bitPart;old.bitPartSource='llm';}
   }
  }
  this.recordLeadRoles(b,c,result.characters);
- for(const x of result.characters||[]){if(typeof x.name!=='string'||!x.name)continue;const __X=b.characters.find(r=>r.name===x.name);if(!__X)continue;for(const a of safeAliases(x.aliases)){if(a===x.name)continue;const __Y=b.characters.find(r=>r.name!==x.name&&(r.name===a||(r.aliases||[]).includes(a)));if(!__Y)continue;const __pair=__Y.name+'→'+__X.name;if((b.mergeDismissed||[]).includes(__pair))continue;if(this.state.settings.mode==='auto'){await this.mergeRoles(b.id,__X.name,__Y.name,true);for(const s of all)if(s.speaker===__Y.name)s.speaker=__X.name;}else{b.mergeSuggestions=b.mergeSuggestions||[];if(!b.mergeSuggestions.some(m=>m.from===__Y.name&&m.to===__X.name))b.mergeSuggestions.push({from:__Y.name,to:__X.name,chapterId:c.id,reason:'模型指出「'+__Y.name+'」即「'+__X.name+'」'});}}}for(const x of batch){if(all[x.id]?.annotationStatus!=='pending')continue;const a=byId.get(x.id);if(a.annotationError){if(batch.length===1)Object.assign(all[x.id],this.annotationFallback(x,a.annotationError));continue;}newlyAnnotated.push(all[x.id]);const isAd=a?.speaker==='广告'||a?.emotion==='跳过';let __spk=String(a.speaker||'未知角色');const __ens=!isAd&&splitEnsemble(__spk);if(__ens){for(const __nm of __ens){if(!__nm||__nm==='旁白'||__nm==='广告'||__nm==='未知角色'||__nm==='未识别角色'||isBitPart(__nm))continue;if(!b.characters.some(r=>r.name===__nm||(r.aliases||[]).includes(__nm)))b.characters.push({name:__nm,description:String((result.characters||[]).find(y=>y.name===__nm)?.description||'自然清晰的声音'),aliases:[],voice:null});}__spk=__ens.find(__nm=>b.characters.some(r=>r.name===__nm))||__ens[0];}if(!isAd&&isBitPart(__spk)){const __bp=b.characters.find(r=>r.name===__spk);if(!__bp)b.characters.push({name:__spk,description:bitPartVoiceDesc(__spk),aliases:[],voice:null,bitPart:true});Object.assign(all[x.id],{id:x.id,text:x.text,speaker:__spk,emotion:isDirector?String(a.emotion||'').slice(0,150):'',confidence:Math.max(0,Math.min(1,a.confidence)),scene:'',delivery:'',isAd:false,skip:false,audio:null,annotationStatus:'complete'});delete all[x.id].annotationError;continue;}if(!isAd&&__spk!=='旁白'&&__spk!=='广告'&&__spk!=='未知角色'&&__spk!=='未识别角色'&&__spk.length<=50&&!splitEnsemble(__spk)&&!b.characters.some(r=>r.name===__spk||(r.aliases||[]).includes(__spk))&&c.text.includes(__spk)){const __md=(result.characters||[]).find(y=>y.name===__spk);b.characters.push({name:__spk,description:String(__md?.description||'自然清晰的声音'),aliases:safeAliases(__md?.aliases),voice:null,bitPart:isBitPart(__spk,b.characters)});}const exact=b.characters.filter(r=>r.name===__spk),matches=exact.length?exact:b.characters.filter(r=>(r.aliases||[]).includes(__spk)),known=matches.length===1?matches[0]:null;const prior=input[x.id-1]?.text||'',cues=b.characters.filter(r=>r.name!=='旁白'&&prior.startsWith(r.name)).sort((a,b)=>b.name.length-a.name.length),cue=cues[0],direct=cue&&/(?:道|说|问|喊|答|叫|回应|喝|笑|叹|骂|哭|吩咐|催促|呼|吼|嚷|斥|吟|喃喃)[：:]$/.test(prior);const quoted=/^[“「『"].*[”」』"]$/s.test(x.text);const speaker=isAd?'广告':(quoted?(direct?cue.name:(known?.name||'未知角色')):'旁白');Object.assign(all[x.id],{id:x.id,text:x.text,speaker,modelAnnotation:{speaker:a.speaker,confidence:a.confidence,emotion:a.emotion},emotion:isAd?'':(isDirector?String(a.emotion||'').slice(0,150):''),scene:isDirector?(a.scene||''):'',delivery:isDirector?(a.delivery||''):'',promptMode:c.promptMode,confidence:isAd?1.0:(speaker==='未知角色'?0:direct?1:Math.max(0,Math.min(1,a.confidence))),isAd:!!isAd,skip:!!isAd,audio:isAd?'skip':null,annotationStatus:'complete'});delete all[x.id].annotationError;}if(result.summary)c.summary=String(result.summary).slice(0,1500);
+ for(const x of result.characters||[]){if(typeof x.name!=='string'||!x.name)continue;const __X=b.characters.find(r=>r.name===x.name);if(!__X)continue;for(const a of safeAliases(x.aliases)){if(a===x.name)continue;const __Y=b.characters.find(r=>r.name!==x.name&&(r.name===a||(r.aliases||[]).includes(a)));if(!__Y)continue;const __pair=__Y.name+'→'+__X.name;if((b.mergeDismissed||[]).includes(__pair))continue;if(this.state.settings.mode==='auto'){await this.mergeRoles(b.id,__X.name,__Y.name,true);for(const s of all)if(s.speaker===__Y.name)s.speaker=__X.name;}else{b.mergeSuggestions=b.mergeSuggestions||[];if(!b.mergeSuggestions.some(m=>m.from===__Y.name&&m.to===__X.name))b.mergeSuggestions.push({from:__Y.name,to:__X.name,chapterId:c.id,reason:'模型指出「'+__Y.name+'」即「'+__X.name+'」'});}}}for(const x of batch){if(all[x.id]?.annotationStatus!=='pending')continue;const a=byId.get(x.id);if(a.annotationError){if(batch.length===1)Object.assign(all[x.id],this.annotationFallback(x,a.annotationError));continue;}newlyAnnotated.push(all[x.id]);const isAd=a?.speaker==='广告'||a?.emotion==='跳过';let __spk=String(a.speaker||'未知角色');const __ens=!isAd&&splitEnsemble(__spk);if(__ens){for(const __nm of __ens){if(!__nm||__nm==='旁白'||__nm==='广告'||__nm==='未知角色'||__nm==='未识别角色'||isBitPart(__nm))continue;if(!b.characters.some(r=>r.name===__nm||(r.aliases||[]).includes(__nm)))b.characters.push({name:__nm,description:String((result.characters||[]).find(y=>y.name===__nm)?.description||'自然清晰的声音'),aliases:[],voice:null});}__spk=__ens.find(__nm=>b.characters.some(r=>r.name===__nm))||__ens[0];}if(!isAd&&isBitPart(__spk)){const __bp=b.characters.find(r=>r.name===__spk);if(!__bp)b.characters.push({name:__spk,description:bitPartVoiceDesc(__spk),aliases:[],voice:null,bitPart:false});Object.assign(all[x.id],{id:x.id,text:x.text,speaker:__spk,emotion:isDirector?String(a.emotion||'').slice(0,150):'',confidence:Math.max(0,Math.min(1,a.confidence)),scene:'',delivery:'',isAd:false,skip:false,audio:null,annotationStatus:'complete'});delete all[x.id].annotationError;continue;}if(!isAd&&__spk!=='旁白'&&__spk!=='广告'&&__spk!=='未知角色'&&__spk!=='未识别角色'&&__spk.length<=50&&!splitEnsemble(__spk)&&!b.characters.some(r=>r.name===__spk||(r.aliases||[]).includes(__spk))&&c.text.includes(__spk)){const __md=(result.characters||[]).find(y=>y.name===__spk);b.characters.push({name:__spk,description:String(__md?.description||'自然清晰的声音'),aliases:safeAliases(__md?.aliases),voice:null,bitPart:false});}const exact=b.characters.filter(r=>r.name===__spk),matches=exact.length?exact:b.characters.filter(r=>(r.aliases||[]).includes(__spk)),known=matches.length===1?matches[0]:null;const prior=input[x.id-1]?.text||'',cues=b.characters.filter(r=>r.name!=='旁白'&&prior.startsWith(r.name)).sort((a,b)=>b.name.length-a.name.length),cue=cues[0],direct=cue&&/(?:道|说|问|喊|答|叫|回应|喝|笑|叹|骂|哭|吩咐|催促|呼|吼|嚷|斥|吟|喃喃)[：:]$/.test(prior);const quoted=/^[“「『"].*[”」』"]$/s.test(x.text);const speaker=isAd?'广告':(quoted?(direct?cue.name:(known?.name||'未知角色')):'旁白');Object.assign(all[x.id],{id:x.id,text:x.text,speaker,modelAnnotation:{speaker:a.speaker,confidence:a.confidence,emotion:a.emotion},emotion:isAd?'':(isDirector?String(a.emotion||'').slice(0,150):''),scene:isDirector?(a.scene||''):'',delivery:isDirector?(a.delivery||''):'',promptMode:c.promptMode,confidence:isAd?1.0:(speaker==='未知角色'?0:direct?1:Math.max(0,Math.min(1,a.confidence))),isAd:!!isAd,skip:!!isAd,audio:isAd?'skip':null,annotationStatus:'complete'});delete all[x.id].annotationError;}if(result.summary)c.summary=String(result.summary).slice(0,1500);
  if(this.features.direction&&isDirector){
   const targets=[];
   for(const s of newlyAnnotated){
@@ -996,26 +1039,29 @@ try{
 
  async mergeRoles(bid,keepName,dropName,locked=false){if(!locked)return this.withBookLock(bid,()=>this.mergeRoles(bid,keepName,dropName,true));const b=this.book(bid);const keep=b.characters.find(r=>r.name===keepName),drop=b.characters.find(r=>r.name===dropName);if(!keep||!drop||keep===drop)throw Error('角色不存在');for(const key of ['maleLead','femaleLead'])if(b.presetLeadVoices?.[key]===dropName){b.presetLeadVoices[key]=keepName;if(!keep.storyRole)keep.storyRole=key;}const __kv=keep.voice,__dv=drop.voice;if(!__kv&&__dv){keep.voice=__dv;keep.reason='合并「'+dropName+'」复用其音色';}if(!keep.candidate&&drop.candidate)keep.candidate=drop.candidate;if(missingVoiceDescription(keep.description))keep.description=drop.description||keep.description;if(!keep.background&&drop.background)keep.background=drop.background;const __same=!__kv||!__dv||__kv===__dv;keep.aliases=safeAliases([...(keep.aliases||[]),dropName,...(drop.aliases||[])].filter(a=>a!==keepName));keep.aliasSpans=keep.aliasSpans||{};drop.aliasSpans=drop.aliasSpans||{};const __seen=new Set();for(const ch of b.chapters){try{if(ch.unloaded)await this.ensureChapter(bid,ch.id);}catch(e){continue;}if((ch.segments||[]).some(s=>s.speaker===dropName))__seen.add(ch.id);}keep.aliasSpans[dropName]=[...__seen];for(const [a,ids] of Object.entries(drop.aliasSpans)){if(a===keepName)continue;keep.aliasSpans[a]=[...new Set([...(keep.aliasSpans[a]||[]),...(ids||[])])];}for(const ch of b.chapters){if(ch.unloaded||!ch.segments)continue;let __ch=false;for(const s of ch.segments){if(s.speaker===dropName){s.speaker=keepName;if(!__same)s.audio=null;__ch=true;}}if(__ch){ch.audio=null;if(ch.status==='ready')ch.status='annotated';this.touch(ch);}}b.characters=b.characters.filter(r=>r!==drop);if(b.mergeSuggestions)b.mergeSuggestions=b.mergeSuggestions.filter(m=>!(m.from===dropName&&m.to===keepName));if(b.mergeDismissed)b.mergeDismissed=b.mergeDismissed.filter(p=>p!==dropName+'→'+keepName);await this.persist();return keep;}
  voiceKey(id){const v=this.state.voices.find(v=>v.id===id);return v?.sample?'sample:'+v.sample:id;}
- voiceAvailable(b,role,id,sample){
-  const key=sample?'sample:'+sample:this.voiceKey(id),bit=role.bitPart||isBitPart(role.name);
+ voiceAvailable(b,role,id,sample,appearances=this.characterAppearances(b)){
+  const key=sample?'sample:'+sample:this.voiceKey(id),borrow=appearances.get(role.name)?.canBorrowVoice;
   return !b.characters.some(other=>{
    if(other===role)return false;
-   if(bit&&(other.bitPart||isBitPart(other.name)))return false;
-   return [other.voice,other.suggestedVoice,other.candidate?.id].filter(Boolean).some(used=>this.voiceKey(used)===key)||other.candidate?.sample&&'sample:'+other.candidate.sample===key;
+   // Only an established, infrequent, inactive binding can lend its voice.
+   if([other.suggestedVoice,other.candidate?.id].filter(Boolean).some(used=>this.voiceKey(used)===key)||other.candidate?.sample&&'sample:'+other.candidate.sample===key)return true;
+   return other.voice&&this.voiceKey(other.voice)===key&&!(borrow&&appearances.get(other.name)?.canLendVoice);
   });
  }
  autoVoiceFor(bid,roleName){
-  const b=this.book(bid),role=b.characters.find(r=>r.name===roleName);
-  if(!role||role.voice||!(role.bitPart||isBitPart(roleName)))return null;
+  const b=this.book(bid),role=b.characters.find(r=>r.name===roleName),appearances=this.characterAppearances(b);
+  if(!role||role.voice||!appearances.get(roleName)?.canBorrowVoice)return null;
   const description=role.description||bitPartVoiceDesc(roleName);
-  const sibling=b.characters.find(r=>r!==role&&(r.bitPart||isBitPart(r.name))&&r.voice&&this.voiceAvailable(b,role,r.voice)&&!voiceConflict(description,r.description)&&cleanVoiceDescription(r.description)===cleanVoiceDescription(description));
+  const sibling=b.characters.find(r=>r!==role&&appearances.get(r.name)?.canLendVoice&&r.voice&&this.voiceAvailable(b,role,r.voice,undefined,appearances)&&!voiceConflict(description,r.description)&&cleanVoiceDescription(r.description)===cleanVoiceDescription(description));
   return sibling?.voice||null;
  }
  async ensureDesignCandidate(b,role,options={}){
+  const sourceDescription=role.description;
+  await this.ensureCharacterAppearances(b.id);
+  if(!this.state.books.includes(b)||!b.characters.includes(role)||role.description!==sourceDescription)return null;
   if(role.candidate)return role.candidate;
   if(!this.roleDesignJobs)this.roleDesignJobs=new Map();
-  const sourceDescription=role.description;
-  const group=role.bitPart||isBitPart(role.name)?'bit:'+cleanVoiceDescription(role.description||bitPartVoiceDesc(role.name)):'role:'+role.name;
+  const group='role:'+role.name;
   const key=b.id+':'+group;
   if(!this.roleDesignJobs.has(key))this.roleDesignJobs.set(key,this.design(role.description||bitPartVoiceDesc(role.name),undefined,options).finally(()=>this.roleDesignJobs.delete(key)));
   const candidate=await this.roleDesignJobs.get(key);
@@ -1065,7 +1111,7 @@ try{
   for(const item of characters){
    if(!['maleLead','femaleLead'].includes(item.storyRole)||typeof item.roleEvidence!=='string'||!item.roleEvidence.trim()||!c.text.includes(item.roleEvidence))continue;
    const role=b.characters.find(r=>r.name===item.name||(r.aliases||[]).includes(item.name));
-   if(!role||role.name==='旁白'||role.bitPart||isBitPart(role.name))continue;
+   if(!role||role.name==='旁白'||role.bitPart)continue;
    if(b.presetLeadVoices[item.storyRole]&&b.presetLeadVoices[item.storyRole]!==role.name)continue;
    if(role.storyRole&&role.storyRole!==item.storyRole)continue;
    b.presetLeadVoices[item.storyRole]=role.name;role.storyRole=item.storyRole;role.roleEvidence=item.roleEvidence;
@@ -1079,21 +1125,45 @@ try{
   return null;
  }
  async _matchCharacters(bid,names){
-  const b=this.book(bid),policy=this.state.settings;
+  await this.ensureCharacterAppearances(bid);
+  const b=this.book(bid);
   const needed=b.characters.filter(r=>names.includes(r.name)&&!r.voice&&!r.candidate&&!r.suggestedVoice&&r.name!=='广告');
   const rest=[];
-  for(const role of needed){const preferred=this.defaultLeadVoice(b,role),id=preferred||this.autoVoiceFor(bid,role.name);if(id){role.voice=id;role.reason=preferred?'新小说默认 MiMo 中文预制音色':'同类龙套复用相容声线';}else rest.push(role);}
-  let voices=this.state.voices.filter(v=>v.enabled).map(v=>({id:v.id,description:v.description}));
-  if(policy.usePresets)voices=voices.concat(PRESETS.map(id=>({id:'preset:'+id,description:presetDesc(id)})));
-  voices=voices.filter(v=>rest.some(role=>this.voiceAvailable(b,role,v.id)&&!voiceConflict(role.description,v.description)));
-  if(rest.length&&voices.length){
-   const response=await this.llm(ModelPrompts.voiceMatch(rest.map(({name,description,bitPart})=>({name,description,bitPart:!!bitPart})),voices),{task:'voice-match',maxTokens:4000});
-   await this.withBookLock(bid,async()=>{for(const match of response.matches||[]){
-    const role=rest.find(r=>r.name===match.name),voice=voices.find(v=>v.id===match.voiceId);
-    if(!role||!this.state.books.includes(b)||!b.characters.includes(role)||role.voice||role.candidate||role.suggestedVoice||!voice||voiceConflict(role.description,voice.description)||!this.voiceAvailable(b,role,voice.id))continue;
-    if(policy.mode==='auto'||role.bitPart||isBitPart(role.name))role.voice=voice.id;else role.suggestedVoice=voice.id;
-    role.reason=String(match.reason||'完整声音描述相容');
-   }});
+  for(const role of needed){const preferred=this.defaultLeadVoice(b,role),id=preferred&&this.voiceAvailable(b,role,preferred)?preferred:this.autoVoiceFor(bid,role.name);if(id){role.voice=id;role.reason=id===preferred?'新小说默认 MiMo 中文预制音色':'复用累计出场不超过 3 章、最近 5 个已标注章节未出现的角色声线';}else rest.push(role);}
+  const library=()=>this.state.voices.filter(v=>v.enabled).map(v=>({id:v.id,name:v.name,description:v.description})).concat(this.state.settings.usePresets?PRESETS.map(name=>({id:'preset:'+name,name,description:presetDesc(name)})):[]);
+  const pending=role=>this.state.books.includes(b)&&b.characters.includes(role)&&!role.voice&&!role.candidate&&!role.suggestedVoice;
+  const available=(role,v,appearances)=>this.voiceAvailable(b,role,v.id,undefined,appearances)&&!voiceConflict(role.description,v.description);
+  const appearances=this.characterAppearances(b),initialVoices=library();
+  const eligible=rest.filter(role=>initialVoices.some(v=>available(role,v,appearances)));
+  // Resolve targets using only role descriptions. No catalog or catalog IDs enter this request.
+  for(let start=0;start<eligible.length;start+=24){
+   const roles=eligible.slice(start,start+24).filter(pending);if(!roles.length)continue;
+   const descriptions=new Map(roles.map(role=>[role,role.description]));
+   const response=await this.llm(ModelPrompts.voiceTargets(roles.map(role=>({name:role.name,description:role.description}))),{task:'voice-targets',maxTokens:Math.max(512,roles.length*100)});
+   const targets=new Map();
+   for(const target of Array.isArray(response?.targets)?response.targets:[]){
+    if(!roles.some(role=>role.name===target?.name)||targets.has(target.name)||!['m','f','unknown'].includes(target.gender)||!['child','young','middle','old','unknown'].includes(target.age))throw new LlmOutputError('音色筛选目标格式无效，请重试');
+    targets.set(target.name,{gender:target.gender,age:target.age});
+   }
+   if(targets.size!==roles.length)throw new LlmOutputError('音色筛选目标缺少角色，请重试');
+   // Match each demographic group independently, so mixed casts never send the union of the library.
+   const groups=new Map();for(const role of roles){const target=targets.get(role.name),key=target.gender+':'+target.age;if(!groups.has(key))groups.set(key,{target,roles:[]});groups.get(key).roles.push(role);}
+   for(const group of groups.values()){
+    const currentRoles=group.roles.filter(role=>pending(role)&&role.description===descriptions.get(role));if(!currentRoles.length)continue;
+    const stats=this.characterAppearances(b);
+    const voices=library().filter(v=>voiceMatchesTarget(v,group.target)&&currentRoles.some(role=>available(role,v,stats)));
+    const requests=currentRoles.map(role=>({name:role.name,description:role.description,target:group.target,bitPart:role.bitPart===true&&role.bitPartSource==='llm',...stats.get(role.name),availableVoiceIds:voices.filter(v=>available(role,v,stats)).map(v=>v.id)})).filter(role=>role.availableVoiceIds.length);
+    if(!requests.length)continue;
+    const sampleKeys=new Map(voices.map(v=>[v.id,this.voiceKey(v.id)]));
+    for(const v of voices)v.bindings=b.characters.filter(r=>r.voice&&this.voiceKey(r.voice)===this.voiceKey(v.id)).map(r=>({name:r.name,...stats.get(r.name)}));
+    const matched=await this.llm(ModelPrompts.voiceMatch(requests,voices),{task:'voice-match',maxTokens:4000});
+    await this.withBookLock(bid,async()=>{const currentAppearances=this.characterAppearances(b),currentVoices=library();for(const match of matched.matches||[]){
+     const request=requests.find(r=>r.name===match.name),role=currentRoles.find(r=>r.name===match.name),sent=voices.find(v=>v.id===match.voiceId),voice=currentVoices.find(v=>v.id===match.voiceId);
+     if(!request||!role||!pending(role)||role.description!==descriptions.get(role)||!voice||!sent||voice.description!==sent.description||this.voiceKey(voice.id)!==sampleKeys.get(voice.id)||!request.availableVoiceIds.includes(voice.id)||!voiceMatchesTarget(voice,group.target)||!available(role,voice,currentAppearances))continue;
+     if(this.state.settings.mode==='auto'||currentAppearances.get(role.name)?.canBorrowVoice)role.voice=voice.id;else role.suggestedVoice=voice.id;
+     role.reason=String(match.reason||'完整声音描述相容');
+    }});
+   }
   }
   await this.persist();
  }
@@ -1153,8 +1223,11 @@ try{
   await this.matchCharacters(b.id,activeSpeakers);
   for(const character of b.characters.filter(r=>activeSpeakers.includes(r.name)&&!r.voice)){
    if(stopped()){await stop();return;}if(character.voice)continue;
-   const bit=character.bitPart||isBitPart(character.name);
-   if(bit){const reuse=this.autoVoiceFor(b.id,character.name);if(reuse){character.voice=reuse;character.candidate=null;character.reason='同类龙套复用已有音色';await this.persist();continue;}}
+   const bit=this.characterAppearances(b).get(character.name)?.canBorrowVoice;
+   if(bit){const reuse=this.autoVoiceFor(b.id,character.name);if(reuse){character.voice=reuse;character.candidate=null;character.reason='复用累计出场不超过 3 章、最近 5 个已标注章节未出现的角色声线';await this.persist();continue;}}
+   if(character.suggestedVoice){
+    if(!this.voiceAvailable(b,character,character.suggestedVoice))delete character.suggestedVoice;
+   }
    if(character.suggestedVoice){
     if(bit||policy.mode==='auto'){character.voice=character.suggestedVoice;delete character.suggestedVoice;await this.persist();continue;}
     if(!character.autoDesign)continue;

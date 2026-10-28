@@ -16,7 +16,19 @@ const SEGMENT_BREATH_MS=300;
 const PAUSE_POLICY={sentence:350,ellipsis:450,semicolon:220,colon:180,comma:120};
 const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
 const COVER_STYLES=[{name:'松墨',color:'#284f3d'},{name:'黛青',color:'#2c4b5a'},{name:'绛朱',color:'#7a3b34'},{name:'陶土',color:'#96552a'},{name:'墨紫',color:'#4a3a56'},{name:'岩灰',color:'#5d615a'}];
-const DEFAULTS={wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',mode:'auto',usePresets:false,retries:2,qualityAutoRetry:true,qualityConfirmRetry:false,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast'};
+const DEFAULTS={wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',mode:'auto',usePresets:false,retries:3,qualityAutoRetry:true,qualityConfirmRetry:false,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast'};
+function parseRetryCount(value){
+ if(typeof value!=='number'&&(typeof value!=='string'||!/^\d+$/.test(value.trim())))return null;
+ const count=Number(value);return Number.isSafeInteger(count)&&count>=0?count:null;
+}
+function taskRetryMessage(t){
+ if(t.status==='failed'&&t.retryExhausted)return `重试${t.retryAttempts||0}次后仍然失败，请手动处理。`;
+ if(!t.pauseRequested&&['running','queued'].includes(t.status)){
+  const count=t.requestRetryCount||(t.retryWaiting&&t.retryKind==='network'?t.retryCount:0);
+  if(count)return `制作失败，正在第${count}次重试。`;
+ }
+ return '';
+}
 function chapterPromptMode(c,defaultMode='fast'){
  if(c?.promptMode&&['fast','director'].includes(c.promptMode))return c.promptMode;
  if(c?.audio||(c?.segments&&c.segments.some(s=>s.audio||s.directionVersion===DIRECTION_VERSION||s.delivery)))return 'director';
@@ -79,8 +91,8 @@ function isNetworkRetryable(e){
  const s=String(e?.message||e?.detail||e?.code||e||'');
  return /网络|超时|timeout|timed out|fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|EPIPE|socket|HTTP (429|5\d\d|408)\b/i.test(s)||e?.status===429||e?.status===408||(e?.status>=500&&e?.status<600);
 }
-// 任务级网络重试不设次数上限；保存检查点，指数退避最多 10 分钟。
-const NET_RETRY_BASE_MS=30000, NET_RETRY_MAX_MS=600000, NET_RETRY_LIMIT=Infinity;
+// 调用重试遵守用户设置；任务级兜底不能绕过单个请求的上限。
+const NET_RETRY_BASE_MS=30000, NET_RETRY_MAX_MS=600000, NET_RETRY_LIMIT=DEFAULTS.retries;
 function nextRetryDelay(retryCount){return Math.min(NET_RETRY_MAX_MS,NET_RETRY_BASE_MS*Math.pow(2,Math.max(0,retryCount||0)));}
 function parseJson(text){
   const raw=String(text||'').replace(/<think>[\s\S]*?<\/think>/gi,'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
@@ -304,9 +316,9 @@ class Engine{
   if(['done','cancelled'].includes(t.status))continue;
   if(t.yieldRequested||t.resumeRequested){t.pauseRequested=false;delete t.yieldRequested;}
   if(t.pauseRequested){t.status='paused';t.phase='已暂停';}
-  else if(t.status==='running'||t.status==='paused'||t.status==='failed'&&isNetworkRetryable(t.error||t.message)||t.status==='waiting'&&t.networkWaiting){t.status='queued';t.phase=t.networkWaiting?'等待制作网络':t.retryWaiting?'网络异常，自动重试中':'排队等待';}
+  else if(t.status==='running'||t.status==='paused'||t.status==='failed'&&!t.retryExhausted&&isNetworkRetryable(t.error||t.message)||t.status==='waiting'&&t.networkWaiting){t.status='queued';t.phase=t.networkWaiting?'等待制作网络':t.retryWaiting?'网络异常，自动重试中':'排队等待';}
  }
- const savedSettings=this.state.settings||{};if(savedSettings.autoDeletePlayed==null&&typeof this.state.autoDeletePlayed==='boolean')savedSettings.autoDeletePlayed=this.state.autoDeletePlayed;delete this.state.autoDeletePlayed;this.state.settings={...DEFAULTS,...savedSettings};if(this.state.settings.keepRecentCount==null)this.state.settings.keepRecentCount=2;delete this.state.settings.keepRecentTwoChapters;if(!(this.state.settings.autoProduceCount>=1))this.state.settings.autoProduceCount=2;if(!(this.state.settings.speakerThreshold>=0&&this.state.settings.speakerThreshold<=1))this.state.settings.speakerThreshold=0.5;if(![1,2,3].includes(Number(this.state.settings.taskParallel)))this.state.settings.taskParallel=1;if(![1,2,3,4].includes(Number(this.state.settings.ttsParallel)))this.state.settings.ttsParallel=2;if(!['fast','director'].includes(this.state.settings.promptMode))this.state.settings.promptMode='fast';for(const t of this.state.tasks){
+ const savedSettings=this.state.settings||{};if(savedSettings.autoDeletePlayed==null&&typeof this.state.autoDeletePlayed==='boolean')savedSettings.autoDeletePlayed=this.state.autoDeletePlayed;delete this.state.autoDeletePlayed;this.state.settings={...DEFAULTS,...savedSettings};this.state.settings.retries=parseRetryCount(this.state.settings.retries)??DEFAULTS.retries;if(this.state.settings.keepRecentCount==null)this.state.settings.keepRecentCount=2;delete this.state.settings.keepRecentTwoChapters;if(!(this.state.settings.autoProduceCount>=1))this.state.settings.autoProduceCount=2;if(!(this.state.settings.speakerThreshold>=0&&this.state.settings.speakerThreshold<=1))this.state.settings.speakerThreshold=0.5;if(![1,2,3].includes(Number(this.state.settings.taskParallel)))this.state.settings.taskParallel=1;if(![1,2,3,4].includes(Number(this.state.settings.ttsParallel)))this.state.settings.ttsParallel=2;if(!['fast','director'].includes(this.state.settings.promptMode))this.state.settings.promptMode='fast';for(const t of this.state.tasks){
   if(t.prio==null)t.prio=0;
   const b=this.state.books.find(x=>x.id===t.bookId);
   const c=b?.chapters.find(x=>x.id===t.chapterId);
@@ -603,13 +615,23 @@ class Engine{
   if(!['tts','llm'].includes(provider))throw Error('无效模型类型');
   return this.performRequest(provider,body,{...options,shouldPause});
  }
+ taskContext(task){return new Proxy(this,{get(target,key,receiver){return key==='requestTask'?task:Reflect.get(target,key,receiver);}});}
+ setTaskRequestRetry(task,id,count){
+  if(!task||!this.state.tasks.includes(task))return;
+  this._taskRequestRetries=this._taskRequestRetries||new WeakMap();
+  let retries=this._taskRequestRetries.get(task);if(!retries){retries=new Map();this._taskRequestRetries.set(task,retries);}
+  if(count)retries.set(id,count);else retries.delete(id);
+  task.requestRetryCount=Math.max(0,...retries.values());
+  this.listeners.forEach(fn=>fn());
+ }
  async performRequest(provider,body,options={}){
-  const settings={...this.state.settings};let last;
-  for(let n=0;n<=Number(settings.retries);n++){
+  const settings={...this.state.settings},limit=parseRetryCount(settings.retries)??DEFAULTS.retries,task=this.requestTask,id=uid();let last;
+  const shouldPause=()=>options.shouldPause?.()||!!task&&(task.pauseRequested||task.status==='cancelled'||!this.state.tasks.includes(task)||!!task.frontError);
+  try{for(let n=0;n<=limit;n++){
    let slot;const started=Date.now();
    try{
-    if(options.shouldPause?.())throw Error('任务已暂停');
-    if(provider==='tts')slot=await this.requestScheduler().acquire(body.model,options.priority??100,options.shouldPause);
+    if(shouldPause())throw Error('任务已暂停');
+    if(provider==='tts')slot=await this.requestScheduler().acquire(body.model,options.priority??100,shouldPause);
     const r=await this.io.request(provider,body,settings);
     const failure=r.error||(r.base_resp&&Number(r.base_resp.status_code)!==0?{message:r.base_resp.status_msg,code:r.base_resp.status_code}:null);
     if(failure){const message=failure.message||'服务商拒绝请求',e=new ApiError(provider==='tts'?friendlyTtsError(message):message,failure.code,false);e.code=failure.code||'';e.detail=message;throw e;}
@@ -621,11 +643,13 @@ class Engine{
     const delay=Number.isFinite(e.retryAfterMs)&&e.retryAfterMs>=0?e.retryAfterMs:Math.min(60000,(e.status===429?10000:1000)*2**n);
     if(provider==='tts'&&e.status===429){this.state.modelLimits=this.state.modelLimits||{};this.state.modelLimits[body.model]={limited:true,until:(this.io.now?.()??Date.now())+delay,successes:0};await this.persist();}else if(provider==='tts'&&this.state.modelLimits?.[body.model]?.limited)this.state.modelLimits[body.model].successes=0;
     this.recordMetric({provider,model:body.model,attempt:n+1,queueMs:slot?.queueMs||0,elapsedMs:Date.now()-started,ok:false,status:e.status||0});
-    if(!isNetworkRetryable(e)||n===Number(settings.retries)||options.shouldPause?.())break;
+    if(e.networkWait||e.checkpointRetryable||e.message==='任务已暂停'||shouldPause())break;
+    if(!isNetworkRetryable(e)||n===limit){e.requestFailed=true;e.requestRetries=n;break;}
+    this.setTaskRequestRetry(task,id,n+1);
     slot?.release();slot=null;
-    await this.waitRequestRetry(delay,options.shouldPause);
+    await this.waitRequestRetry(delay,shouldPause);
    }finally{slot?.release();}
-  }throw last;
+  }throw last;}finally{this.setTaskRequestRetry(task,id,0);}
  }
  async waitRequestRetry(delay,shouldPause){
   if(shouldPause?.())throw Error('任务已暂停');
@@ -1197,29 +1221,30 @@ try{
  wakeChapter(t){const waiters=this._chapterWaiters?.get(t)||[];this._chapterWaiters?.delete(t);for(const w of waiters)w();}
  waitChapter(t){this._chapterWaiters=this._chapterWaiters||new WeakMap();return new Promise(resolve=>{const waiters=this._chapterWaiters.get(t)||[];waiters.push(resolve);this._chapterWaiters.set(t,waiters);});}
  async taskFailure(t,e){
-  if((e.networkWait||isNetworkRetryable(e)||e.checkpointRetryable)&&!t.pauseRequested&&t.status!=='cancelled'&&this.state.tasks.includes(t)){
+  const limit=parseRetryCount(this.state.settings.retries)??DEFAULTS.retries;
+  if((e.networkWait||e.checkpointRetryable||isNetworkRetryable(e)&&!e.requestFailed&&(t.retryCount||0)<limit)&&!t.pauseRequested&&t.status!=='cancelled'&&this.state.tasks.includes(t)){
    t.status='queued';t.retryWaiting=!e.networkWait;t.networkWaiting=!!e.networkWait;t.retryKind=e.checkpointRetryable?'checkpoint':'network';
-   t.retryCount=(t.retryCount||0)+1;
+   if(!e.networkWait)t.retryCount=(t.retryCount||0)+1;
    const delay=Math.max(nextRetryDelay(t.retryCount-1),Number(e.retryAfterMs)||0);
    t.nextRetryAt=e.networkWait?0:Date.now()+Math.min(2147483647,delay);
    t.phase=e.networkWait?'等待制作网络':e.checkpointRetryable?'保存异常，自动重试中':'网络异常，自动重试中';
-   t.message=e.networkWait?this.productionNetworkMessage():e.checkpointRetryable?`进度保存暂时失败，${Math.ceil(delay/1000)} 秒后自动继续，已完成音频会保留`:`连接异常，${Math.ceil(delay/1000)} 秒后自动重试；联网恢复后自动继续，已完成音频会保留`;
+   t.message=e.networkWait?this.productionNetworkMessage():e.checkpointRetryable?`进度保存暂时失败，${Math.ceil(delay/1000)} 秒后自动继续，已完成音频会保留`:`制作失败，正在第${t.retryCount}次重试；${Math.ceil(delay/1000)} 秒后自动继续，已完成音频会保留`;
    t.error={code:e.code||'',message:e.message,detail:e.detail||e.message,status:e.status||0,retryable:true,provider:e.provider||'',stage:e.stage||t.phase};
   }
   else if(t.pauseRequested||t.status==='cancelled'||!this.state.tasks.includes(t)){if(t.status==='running'){t.status='paused';t.phase='已暂停';}}
-  else{const stage=e.stage||t.phase;t.status='failed';t.phase=isContentRejected(e)?'内容审核未通过':'制作失败';t.message=e.message||'任务失败';t.error={code:e.code||'',message:e.message,detail:e.detail||e.message,status:e.status||0,retryable:!!e.retryable,provider:e.provider||'',stage,batchStart:e.batchStart,batchEnd:e.batchEnd};}
+  else{const stage=e.stage||t.phase;t.status='failed';t.phase=isContentRejected(e)?'内容审核未通过':'制作失败';t.retryExhausted=isNetworkRetryable(e)||e.requestRetries>0;t.retryAttempts=e.requestRetries??t.retryCount??0;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;t.message=taskRetryMessage(t)||e.message||'任务失败';t.error={code:e.code||'',message:e.message,detail:e.detail||e.message,status:e.status||0,retryable:!!e.retryable,provider:e.provider||'',stage,batchStart:e.batchStart,batchEnd:e.batchEnd};}
   t.synthQueued=false;await this.persist();this.scheduleProductionRetry();
  }
  launchSynth(t){
   if(t.synthActive||!t.synthQueued||t.pauseRequested||t.status!=='running'||this._synthRunning>=this.taskPar())return;
   this._synthJobs=this._synthJobs||new Map();t.synthQueued=false;t.synthActive=true;this._synthRunning++;
-  const job=(async()=>{try{await this.workSynth(t);}catch(e){t.frontError=e;await this.taskFailure(t,e);}finally{t.synthActive=false;this._synthRunning--;this._synthJobs.delete(t.id);await this.finishTaskRun(t);this.run().catch(()=>{});}})();this._synthJobs.set(t.id,job);
+  const job=(async()=>{try{await this.taskContext(t).workSynth(t);}catch(e){t.frontError=e;await this.taskFailure(t,e);}finally{t.synthActive=false;this._synthRunning--;this._synthJobs.delete(t.id);await this.finishTaskRun(t);this.run().catch(()=>{});}})();this._synthJobs.set(t.id,job);
  }
  async pumpPipeline(){while(true){const t=this.nextQueued();if(!t)return;this._frontActive.add(t);t.status='running';t.error=null;t.frontError=null;t.frontPreparing=true;t.pauseRequested=false;t.retryWaiting=false;delete t.nextRetryAt;
-  try{await this.persist();await this.work(t);}catch(e){t.frontError=e;if(!t.synthActive)await this.taskFailure(t,e);}
+  try{await this.persist();await this.taskContext(t).work(t);}catch(e){t.frontError=e;if(!t.synthActive)await this.taskFailure(t,e);}
   finally{t.frontPreparing=false;this._frontActive.delete(t);this.wakeChapter(t);if(!t.frontError)this.launchSynth(t);await this.finishTaskRun(t);}
  }}
- async pump(){if(this.features.pipeline)return this.pumpPipeline();while(true){const t=this.nextQueued();if(!t)return;if(t.status!=='queued'||this._frontActive.has(t)||t.synthActive)continue;this._frontActive.add(t);t.status='running';t.error=null;t.message='';t.retryWaiting=false;delete t.nextRetryAt;try{await this.persist();await this.work(t);if(t.synthQueued&&t.status==='running'&&!t.pauseRequested){t.synthQueued=false;t.synthActive=true;this._synthRunning++;try{await this.workSynth(t);}finally{t.synthActive=false;this._synthRunning--;}}}catch(e){await this.taskFailure(t,e);}finally{this._frontActive.delete(t);await this.finishTaskRun(t);}}}
+ async pump(){if(this.features.pipeline)return this.pumpPipeline();while(true){const t=this.nextQueued();if(!t)return;if(t.status!=='queued'||this._frontActive.has(t)||t.synthActive)continue;this._frontActive.add(t);t.status='running';t.error=null;t.message='';t.retryWaiting=false;delete t.nextRetryAt;try{await this.persist();await this.taskContext(t).work(t);if(t.synthQueued&&t.status==='running'&&!t.pauseRequested){t.synthQueued=false;t.synthActive=true;this._synthRunning++;try{await this.taskContext(t).workSynth(t);}finally{t.synthActive=false;this._synthRunning--;}}}catch(e){await this.taskFailure(t,e);}finally{this._frontActive.delete(t);await this.finishTaskRun(t);}}}
  async work(t){return this.workFront(t);}
  async workFront(t){
   const b=this.book(t.bookId),c=this.chapter(t.bookId,t.chapterId),policy=this.state.settings;
@@ -1354,7 +1379,7 @@ try{
   if((t.resumeRequested||t.yieldRequested)&&this.state.tasks.includes(t)&&!['done','cancelled'].includes(t.status)){
    t.resumeRequested=false;delete t.yieldRequested;t.pauseRequested=false;t.synthQueued=false;t.status='queued';t.phase='排队等待';await this.persist();
   }
-  if(t.status==='done'){t.retryCount=0;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;}
+  if(t.status==='done'){t.retryExhausted=false;t.retryAttempts=0;t.requestRetryCount=0;t.retryCount=0;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;}
   if(t.networkWaiting&&t.status==='queued'&&this.productionNetworkAllowed?.(t))await this.refreshProductionNetwork();
   this.scheduleProductionRetry();
  }
@@ -1377,7 +1402,7 @@ try{
   if(this._startTaskId!==id)return;
   return this.resumeTasks([id],true);
  }
- async resumeTasks(ids,front=false){const tasks=ids.map(id=>this.state.tasks.find(t=>t.id===id)).filter(t=>t&&!['done','cancelled'].includes(t.status)&&!(t.status==='running'&&!t.pauseRequested)).sort((a,b)=>this.queueOrder(a,b));const mx=Math.max(0,...this.state.tasks.map(t=>t.prio||0));tasks.forEach((t,i)=>{delete t.yieldRequested;delete t.pauseReason;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;if(front)t.prio=mx+tasks.length-i;if(this._frontActive.has(t)||t.synthActive){t.resumeRequested=true;t.phase='当前请求结束后继续';}else{t.resumeRequested=false;t.pauseRequested=false;t.synthQueued=false;t.status='queued';t.phase='排队等待';t.message='';t.error=null;}});await this.persist();await this.kick();}
+ async resumeTasks(ids,front=false){const tasks=ids.map(id=>this.state.tasks.find(t=>t.id===id)).filter(t=>t&&!['done','cancelled'].includes(t.status)&&!(t.status==='running'&&!t.pauseRequested)).sort((a,b)=>this.queueOrder(a,b));const mx=Math.max(0,...this.state.tasks.map(t=>t.prio||0));tasks.forEach((t,i)=>{if(t.status==='failed'){t.retryExhausted=false;t.retryAttempts=0;t.retryCount=0;}delete t.requestRetryCount;delete t.yieldRequested;delete t.pauseReason;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;if(front)t.prio=mx+tasks.length-i;if(this._frontActive.has(t)||t.synthActive){t.resumeRequested=true;t.phase='当前请求结束后继续';}else{t.resumeRequested=false;t.pauseRequested=false;t.synthQueued=false;t.status='queued';t.phase='排队等待';t.message='';t.error=null;}});await this.persist();await this.kick();}
  async cancel(id){const t=this.state.tasks.find(t=>t.id===id);if(!t||t.status==='done')return;t.resumeRequested=false;delete t.yieldRequested;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;t.synthQueued=false;t.pauseRequested=true;this.wakeChapter(t);t.status='cancelled';t.phase='已取消';t.message='任务已取消';this._wakeTtsWaiters();this.wakeRequestRetries();this.scheduleProductionRetry();try{const c=this.chapter(t.bookId,t.chapterId);if(c.status!=='ready'){c.status=(c.segments||[]).length?'annotated':'raw';this.touch(c);}}catch(e){}await this.persist();}
  async removeTask(id){const i=this.state.tasks.findIndex(t=>t.id===id);if(i>=0){const t=this.state.tasks[i];t.synthQueued=false;t.pauseRequested=true;this.state.tasks.splice(i,1);this._wakeTtsWaiters();this.wakeRequestRetries();this.scheduleProductionRetry();this.wakeChapter(t);await this.persist();}}
  async accept(bid,name,resume=true){const ch=this.book(bid).characters.find(r=>r.name===name);if(!ch?.candidate)throw Error('没有可确认的样本');const candidate=ch.candidate;await this.saveVoice(candidate);await this.bind(bid,name,candidate.id,resume);}

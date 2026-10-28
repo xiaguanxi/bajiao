@@ -1214,6 +1214,25 @@ function chapterSentenceCount(c, task){
   if(c?.segmentCount>0)return c.segmentCount;
   return 0;
 }
+function streamMediaProgress(c,segmentId){
+  const segments=c?.segments||[],sentenceIndex=Math.max(0,segments.findIndex(s=>s.id===segmentId));
+  const sentenceCount=chapterSentenceCount(c);
+  const durationEstimated=!(c?.audio&&c.duration>0);
+  const estimate=segments.reduce((sum,s)=>sum+(s.skip||s.isAd||s.speaker==='广告'||s.audio==='skip'?0:Math.max(0,Number(s.durMs)||Math.round(Bajiao.expectedSpeechSec(s.text||'')*1000))),0);
+  return {sentenceIndex,sentenceCount,chapterDuration:Math.max(1,Math.round(durationEstimated?estimate:c.duration*1000)),durationEstimated};
+}
+function syncStreamMediaProgress(){
+  const stream=streamState;
+  if(!stream||playingId!==stream.audioId)return;
+  const c=engine.state.books.find(b=>b.id===stream.bid)?.chapters.find(c=>c.id===stream.cid);
+  if(!c)return;
+  const progress=streamMediaProgress(c,stream.segId),signature=JSON.stringify(progress);
+  if(signature===stream.mediaSignature)return;
+  stream.mediaSignature=signature;
+  device.call('playback',{op:'streamprogress',expectedAudioId:stream.audioId,...progress}).catch(()=>{
+    if(stream===streamState&&stream.mediaSignature===signature)stream.mediaSignature=null;
+  });
+}
 function streamHtml(b,c){
   const task=engine?.state.tasks.find(t=>t.bookId===b.id&&t.chapterId===c.id&&!['done','cancelled'].includes(t.status));
   const ready=streamPrefix(c);
@@ -1286,11 +1305,12 @@ async function playStreamSeg(bid,cid,segIdx,offsetMs=0,options={}){
   const seg=prefix[Math.max(0,Math.min(segIdx,prefix.length-1))];
   const position=Math.max(0,Math.min(offsetMs,Math.max(0,(seg.durMs||0)-1))),playing=!options.startPaused;
   const doneBefore=prefix.slice(0,prefix.indexOf(seg)).reduce((a,s)=>a+(s.durMs>0?s.durMs:0),0);
-  streamState={bid,cid,segId:seg.id,posBefore:doneBefore,audioId:seg.audio};
+  const mediaProgress=streamMediaProgress(c,seg.id);
+  streamState={bid,cid,segId:seg.id,posBefore:doneBefore,audioId:seg.audio,mediaSignature:JSON.stringify(mediaProgress)};
   const idx=b.chapters.indexOf(c);
   playbackRevision++;lastSeekTime=0;miniPlayingState={id:seg.audio,position,playing:false};
   if(page==='listen'&&bookId===bid&&chapterId===cid){render();syncDisplayedPlayback(miniPlayingState,true);}
-  await device.call('play',{bookId:bid,chapterId:cid,segmentId:seg.id,positionBase:doneBefore,previousAudio:options.previousAudio||'',pauseMs:options.pauseMs||0,id:seg.audio,title:c.title+'（边做边听 · 第'+(prefix.indexOf(seg)+1)+'句）',bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · 芭蕉',duration:Math.round((seg.durMs||0)),position,startPaused:!playing,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
+  await device.call('play',{bookId:bid,chapterId:cid,segmentId:seg.id,positionBase:doneBefore,...mediaProgress,previousAudio:options.previousAudio||'',pauseMs:options.pauseMs||0,id:seg.audio,title:c.title,bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · 芭蕉',duration:Math.round((seg.durMs||0)),position,startPaused:!playing,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
   playingId=seg.audio;playingBookId=bid;playingChapterId=cid;
   if(playing)playbackPrompts?.warm(bid,['waiting',...(idx===b.chapters.length-1?['finished']:[])]);
   engine?.updatePlaybackProgress(bid,cid,doneBefore+position,0,false,{audioId:seg.audio,segmentId:seg.id,offsetMs:position}).catch(()=>{});
@@ -1318,6 +1338,8 @@ async function advanceStream(){
     }
     render();return true;
   }
+  const progress=streamMediaProgress(c,streamState.segId);
+  device.call('playback',{op:'streamprogress',expectedAudioId:streamState.audioId,...progress,sentenceIndex:progress.sentenceCount}).catch(()=>{});
   streamState=null;return false; // 交给唯一的 completion 处理器完成本章并推进下一章
 }
 async function refreshListenNav(){if(page!=="listen")return;try{var b=book(),c=chapter(),chs=b.chapters||[],i=chs.findIndex(function(x){return x.id===c.id;});var hasPrev=!!(i>0&&chs[i-1]&&playablePrefix(chs[i-1]).length),hasNext=!!(i>=0&&i<chs.length-1&&chs[i+1]&&playablePrefix(chs[i+1]).length);var prev=document.querySelector('[data-act="prevchapter"]'),next=document.querySelector('[data-act="nextchapter"]');if(prev){prev.classList.toggle("disabled",!hasPrev);if(hasPrev)prev.removeAttribute("disabled");else prev.setAttribute("disabled","");}if(next){next.classList.toggle("disabled",!hasNext);if(hasNext)next.removeAttribute("disabled");else next.setAttribute("disabled","");}}catch(e){}}

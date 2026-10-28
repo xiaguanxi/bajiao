@@ -26,5 +26,5 @@ test('指数退避：30s起，2^x，上限10分钟', () => {
   assert.equal(nextRetryDelay(2), 120000);
   assert.equal(nextRetryDelay(10), 600000);
   assert.equal(nextRetryDelay(99), 600000);
-  assert.equal(NET_RETRY_LIMIT, Infinity);
+  assert.equal(NET_RETRY_LIMIT, 3);
 });

@@ -210,8 +210,9 @@ function restoreEditorPosition(){if(!editorReturn)return;requestAnimationFrame((
 async function refreshStorage(showToast=false){if(storageLoadPending)return;storageLoadPending=true;storageError='';try{storageStats=await device.call('audioStats');if(showToast)toast('已刷新存储统计');}catch(e){storageError=cleanErr(e);}finally{storageLoadPending=false;if(page==='storage')render();}}
 async function saveLLMForm(){const base=value('llmBase').trim().replace(/\/$/,''),model=value('llmModel').trim(),key=value('llmKey');if(!base||!model)throw Error('请填写 Base URL 和模型 ID');let parsed;try{parsed=new URL(base);}catch(e){throw Error('请填写完整服务地址');}if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.search||parsed.hash)throw Error('请填写不含账号、查询参数和片段的 HTTPS Base URL');await device.call('saveCredentials',{llmKey:key,llmBase:base});Object.assign(engine.state.settings,{llmBase:base,llmModel:model,llmUserConfigured:true,llmProtocol:dropdownSel.llmProtocol||engine.state.settings.llmProtocol});configDirty=false;await engine.persist();configured=await device.call('load');const input=$('#llmKey');if(input)input.value='';}
 async function saveTTSForm(){await device.call('saveCredentials',{ttsKey:value('ttsKey')});configDirty=false;configured=await device.call('load');const input=$('#ttsKey');if(input)input.value='';}
-function voiceFilters(){return `<div class="vc-voice-search">${field('搜索音色名称、描述或编号','voiceSearch',voiceSearch)}<div class="vc-filter-row">${[['voiceGender','性别',voiceGender,[['all','全部性别'],['f','女性'],['m','男性'],['unknown','未注明']]],['voiceAge','年龄',voiceAge,[['all','全部年龄'],['child','儿童'],['young','少年 / 青年'],['middle','中年'],['old','老年']]],['voiceSource','来源',voiceSource,[['all','全部来源'],['import','导入'],['design','设计'],...(page==='choose'?[['preset','MiMo 预设']]:[])]]].map(([id,label,current,opts])=>`<label>${label}<select id="${id}">${opts.map(([id,text])=>`<option value="${id}" ${current===id?'selected':''}>${text}</option>`).join('')}</select></label>`).join('')}</div></div>`;}
-function filteredVoices(includePresets=false){const bound=page==='choose'?book().characters.find(r=>r.name===roleName)?.voice:null;const voices=includePresets?engine.state.voices.concat(Bajiao.PRESETS.map(name=>({id:'preset:'+name,name,description:Bajiao.presetDesc(name),source:'preset'}))):engine.state.voices;return voices.filter(v=>{if(page==='voices')return true;const desc=v.description||'',gender=Bajiao.genderOf(desc)||'unknown',n=Bajiao.cnAgeNum(desc),age=n==null?(/儿童/.test(desc)?'child':/少年|青年/.test(desc)?'young':/中年/.test(desc)?'middle':/老年/.test(desc)?'old':'unknown'):n<13?'child':n<40?'young':n<60?'middle':'old';return (!voiceSearch||(v.name+' '+desc+' '+v.id).toLowerCase().includes(voiceSearch.toLowerCase()))&&(voiceGender==='all'||voiceGender===gender)&&(voiceAge==='all'||voiceAge===age)&&(voiceSource==='all'||voiceSource===v.source);}).sort((a,b)=>(b.id===bound)-(a.id===bound)||(b.lastUsedAt||0)-(a.lastUsedAt||0));}
+function voiceFilters(){return `<div class="vc-filter-row voice-library-filters" aria-label="筛选音色">${[['voiceGender','性别',voiceGender,[['all','全部性别'],['f','女性'],['m','男性'],['unknown','未注明']]],['voiceAge','年龄',voiceAge,[['all','全部年龄'],['child','儿童'],['young','少年 / 青年'],['middle','中年'],['old','老年'],['unknown','未注明']]]].map(([id,label,current,opts])=>`<label>${label}<select id="${id}">${opts.map(([id,text])=>`<option value="${id}" ${current===id?'selected':''}>${text}</option>`).join('')}</select></label>`).join('')}</div>`;}
+function filteredVoices(includePresets=false){const bound=page==='choose'?book().characters.find(r=>r.name===roleName)?.voice:null;const voices=includePresets?engine.state.voices.concat(Bajiao.PRESETS.map(name=>({id:'preset:'+name,name,description:Bajiao.presetDesc(name),source:'preset'}))):engine.state.voices;return voices.filter(v=>{const {gender,age}=Bajiao.voiceDemographics(v);return (!voiceSearch||(v.name+' '+(v.description||'')+' '+v.id).toLowerCase().includes(voiceSearch.toLowerCase()))&&(voiceGender==='all'||voiceGender===gender)&&(voiceAge==='all'||voiceAge===age)&&(voiceSource==='all'||voiceSource===v.source);}).sort((a,b)=>(b.id===bound)-(a.id===bound)||(b.lastUsedAt||0)-(a.lastUsedAt||0));}
+const emptyVoiceResults=()=>'<div class="empty"><p>没有符合条件的音色</p>'+B('清空筛选','clearvoicefilters',true)+'</div>';
 let voiceEditor=null,voiceLeaveNext=null;
 function voiceDraft(){const v=voice();if(!voiceEditor||voiceEditor.id!==v.id)voiceEditor={id:v.id,name:v.name,description:v.description||'',enabled:!!v.enabled,text:'山里的风停了，故事才刚刚开始。',trialOpen:false,infoOpen:false,status:'',error:'',working:false,candidate:null,candidateDescription:'',trial:null};return voiceEditor;}
 function captureVoiceDraft(){if(page!=='voicedetail'||!voiceEditor)return;for(const [id,key] of [['vname','name'],['vdescription','description'],['trialText','text']]){const el=document.getElementById(id);if(el)voiceEditor[key]=el.value;}const enabled=document.getElementById('venabled');if(enabled)voiceEditor.enabled=enabled.checked;for(const [id,key] of [['ved-trial','trialOpen'],['ved-info','infoOpen']]){const el=document.getElementById(id);if(el)voiceEditor[key]=el.open;}}
@@ -259,24 +260,26 @@ function compactVoiceRow(v,preset=false){
 }
 function voiceCards(choosing=false){
  const voices=filteredVoices(choosing),bound=choosing?book().characters.find(r=>r.name===roleName)?.voice:null;
- if(!choosing)return voices.length?voices.map(v=>compactVoiceRow(v)).join(''):'<div class="empty"><p>还没有自己的音色，可导入音频或设计新音色。</p></div>';
+ if(!choosing)return voices.length?voices.map(v=>compactVoiceRow(v)).join(''):engine.state.voices.length?emptyVoiceResults():'<div class="empty"><p>还没有自己的音色，点击“新增音色”导入参考音频或设计新音色。</p></div>';
  return voices.length?voices.map(v=>{const preset=v.source==='preset';return `<section class="vc-panel vc-voice-card ${choosing?'':'vc-card-clickable'}" ${choosing?'':'data-act="voice:'+v.id+'" aria-label="管理音色'+E(v.name)+'"'}><div class="vc-row"><div class="vc-avatar">${I(preset?'volume-2':v.source==='import'?'mic':'sparkles')}</div><div class="vc-grow"><h3 class="voice-name">${E(v.name)}</h3><small>${v.id===bound?'当前绑定 · ':''}${preset?'MiMo 预设':(v.source==='import'?'导入':'设计')+' · '+E((v.format||'wav').toUpperCase())+' · #'+E(v.id.slice(-6))}</small></div>${B('试听',preset?'preset:'+v.name:'play:'+v.sample,true)}</div><p class="vc-sub">${E(v.description)}</p><div class="vc-row">${choosing?B(v.id===bound?'已选用':'选用','bind:'+v.id,true,v.id===bound):L('管理音色','voice:'+v.id)}${!choosing?L('删除','deletevoice:'+v.id):''}</div></section>`;}).join(''):(choosing?'<div class="empty"><p>没有符合条件的音色</p>'+B('清空筛选','clearvoicefilters',true)+'</div>':'<div class="empty"><p>还没有自己的音色，可导入音频或设计新音色。</p></div>');
 }
 let voiceBatch=false,voiceBatchIds=[];
 function voiceLibraryHtml(state){
  const mine=voiceTab==='mine',ids=state.voices.map(v=>v.id);
- voiceBatchIds=voiceBatchIds.filter(id=>ids.includes(id));
+ const visible=filteredVoices(!mine).filter(v=>mine?v.source!=='preset':v.source==='preset'),visibleIds=visible.map(v=>v.id);
+ voiceBatchIds=voiceBatchIds.filter(id=>visibleIds.includes(id));
  const editing=mine&&voiceBatch;
  const tabs=voiceTabs('voicetab',mine,ids.length);
- let h=title(editing?'批量管理':'声音档案','音色库',mine?`<button type="button" class="voice-library-edit" data-act="voicebatchedit" ${!ids.length?'disabled':''}>${editing?'完成':I('list-checks')+'<span>编辑</span>'}</button>`:'')+tabs;
- if(!mine)return h+Bajiao.PRESETS.map(name=>compactVoiceRow({name},true)).join('');
- if(!editing)return h+'<div class="vc-split">'+B('导入音频','importvoices')+B('设计新音色','newdesign',true)+'</div>'+voiceCards();
- h+='<section class="voice-batch-mode" aria-label="批量管理音色"><div class="voice-batch-tools"><span>共 '+ids.length+' 个音色</span><button type="button" data-act="voicebatchall">'+(voiceBatchIds.length===ids.length?'取消全选':'全选')+'</button></div><div class="voice-batch-list">';
- h+=state.voices.map(v=>{
+ const actions=`<div class="voice-library-actions"><button type="button" class="voice-library-edit voice-library-add" data-act="newvoice" aria-haspopup="dialog">${I('plus')}<span>新增音色</span></button>${mine?`<button type="button" class="voice-library-edit" data-act="voicebatchedit" ${!ids.length?'disabled':''}>${editing?'完成':I('list-checks')+'<span>编辑</span>'}</button>`:''}</div>`;
+ let h=title(editing?'批量管理':'声音档案','音色库',actions)+tabs+voiceFilters();
+ if(!mine)return h+(visible.length?visible.map(v=>compactVoiceRow(v,true)).join(''):emptyVoiceResults());
+ if(!editing)return h+voiceCards();
+ h+='<section class="voice-batch-mode" aria-label="批量管理音色"><div class="voice-batch-tools"><span>显示 '+visible.length+' / '+ids.length+' 个音色</span><button type="button" data-act="voicebatchall" '+(!visible.length?'disabled':'')+'>'+(visible.length&&voiceBatchIds.length===visible.length?'取消全选':'全选')+'</button></div><div class="voice-batch-list">';
+ h+=visible.length?visible.map(v=>{
   const checked=voiceBatchIds.includes(v.id),source=v.source==='import'?'导入音频':'AI 设计';
   const description=String(v.description||'').trim();
-  return `<button type="button" class="voice-batch-row" data-act="voicebatchtoggle:${E(v.id)}" aria-pressed="${checked}" aria-label="选择音色：${E(v.name)}"><span class="voice-batch-check" aria-hidden="true">${I('check')}</span><span class="voice-batch-copy"><strong>${E(v.name)}</strong><small>${E(source)}${description&&description!==v.name?' · '+E(description):''}</small></span></button>`;
- }).join('');
+  return `<div class="voice-batch-row ${checked?'is-selected':''}"><button type="button" class="voice-batch-select" data-act="voicebatchtoggle:${E(v.id)}" aria-pressed="${checked}" aria-label="选择音色：${E(v.name)}"><span class="voice-batch-check" aria-hidden="true">${I('check')}</span><span class="voice-batch-copy"><strong>${E(v.name)}</strong><small>${E(source)}${description&&description!==v.name?' · '+E(description):''}</small></span></button><button type="button" class="vc-preset-btn" data-act="trialvoice:${E(v.id)}" aria-label="试听音色：${E(v.name)}">${I('play')} 试听</button></div>`;
+ }).join(''):emptyVoiceResults();
  return h+`</div><footer class="voice-batch-footer"><p role="status" aria-live="polite">已选 <strong>${voiceBatchIds.length}</strong> 项</p><button type="button" class="voice-batch-delete" data-act="voicebatchdelete" ${!voiceBatchIds.length?'disabled':''}>${I('trash-2')}<span>删除所选${voiceBatchIds.length?'（'+voiceBatchIds.length+'）':''}</span></button></footer></section>`;
 }
 const voiceLabel=id=>id?.startsWith('preset:')?id.slice(7):(engine.state.voices.find(v=>v.id===id)?.name||'该音色');
@@ -465,7 +468,7 @@ document.addEventListener('input',e=>{
  if(id==='biName'){document.querySelectorAll('#bookInfoDialog .vc-cover-mini b').forEach(el=>el.textContent=e.target.value||'书名');}
  if(id==='biAuthor'){document.querySelectorAll('#bookInfoDialog .vc-cover-mini small').forEach(el=>el.textContent=e.target.value||'有声书');}
 });
-document.addEventListener('change',e=>{const id=e.target.id;if(['voiceGender','voiceAge','voiceSource'].includes(id)){if(id==='voiceGender')voiceGender=e.target.value;if(id==='voiceAge')voiceAge=e.target.value;if(id==='voiceSource')voiceSource=e.target.value;render();}});
+document.addEventListener('change',e=>{const id=e.target.id;if(['voiceGender','voiceAge','voiceSource'].includes(id)){if(id==='voiceGender')voiceGender=e.target.value;if(id==='voiceAge')voiceAge=e.target.value;if(id==='voiceSource')voiceSource=e.target.value;voiceBatchIds=[];render();document.getElementById(id)?.focus({preventScroll:true});}});
 window.addEventListener('scroll',()=>{if(['raw','annotated'].includes(page)){clearTimeout(rememberReading.timer);rememberReading.timer=setTimeout(rememberReading,500);}});
 
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
@@ -1694,16 +1697,17 @@ window.onNativePlaybackAction=async(act,val,sourceAudioId)=>{
     }
   }catch(e){toast(e.message||'播放控制失败');}finally{if(navigation){playbackNavigationBusy=false;continueProductionPlayback();}}
 };
-async function handleAction(el,e,approved=false){if(!el||el.disabled)return;if(el.classList.contains('vc-modal-overlay')&&e.target!==el)return;const [a,...rest]=el.dataset.act.split(':'),x=rest.join(':');
+async function handleAction(el,e,approved=false){if(!el||el.disabled)return;if(el.classList.contains('vc-modal-overlay')&&e.target!==el)return;let [a,...rest]=el.dataset.act.split(':');const x=rest.join(':');
 try{
+if(a==='newvoice'){a=await productionDialog('新增音色','<p>选择新增音色的方式。</p>',[{id:'importvoices',label:'导入参考音频',primary:true},{id:'newdesign',label:'设计新音色'}]);if(!['importvoices','newdesign'].includes(a))return;}
 if(a==='opensegment'){if(page!=='annotated')return;resetModalFlags();segmentPanel={bookId,chapterId,id:String(x),scroll:0,result:''};render();return;}
 if(a==='closesegment'){segmentPanel=null;render();return;}
 if(a==='segmentpreview'){const s=panelSegment();if(!s||String(s.id)!==x||!s.audio||s.audio==='skip')return;const panel=segmentPanel;panel.playError='';try{await startPreview(s.audio,'第 '+(chapter().segments.indexOf(s)+1)+' 段 · '+s.speaker);panel.result='可再次点击本句试听按钮暂停或继续。';}catch(error){panel.playError='试听失败：'+cleanErr(error);}render();return;}
 if(a.startsWith('voicebatch')){
  if(page!=='voices'||voiceTab!=='mine')return;
  if(a==='voicebatchedit'){voiceBatch=!voiceBatch;voiceBatchIds=[];}
- if(a==='voicebatchtoggle'&&voiceBatch&&engine.state.voices.some(v=>v.id===x)){voiceBatchIds=voiceBatchIds.includes(x)?voiceBatchIds.filter(id=>id!==x):[...voiceBatchIds,x];}
- if(a==='voicebatchall'&&voiceBatch){voiceBatchIds=voiceBatchIds.length===engine.state.voices.length?[]:engine.state.voices.map(v=>v.id);}
+ if(a==='voicebatchtoggle'&&voiceBatch&&filteredVoices().some(v=>v.id===x)){voiceBatchIds=voiceBatchIds.includes(x)?voiceBatchIds.filter(id=>id!==x):[...voiceBatchIds,x];}
+ if(a==='voicebatchall'&&voiceBatch){const ids=filteredVoices().map(v=>v.id);voiceBatchIds=voiceBatchIds.length===ids.length?[]:ids;}
  if(a==='voicebatchdelete'&&voiceBatch){
   const targets=engine.state.voices.filter(v=>voiceBatchIds.includes(v.id));if(!targets.length)return;
   const bindings=engine.state.books.flatMap(b=>b.characters.filter(r=>targets.some(v=>v.id===r.voice)));
@@ -1937,15 +1941,15 @@ if(a==='resumeall'){const paused=engine.state.tasks.filter(t=>['paused','failed'
 if(a==='listentask'){const t=engine.state.tasks.find(t=>t.id===x);if(!t)throw Error('任务不存在');bookId=t.bookId;chapterId=t.chapterId;page='listen';render();await playCurrentChapter(t.bookId,t.chapterId);return;}
 if(a==='removetask'){await engine.removeTask(x);toast('已清除任务记录，音频资源保留');if(page==='task')go('tasks');else render();return;}
 if(a==='remake'){const t=engine.state.tasks.find(t=>t.id===x);if(t){const bid=t.bookId,cid=t.chapterId;await engine.removeTask(x);engine.enqueue(bid,[cid]).catch(e=>toast(e.message));toast('已重新加入制作队列');go('tasks');}return;}
-if(a==='importvoices'){await busy(async()=>{const files=await device.call('pick',{kind:'voice'});if(!files?.length)return;imports=files;go('voiceimport');},'选择参考样本…');return;}
-if(a==='saveimports'){await busy(async()=>{for(let i=0;i<imports.length;i++){const description=value('import-'+i).trim();if(!description)throw Error('请填写所有音色描述');imports[i].description=description;imports[i].displayName=value('import-name-'+i).trim();}for(const f of imports){const v=await engine.importVoice(f);if(f.displayName)v.name=f.displayName;}await engine.persist();imports=[];go('voices');});return;}
+if(a==='importvoices'){await busy(async()=>{const files=await device.call('pick',{kind:'voice'});if(!files?.length)return;imports=files;voiceTab='mine';voiceBatch=false;voiceBatchIds=[];go('voiceimport');},'选择参考样本…');return;}
+if(a==='saveimports'){await busy(async()=>{for(let i=0;i<imports.length;i++){const description=value('import-'+i).trim();if(!description)throw Error('请填写所有音色描述');imports[i].description=description;imports[i].displayName=value('import-name-'+i).trim();}for(const f of imports){const v=await engine.importVoice(f);if(f.displayName)v.name=f.displayName;}await engine.persist();imports=[];voiceSearch='';voiceGender=voiceAge=voiceSource='all';go('voices');});return;}
 if(a==='voicetab'){voiceTab=x;voiceBatch=false;voiceBatchIds=[];render();return;}
 if(a==='voice'){voiceId=x;go('voicedetail');return;}
 if(a==='savevoice'){if(!value('vdescription').trim())throw Error('请填写音色描述');voice().name=value('vname').trim()||voice().name;voice().description=Bajiao.cleanVoiceDescription(value('vdescription').trim());voice().enabled=$('#venabled').checked;await engine.saveVoice(voice());toast('音色描述与名称已保存');render();return;}
 if(a==='deletevoice'){const targetId=x||voiceId;const targetVoice=engine.state.voices.find(v=>v.id===targetId);const name=targetVoice?.name||'该音色';await busy(async()=>{await engine.deleteVoice(targetId);toast(`已删除音色「${name}」`);go('voices');},'正在删除音色…');return;}
-if(a==='newdesign'){candidate=null;roleName=null;designDirty=false;go('design');return;}
+if(a==='newdesign'){candidate=null;roleName=null;designDirty=false;voiceTab='mine';voiceBatch=false;voiceBatchIds=[];go('design');return;}
 if(a==='designsample'){startDesignJob();return;}
-if(a==='acceptsample'){if(designJob?.running)throw Error('请等待当前样本生成完成');if(designDirty)throw Error('描述或文本已修改，请重新生成样本');await busy(async()=>{if(roleName){engine.accept(bookId,roleName).catch(e=>toast(e.message));go('roles');}else{await engine.saveVoice(candidate);go('voices');}},'保存样本…');return;}
+if(a==='acceptsample'){if(designJob?.running)throw Error('请等待当前样本生成完成');if(designDirty)throw Error('描述或文本已修改，请重新生成样本');await busy(async()=>{if(roleName){engine.accept(bookId,roleName).catch(e=>toast(e.message));go('roles');}else{await engine.saveVoice(candidate);voiceSearch='';voiceGender=voiceAge=voiceSource='all';go('voices');}},'保存样本…');return;}
 if(a==='candidate'){roleName=x;candidate=book().characters.find(r=>r.name===x).candidate;designDirty=false;go('design');return;}
 if(a==='chooserole'){roleName=x;chooseTab=(book().characters.find(r=>r.name===x)?.voice||'').startsWith('preset:')?'preset':'mine';go('choose');return;}
 if(a==='choosetab'){chooseTab=x;render();return;}

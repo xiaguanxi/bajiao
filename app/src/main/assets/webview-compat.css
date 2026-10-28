@@ -7,7 +7,6 @@
  #app .vc-dialog,#app .vc-modal-content { max-height:calc(100vh - 16px)!important; }
  #app .vc-dialog.vc-player-sheet { max-height:calc(100vh - 12px)!important; }
  #app .vc-dialog.vc-player-catalog { height:72vh;max-height:calc(100vh - 24px)!important; }
- #app .vc-player-catalog-scroll { padding-bottom:calc(72vh - 220px); }
  #app .production-dialog { max-height:calc(100vh - 48px)!important; }
  #app .vc-main-listen .vc-transcript-panel { max-height:calc(100vh - 218px); }
  #app main.vc-main-listen { height:100vh!important; }

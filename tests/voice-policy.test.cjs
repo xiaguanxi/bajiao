@@ -22,30 +22,34 @@ test('negative, restrained and compound emotions remain natural-language directi
 });
 async function bookWithRoles(e,names=['沈砚','林晚']){const b=await e.addBook('小说','你好。');b.characters.push(...names.map(name=>({name,description:'清亮、不沙哑的青年女性',voice:null})));return b;}
 function voice(e,id='v',sample='ref.wav',description='清亮、不沙哑的青年女性'){e.state.voices.push({id,sample,description,enabled:true});}
+function matching(matches){return async(prompt,options)=>options?.task==='voice-targets'?{targets:JSON.parse(prompt.split('\n角色：')[1]).map(r=>({name:r.name,gender:'f',age:'young'}))}:{matches};}
 test('opposite negation, gender and accent are rejected even if LLM requests the match',async()=>{
  for(const incompatible of ['青年女性，沙哑、不清亮','低沉青年男性','清亮的青年女性，粤语口音']){
-  const e=engine(),b=await bookWithRoles(e,['林晚']);b.characters[1].description='清亮、不沙哑的青年女性，四川话口音';voice(e,'v','ref',incompatible);e.state.settings.mode='auto';e.llm=async()=>({matches:[{name:'林晚',voiceId:'v'}]});
+  const e=engine(),b=await bookWithRoles(e,['林晚']);b.characters[1].description='清亮、不沙哑的青年女性，四川话口音';voice(e,'v','ref',incompatible);e.state.settings.mode='auto';e.llm=matching([{name:'林晚',voiceId:'v'}]);
   await e.matchCharacters(b.id,['林晚']);assert.equal(b.characters[1].voice,null);assert(voiceConflict(b.characters[1].description,incompatible));
  }
 });
 test('same-book major roles reserve voices across concurrent LLM requests and sample aliases',async()=>{
  const e=engine(),b=await bookWithRoles(e);voice(e);voice(e,'alias','ref.wav');e.state.settings.mode='manual';
- e.llm=async()=>({matches:[{name:'沈砚',voiceId:'v'},{name:'林晚',voiceId:'alias'}]});
+ e.llm=matching([{name:'沈砚',voiceId:'v'},{name:'林晚',voiceId:'alias'}]);
  await Promise.all([e.matchCharacters(b.id,['沈砚']),e.matchCharacters(b.id,['林晚'])]);
  assert.equal(b.characters[1].suggestedVoice,'v');assert.equal(b.characters[2].suggestedVoice,undefined);
  assert.equal(e.voiceAvailable(b,b.characters[2],'alias'),false);
 });
-test('extras reuse compatible extra voices but avoid major voices; another book may reuse',async()=>{
+test('extras borrow inactive infrequent voices but avoid frequent voices; another book may reuse',async()=>{
  const e=engine(),b=await bookWithRoles(e,['沈砚','路人甲','路人乙']);voice(e);e.state.settings.mode='auto';
- const [major,a,z]=b.characters.slice(1);a.bitPart=z.bitPart=true;a.voice='v';assert.equal(e.autoVoiceFor(b.id,z.name),'v');
+ const [major,a,z]=b.characters.slice(1);a.bitPart=z.bitPart=true;a.bitPartSource=z.bitPartSource='llm';a.voice='v';
+ b.chapters=Array.from({length:10},(_,i)=>({id:'c'+i,title:'第'+(i+1)+'章',text:'你好。',status:'annotated',segments:[{id:0,text:'你好。',speaker:i===0?major.name:i===3?a.name:i===9?z.name:'旁白',confidence:1}]}));
+ for(const i of [1,2,4])b.chapters[i].segments.push({id:1,text:'你好。',speaker:major.name,confidence:1});
+ assert.equal(e.autoVoiceFor(b.id,z.name),'v');
  major.voice='v';assert.equal(e.autoVoiceFor(b.id,z.name),null);major.voice=null;
- e.llm=async()=>({matches:[{name:'林晚',voiceId:'v'}]});const other=await bookWithRoles(e,['林晚']);await e.matchCharacters(other.id,['林晚']);assert.equal(other.characters[1].voice,'v');
+ e.llm=matching([{name:'林晚',voiceId:'v'}]);const other=await bookWithRoles(e,['林晚']);await e.matchCharacters(other.id,['林晚']);assert.equal(other.characters[1].voice,'v');
 });
-test('concurrent design is shared only for the same role or compatible extra group',async()=>{
+test('concurrent design is shared only for the same role; active extras receive distinct voices',async()=>{
  const e=engine(),b=await bookWithRoles(e,['沈砚','林晚','路人甲','路人乙']);let calls=0;e.design=async description=>{const id='new-'+(++calls);await new Promise(r=>setTimeout(r,5));return {id,sample:id+'.wav',description};};
  const [a,z,x,y]=b.characters.slice(1);x.bitPart=y.bitPart=true;
  const candidates=await Promise.all([e.ensureDesignCandidate(b,a),e.ensureDesignCandidate(b,a),e.ensureDesignCandidate(b,z),e.ensureDesignCandidate(b,x),e.ensureDesignCandidate(b,y)]);
- assert.equal(calls,3);assert.equal(candidates[0].id,candidates[1].id);assert.notEqual(candidates[0].id,candidates[2].id);assert.equal(candidates[3].id,candidates[4].id);
+ assert.equal(calls,4);assert.equal(candidates[0].id,candidates[1].id);assert.notEqual(candidates[0].id,candidates[2].id);assert.notEqual(candidates[3].id,candidates[4].id);
 });
 test('default display name maps to API id and synthesis leaves novel text untouched',async()=>{
  const e=engine();let body;e.io.request=async(_,b)=>{body=b;return {choices:[{message:{audio:{data:require('./wav-fixture.cjs')()}}}]};};e.saveSpeechAudio=async()=>({id:'new.wav'});

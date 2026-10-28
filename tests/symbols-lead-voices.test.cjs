@@ -24,7 +24,7 @@ test('new protagonists use Chinese defaults while supporting roles still use the
  const roles=[{name:'沈砚',description:'青年男性',storyRole:'maleLead',roleEvidence:'男主沈砚'},{name:'林晚',description:'青年女性',storyRole:'femaleLead',roleEvidence:'女主林晚'},{name:'周叔',description:'中年男性',storyRole:'other'}];
  e.llm=async()=>({characters:roles,lines:V.units(c.text).map(s=>({id:s.id,speaker:'旁白',emotion:'自然',confidence:1,scene:'',delivery:'自然读出本句。'}))});await e.analyze(b.id,c.id);
  e.state.settings.usePresets=false;e.state.voices=[{id:'library',enabled:true,description:'中年男性'}];let matched=[];
- e.llm=async prompt=>{matched.push(prompt);return {matches:[{name:'周叔',voiceId:'library',reason:'声线相容'}]};};
+ e.llm=async (prompt,options)=>{if(options?.task==='voice-targets')return {targets:[{name:'周叔',gender:'m',age:'middle'}]};matched.push(prompt);return {matches:[{name:'周叔',voiceId:'library',reason:'声线相容'}]};};
  await e.matchCharacters(b.id,roles.map(r=>r.name));
  assert.equal(b.characters.find(r=>r.name==='旁白').voice,'preset:白桦');assert.equal(b.characters.find(r=>r.name==='沈砚').voice,'preset:苏打');assert.equal(b.characters.find(r=>r.name==='林晚').voice,'preset:冰糖');assert.equal(b.characters.find(r=>r.name==='周叔').voice,'library');
  assert.equal(matched.length,1);assert(!matched[0].includes('"name":"沈砚"'));assert.match(matched[0],/周叔/);

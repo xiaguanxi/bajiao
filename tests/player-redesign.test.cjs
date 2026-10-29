@@ -100,14 +100,14 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/xiagu/.c
     assert.deepEqual(await page.locator('.vc-tick').allTextContents(), ['0.5x','1x','1.5x','2x','2.5x','3x'], '参考交互提供 0.5–3 倍速的六个快捷刻度');
     await page.evaluate(() => { const r = document.querySelector('#speedRange'); r.value = '1.5'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.waitForTimeout(150);
-    assert.equal(await page.evaluate(() => window.bajiaoEngine.state.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
+    assert.equal(await page.evaluate(() => window.bajiaoEngine.state.settings.playbackSpeed), 1.5, 'engine 倍速应为 1.5');
     assert.equal(playbackCalls.filter(c => c.op === 'speed').at(-1)?.value, 1.5, 'native 应收到 1.5');
     assert.equal(await page.locator('#speedBtnVal').textContent(), '1.5x', '控制栏倍速签应更新');
     console.log('PASS speed slider links engine and native');
     // 点刻度回 1x,确认回切联动(覆盖"选了1倍速上面还是1.25"类 bug)
     await click('setspeed:1');
     await page.waitForTimeout(150);
-    assert.equal(await page.evaluate(() => window.bajiaoEngine.state.playbackSpeed), 1, 'engine 倍速应回到 1');
+    assert.equal(await page.evaluate(() => window.bajiaoEngine.state.settings.playbackSpeed), 1, 'engine 倍速应回到 1');
     assert.equal(playbackCalls.filter(c => c.op === 'speed').at(-1)?.value, 1, 'native 应收到 1');
     assert.equal(await page.locator('#speedBtnVal').textContent(), '1x', '控制栏倍速签应回到 1x');
     await page.locator('.vc-dialog button[data-act="closespeed"]').click();

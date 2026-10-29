@@ -23,20 +23,20 @@ const V=require('../app/src/main/assets/core.js');
   await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionRetries').inputValue(),'3');assert.equal(await page.locator('[data-dd="retries"]').count(),0);
   for(const value of ['','-1','1.5','1e2','文字','Infinity','9007199254740993']){
-   await page.locator('#productionRetries').fill(value);await act('saveproductionsettings');
-   assert.match(await page.locator('#production-setting-error').textContent(),/非负整数/);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3);
+   await page.locator('#productionRetries').fill(value);await act('settingssave');
+   assert.match(await page.locator('#error-productionRetries').textContent(),/非负整数/);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3);
    assert.equal(await page.locator('#productionRetries').getAttribute('aria-invalid'),'true');
   }
   for(const value of ['0','12','3']){
    await page.locator('#productionRetries').fill(value);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3,'draft has no effect until save');
-   await act('saveproductionsettings');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),Number(value));
-   if(value!=='3'){await page.locator('#productionRetries').fill('3');await act('saveproductionsettings');}
+   if(value==='3')assert(await page.locator('[data-act="settingssave"]').isDisabled(),'unchanged draft cannot save');else await act('settingssave');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),Number(value));
+   if(value!=='3'){await page.locator('#productionRetries').fill('3');await act('settingssave');}
   }
-  await page.locator('#productionRetries').fill('8');await act('qualitychoice:manual');assert.equal(await page.locator('#productionRetries').inputValue(),'8');await act('back');await page.getByRole('dialog').waitFor();await page.locator('[data-result="discard"]').click();
+  await page.locator('#productionRetries').fill('8');await act('settingspick:qualityMode');await page.locator('.settings-picker').getByRole('button',{name:'人工处理',exact:true}).click();assert.equal(await page.locator('#productionRetries').inputValue(),'8');await act('back');await page.getByRole('dialog').waitFor();await page.locator('[data-result="discard"]').click();
   assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3);checks.push('default 3; invalid values rejected; 0 and counts above 3 saved; unsaved input survives rendering and discard');
-  await act('go:quality');await page.locator('#productionRetries').fill('7');await act('saveproductionsettings');await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionRetries').inputValue(),'7');
+  await act('go:quality');await page.locator('#productionRetries').fill('7');await act('settingssave');await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionRetries').inputValue(),'7');
   for(const width of [320,393,768]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await shot('settings-'+width);}
-  await page.locator('#productionRetries').fill('3');await act('saveproductionsettings');await act('back');await act('go:tasks');
+  await page.locator('#productionRetries').fill('3');await act('settingssave');await act('back');await act('go:tasks');
   await page.evaluate(async()=>{
    const e=window.bajiaoEngine,b=await e.addBook('调用失败提示测试','甲。乙。'),c=b.chapters[0];c.segments=Bajiao.units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));c.segments[0].audio='saved.wav';e.touch(c);e.state.settings.ttsParallel=1;
    window.retryCalls=0;window.retryFail=true;window.retryWaits=[];

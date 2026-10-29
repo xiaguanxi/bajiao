@@ -4,7 +4,7 @@ android {
     // encrypted credentials and launcher shortcuts survive the 芭蕉 rename.
     namespace 'com.vocast.app'
     compileSdk 35
-    defaultConfig { applicationId 'com.vocast.app'; minSdk 26; targetSdk 35; versionCode 97; versionName '0.8.27'; testInstrumentationRunner 'com.vocast.app.NotificationTestRunner' }
+    defaultConfig { applicationId 'com.vocast.app'; minSdk 26; targetSdk 35; versionCode 99; versionName '0.8.29'; testInstrumentationRunner 'com.vocast.app.NotificationTestRunner' }
     buildTypes { debug { debuggable true }; release { minifyEnabled false } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }

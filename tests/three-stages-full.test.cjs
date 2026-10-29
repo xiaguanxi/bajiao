@@ -19,9 +19,9 @@ assert(coreCode.includes('computeSegmentTimestamps'), 'core.js must have compute
 
 assert(appCode.includes('vc-transcript-panel'), 'app.js must render vc-transcript-panel');
 assert(appCode.includes('seekseg:'), 'app.js must handle seekseg');
-assert(appCode.includes('setkeepcount'), 'app.js must support setkeepcount');
+assert(require('../app/src/main/assets/settings-model.js').PAGE_KEYS.storagepolicy.includes('keepRecentCount'), 'storage policy retains configurable recent chapters');
 // Export filename behavior is checked through the native picker; no fixed branding prefix is required.
-assert(appCode.includes('STORAGE DASHBOARD'), 'app.js must include storage dashboard');
+assert(appCode.includes("top('管理音频')"), 'app.js must include audio management');
 assert(appCode.includes('vc-storage-bar'), 'app.js must include storage bar');
 assert(appCode.includes('batchModalBookId'), 'app.js must handle batch modal');
 

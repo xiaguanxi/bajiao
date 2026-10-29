@@ -21,5 +21,5 @@ test('app.js background and auto-produce upcoming logic', async (t) => {
 
   // 4. 验证 UI 开关与 Banner 渲染
   assert.ok(appJs.includes('vc-listening-prod-banner'), 'listening banner included in player');
-  assert.ok(appJs.includes('toggleautoproduce'), 'toggleautoproduce action supported');
+  assert.ok(appJs.includes("go('playbackpolicy')"), 'listening shortcut opens the shared playback settings draft');
 });

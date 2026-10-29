@@ -63,10 +63,10 @@ test('an empty filtered catalog continues into automatic design and production',
  let designs=0;e.design=async description=>{designs++;return {id:'new-design',description,sample:'new-reference.wav',enabled:true};};e.synthesize=async(_,id)=>{assert.equal(id,'new-design');return {id:'finished-line.wav'};};e.io.mergeAudio=async()=>({id:'finished-chapter.wav'});
  await e.enqueue(b.id,[c.id]);assert.equal(designs,1);assert.equal(b.characters[1].voice,'new-design');assert.equal(e.state.tasks[0].status,'done');assert.equal(c.audio,'finished-chapter.wav');
 });
-test('filtered presets obey the same demographics and usePresets policy',async()=>{
- const {e,b}=await fixture();e.state.voices=[];e.state.settings.usePresets=true;let matches=0;
- e.llm=async(prompt,options)=>{if(options.task==='voice-targets')return {targets:[{name:'林晚',gender:'f',age:'young'}]};matches++;assert.deepEqual(matchFrom(prompt).voices.map(v=>v.id),['preset:冰糖']);return {matches:[{name:'林晚',voiceId:'preset:冰糖'}]};};
- await e.matchCharacters(b.id,['林晚']);assert.equal(b.characters[1].voice,'preset:冰糖');assert.equal(matches,1);
+for(const [age,label,preset] of [['young','青年','冰糖'],['middle','中年','茉莉']])test('filtered presets obey demographics and usePresets policy: '+preset,async()=>{
+ const {e,b}=await fixture([{name:'林晚',description:label+'女性'}]);e.state.voices=[];e.state.settings.usePresets=true;let matches=0;
+ e.llm=async(prompt,options)=>{if(options.task==='voice-targets')return {targets:[{name:'林晚',gender:'f',age}]};matches++;assert.deepEqual(matchFrom(prompt).voices.map(v=>v.id),['preset:'+preset]);return {matches:[{name:'林晚',voiceId:'preset:'+preset}]};};
+ await e.matchCharacters(b.id,['林晚']);assert.equal(b.characters[1].voice,'preset:'+preset);assert.equal(matches,1);
  b.characters[1].voice=null;e.state.settings.usePresets=false;e.llm=async()=>{throw Error('empty library must not call LLM');};await e.matchCharacters(b.id,['林晚']);
 });
 for(const [name,reply] of [

@@ -34,5 +34,5 @@ test('defaults require valid protagonist evidence and never overwrite saved bind
  e.recordLeadRoles(b,c,[{name:'沈砚',storyRole:'maleLead',roleEvidence:'沈砚和林晚'},{name:'林晚',storyRole:'femaleLead',roleEvidence:'原文没有此句'},{name:'周叔',storyRole:'maleLead',roleEvidence:'周叔'}]);
  assert.equal(b.presetLeadVoices.maleLead,'沈砚');assert.equal(b.presetLeadVoices.femaleLead,null);await e.matchCharacters(b.id,['沈砚']);assert.equal(b.characters[1].voice,'custom');
  delete b.presetLeadVoices;e.recordLeadRoles(b,c,[{name:'林晚',storyRole:'femaleLead',roleEvidence:'林晚'}]);assert.equal(b.characters[2].storyRole,undefined);assert.equal(e.defaultLeadVoice(b,b.characters[2]),null);
- assert.equal(V.presetDesc('冰糖'),'中文青年女性');assert.equal(V.presetDesc('茉莉'),'中文成熟女性');assert.equal(V.presetDesc('苏打'),'中文青年男性');assert.equal(V.presetDesc('白桦'),'中文中年男性');
+ assert.equal(V.presetDesc('冰糖'),'中文青年女性');assert.equal(V.presetDesc('茉莉'),'中文中年女性');assert.equal(V.presetDesc('苏打'),'中文青年男性');assert.equal(V.presetDesc('白桦'),'中文中年男性');
 });

@@ -38,6 +38,7 @@ test('settings switches render as full pill switches without shrinking to dots o
     headless: true,
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
   });
+  try {
   const page = await browser.newPage({ viewport: { width: 393, height: 873 } });
 
   await page.exposeFunction('nativeCall', async (id, action) => {
@@ -88,20 +89,19 @@ test('settings switches render as full pill switches without shrinking to dots o
   assert.equal(presetBox.width, 48, 'presetSwitch width must be 48px');
   assert.equal(presetBox.height, 28, 'presetSwitch height must be 28px');
 
-  // 3. Check storage switches
+  // 3. Check storage policy switch uses the same complete switch geometry.
   await page.locator('[data-act="back"]').click();
   await page.waitForTimeout(200);
-  await page.locator('[data-act="go:storage"]').click();
+  await page.locator('[data-act="go:storagepolicy"]').click();
   await page.waitForTimeout(200);
 
-  const autoProduceBtn = page.locator('[data-act="toggleautoproduce"]');
-  const btnBox = await autoProduceBtn.boundingBox();
-  const knobBox = await autoProduceBtn.locator('.vc-switch-knob').boundingBox();
-
-  // Knob must be within the button boundary (no overflow)
-  assert(knobBox.x >= btnBox.x, 'knob must start inside switch');
-  assert(knobBox.x + knobBox.width <= btnBox.x + btnBox.width + 1, 'knob must end inside switch');
-
+  const storageSwitch = page.locator('#setting-autoDeletePlayed');
+  const btnBox = await storageSwitch.boundingBox();
+  assert.equal(btnBox.width, 48);
+  assert.equal(btnBox.height, 28);
+  assert(btnBox.x >= 0 && btnBox.x + btnBox.width <= 393, 'switch remains inside viewport');
+  } finally {
   await browser.close();
   server.close();
+  }
 });

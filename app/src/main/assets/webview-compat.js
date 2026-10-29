@@ -1,6 +1,7 @@
 // Older Android installations may retain their factory WebView after an APK update.
 (()=>{
  'use strict';
+ if(!Object.hasOwn)Object.hasOwn=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
  if(!('CSSLayerBlockRule' in window)){
   const layout=document.createElement('link');layout.rel='stylesheet';layout.href='layout-compat.css';
   document.head.insertBefore(layout,document.head.querySelector('link[rel=stylesheet]'));

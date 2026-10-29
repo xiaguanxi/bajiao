@@ -187,19 +187,6 @@ function productionIssueHtml(s){
  return `<div class="vc-production-issue-detail"><p class="vc-sub">${E(reason)}</p><div class="vc-issue-actions">${action}</div></div>`;
 }
 function readingIssues(){return (chapter().segments||[]).filter(s=>!s.skip&&!s.isAd&&s.speaker!=='广告'&&(s.retryError||s.qualityStatus==='pending'&&!s.audio||needsSpeakerConfirmation(s)||needsVoiceConfirmation(s)||needsProductionResume(s)));}
-function readerSettingsHtml(){
- const s=engine.state.settings,font=Number(s.readerFontSize)||16,line=Number(s.readerLineHeight)||1.6;
- const option=(label,action,active)=>`<button type="button" class="vc-reading-option${active?' selected':''}" data-act="${action}" aria-pressed="${active}">${label}</button>`;
- return `<div class="vc-reading-settings"><p class="vc-reading-intro">先预览字号与行距，完成后应用到正文。</p><section><h4>字号 <span id="reader-font-value">${font} px</span></h4><div class="vc-reading-options font-options">${[16,18,20,22,24].map(n=>option(n,'readerfont:'+n,font===n)).join('')}</div></section><section><h4>行距</h4><div class="vc-reading-options">${[[1.6,'紧凑'],[1.9,'适中'],[2.2,'宽松']].map(([n,label])=>option(label,'readerline:'+n,line===n)).join('')}</div></section><div class="vc-reading-preview" style="--sample-font:${font}px;--sample-line:${line}"><small>阅读示例</small><p>雨停了，山雾渐散。翻过一页，故事仍在继续。</p></div></div>`;
-}
-function syncReadingSettings(){
- const root=document.querySelector('.vc-reading-settings');if(!root)return;
- const font=Number(engine.state.settings.readerFontSize)||16,line=Number(engine.state.settings.readerLineHeight)||1.6;
- root.querySelector('#reader-font-value').textContent=font+' px';
- root.querySelector('.vc-reading-preview').style.setProperty('--sample-font',font+'px');
- root.querySelector('.vc-reading-preview').style.setProperty('--sample-line',line);
- for(const button of root.querySelectorAll('[data-act]')){const [action,value]=button.dataset.act.split(':'),selected=Number(value)===(action==='readerfont'?font:line);button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));}
-}
 function focusReadingSegment(id){
  const row=Array.from(document.querySelectorAll('[data-seg]')).find(el=>el.dataset.seg===String(id));if(!row)return false;
  row.scrollIntoView({block:'center',behavior:'instant'});
@@ -641,7 +628,7 @@ function loadRoleProfiles(force=false){
  engine.ensureCharacterProfiles(bid).then(count=>roleProfileMessages.set(bid,count?'已根据原文补全 '+count+' 个角色的资料。':'现有原文证据不足，暂未补全更多资料。')).catch(e=>roleProfileMessages.set(bid,'资料补全未完成：'+cleanErr(e)+'。可重试。')).finally(()=>{if(page==='roles'&&bookId===bid)render();});
  queueMicrotask(()=>{if(page==='roles'&&bookId===bid)render();});
 }
-function nav(){const pend=pendingConfirm();const active=['shelf','detail','splitpreview','roles','choose','make','editseg'].includes(page)?'shelf':['voices','voiceimport','voicedetail','design'].includes(page)?'voices':['tasks','task'].includes(page)?'tasks':'settings';return `<nav class="vc-nav" aria-label="主导航">${[['shelf','library','书架'],['voices','audio-lines','音色'],['tasks','list-checks','制作'],['settings','user-round','我的']].map(([p,i,t])=>`<button class="${active===p?'active':''}" ${active===p?'aria-current="true"':''} data-act="go:${p}">${I(i)}${t}${p==='tasks'&&pend>0?`<span class="vc-nav-badge">${pend>99?'99+':pend}</span>`:''}</button>`).join('')}</nav>`;}
+function nav(){const pend=pendingConfirm();const active=['shelf','detail','splitpreview','roles','choose','make','editseg'].includes(page)?'shelf':['voices','voiceimport','voicedetail','design'].includes(page)?'voices':['tasks','task'].includes(page)?'tasks':'settings';return `<nav class="vc-nav" aria-label="主导航">${[['shelf','library','书架'],['voices','audio-lines','音色'],['tasks','list-checks','制作'],['settings','settings-2','设置']].map(([p,i,t])=>`<button class="${active===p?'active':''}" ${active===p?'aria-current="true"':''} data-act="go:${p}">${I(i)}${t}${p==='tasks'&&pend>0?`<span class="vc-nav-badge">${pend>99?'99+':pend}</span>`:''}</button>`).join('')}</nav>`;}
 function modebar(){return `<nav class="vc-nav vc-modebar" aria-label="阅读模式">${[['raw','原文'],['annotated','标注'],['listen','听书']].map(([p,n])=>`<button class="${page===p?'active':''}" data-act="go:${p}">${n}</button>`).join('')}</nav>`;}
 function fitMarquee(){try{document.querySelectorAll('.vc-marquee').forEach(el=>{const over=el.scrollWidth>el.clientWidth+4;el.classList.toggle('scroll',over);if(over)el.style.setProperty('--mq',(-(el.scrollWidth-el.clientWidth))+'px');});}catch(e){}}
 let footerObserver=null,lastRenderedContext='',modalSession=null;
@@ -719,8 +706,8 @@ function loadListenTranscript(){
     if(page==='listen'&&bookId===bid&&chapterId===cid)toast('章节读取失败：'+(e.message||e));
   }).finally(()=>listenChapterLoads.delete(key));
 }
-const hasModal=()=>!!(segmentPanel||uxDialog||playerCatalogOpen||episodeModalOpen||deleteConfirmBookId||deleteConfirmShelf||batchModalBookId||openDropdown||speedModalOpen||sleepModalOpen||listenSettingsOpen||bookInfoOpen||unmadeChoiceChapterId);
-function resetModalFlags(){segmentPanel=null;playerCatalogOpen=false;uxDialog=null;episodeModalOpen=false;deleteConfirmBookId=null;deleteConfirmShelf=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;sleepModalOpen=false;sleepCustomOpen=false;listenSettingsOpen=false;bookInfoOpen=false;unmadeChoiceChapterId=null;}
+const hasModal=()=>!!(segmentPanel||uxDialog||playerCatalogOpen||episodeModalOpen||deleteConfirmBookId||deleteConfirmShelf||batchModalBookId||openDropdown||speedModalOpen||sleepModalOpen||bookInfoOpen||unmadeChoiceChapterId);
+function resetModalFlags(){segmentPanel=null;playerCatalogOpen=false;uxDialog=null;episodeModalOpen=false;deleteConfirmBookId=null;deleteConfirmShelf=null;batchModalBookId=null;openDropdown=null;speedModalOpen=false;sleepModalOpen=false;sleepCustomOpen=false;bookInfoOpen=false;unmadeChoiceChapterId=null;}
 function closeActiveModal(){if(productionDialogClose){productionDialogClose('cancel');return true;}if(!hasModal())return false;resetModalFlags();render();return true;}
 function syncFooterLayout(){
   if(footerObserver)footerObserver.disconnect();
@@ -873,7 +860,7 @@ if(page==='listen'){
   const nextCh=chIdx>=0&&chIdx<chapters.length-1?chapters[chIdx+1]:null;
   const hasPrev=!!(prevCh&&playablePrefix(prevCh).length);
   const hasNext=!!(nextCh&&playablePrefix(nextCh).length);
-  const curSpeed=engine?.state?.playbackSpeed||1;
+  const curSpeed=engine?.state?.settings?.playbackSpeed||1;
 
   const activeProdTask = engine?.state.tasks.find(t => t.status === "running");
   let prodBanner = "";
@@ -941,10 +928,10 @@ case 'storage':{
   const listPct = totalBytes > 0 ? Math.round((listenedBytes / totalBytes) * 100) : 0;
   const unlistPct = totalBytes > 0 ? Math.round((unlistenedBytes / totalBytes) * 100) : 0;
   const otherPct = Math.max(0, 100 - listPct - unlistPct);
-  h = top('存储与有声书管理') + `
+  h = top('管理音频') + `
     <div class="vc-panel">
       <div class="vc-row" style="margin-bottom: 8px;">
-        <span class="vc-kicker">STORAGE DASHBOARD</span>
+        <span class="vc-kicker">音频占用</span>
         <button class="vc-btn secondary" style="padding: 4px 10px; font-size: 0.8rem;" data-act="refreshstorage">${I('refresh-cw')} 刷新空间</button>
       </div>
       <div class="vc-storage-ratio-card">
@@ -963,30 +950,9 @@ case 'storage':{
           <span><span class="vc-dot other"></span>核心/其他数据</span>
         </div>
       </div>
-      <div class="vc-action-item">
-        <div class="vc-action-info">
-          <strong>完播自动释放音频</strong>
-          <small style="color:var(--vc-sub);">单章听完后自动释放对应音频文件，保留文本与角色设计</small>
-        </div>
-        <button class="vc-switch${engine.state.settings.autoDeletePlayed ? ' on' : ''}" role="switch" aria-checked="${engine.state.settings.autoDeletePlayed ? 'true' : 'false'}" aria-label="完播自动释放音频" data-act="toggleautodelete"><span class="vc-switch-knob"></span></button>
-      </div>
-      <div class="vc-action-item">
-        <div class="vc-action-info">
-          <strong>完播自动释放音频时保留章节</strong>
-          <small style="color:var(--vc-sub);">完播或切章自删时，保留最近听过的章节缓存供回听</small>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%">${(()=>{const kn=Math.max(0,Number(engine.state.settings.keepRecentCount ?? 2)||0);return [0,1,2,3].map(n=>`<button class="vc-link-tag${kn===n?' active':''}" style="justify-content:center" data-act="setkeepcount:${n}">${n===0?'不保留':'保留'+n+'章'}</button>`).join('');})()}</div>
-      </div>
-      <div class="vc-action-item">
-        <div class="vc-action-info">
-          <strong>听书时自动预制作（边听边做）</strong>
-          <small style="color:var(--vc-sub);">播放当前章节时，后台自动预先制作后续 1~2 章，享受无缝连听</small>
-        </div>
-        <button class="vc-switch${engine.state.settings?.autoProduceUpcoming !== false ? ' on' : ''}" role="switch" aria-checked="${engine.state.settings?.autoProduceUpcoming !== false ? 'true' : 'false'}" aria-label="听书时自动预制作" data-act="toggleautoproduce"><span class="vc-switch-knob"></span></button>
-      </div>
     </div>
     <div class="vc-panel">
-      <span class="vc-kicker">ONE-TAP CLEANUP</span>
+      <h3>手动清理</h3>
       <div class="vc-action-item">
         <div class="vc-action-info">
           <strong>释放全部已听完章节音频</strong>
@@ -1067,7 +1033,7 @@ if(unmadeChoiceChapterId){const __uc=book()?.chapters?.find(ch=>ch.id===unmadeCh
   modalHtml+=`<div class="vc-modal-overlay" data-act="closeunmade"><div class="vc-dialog"><h3>${E(__uc?.title||'未制作章节')}</h3><p class="vc-sub">${__producing?'当前章节正在制作中'+(__task.status==='queued'?'，正在排队等待。':'。')+'你可以阅读原文，或边做边听。':'本章还没有音频，你想怎么开始？'}</p><div class="vc-stack" style="margin-top:12px">${B(I('book-open')+' 阅读原文','readraw')}${__producing?'':B(I('wand-sparkles')+' 制作有声书','makechapter')}${B(I('headphones')+' 边做边听','makeandlisten',true)}</div></div></div>`;
 }
 if(speedModalOpen){
- const spd=engine.state.playbackSpeed||1,ticks=[.5,1,1.5,2,2.5,3];
+ const spd=engine.state.settings.playbackSpeed||1,ticks=[.5,1,1.5,2,2.5,3];
  modalHtml+=`<div class="vc-modal-overlay vc-player-sheet-overlay" data-act="closespeed"><div class="vc-dialog vc-player-sheet vc-speed-sheet" data-theme="light"><div class="vc-sheet-heading"><button class="vc-icon vc-sheet-close" data-act="closespeed" aria-label="关闭语速设置">${I('x')}</button><h3>语速 <span id="speedVal">${spd}x</span></h3></div><div class="vc-speed-slider"><input type="range" id="speedRange" class="vc-speed-range" min="0.5" max="3" step="0.05" value="${spd}" aria-label="播放语速"><span class="vc-speed-bubble" id="speedBubble" aria-hidden="true">${spd}x</span></div><div class="vc-speed-ticks">${ticks.map(t=>`<button class="vc-tick" data-act="setspeed:${t}">${t}x</button>`).join('')}</div><div class="vc-speed-directions"><span>慢</span><span>快</span></div></div></div>`;
 }
 if(sleepModalOpen){
@@ -1146,7 +1112,7 @@ if (deleteConfirmBookId) {
 }
 modalHtml+=segmentPanelHtml();
 let __keepTop=null;try{const __p=document.getElementById('transcriptPanel');if(page==='listen'&&__p)__keepTop=__p.scrollTop;}catch(__e){}
-updateScreen(`<main data-page="${E(page)}" data-theme="light" class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${page==='splitpreview'?'':['raw','annotated','listen','editseg'].includes(page)?modebar():nav()}${modalHtml}`,context);for(const f of formDraft){const el=document.getElementById(f.id);if(el){if(f.preserveValue)el.value=f.value;if(el.type==='checkbox')el.checked=f.checked;if(f.focused){el.focus({preventScroll:true});if(f.start!=null&&el.setSelectionRange)try{el.setSelectionRange(f.start,f.end);}catch(e){}}}}syncModalUI();const panelBody=document.getElementById('segment-panel-scroll');if(panelBody&&segmentPanel)panelBody.scrollTop=segmentPanel.scroll||0;syncFooterLayout();enhanceRendered();lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
+updateScreen(`<main data-page="${E(page)}" data-theme="light" class="vc-main ${miniHtml ? 'with-mini-player' : ''}${page==='listen' ? ' vc-main-listen' : ''}">${h}</main>${miniHtml}${page==='splitpreview'?'':['raw','annotated','listen','editseg'].includes(page)?modebar():nav()}${modalHtml}`,context);for(const f of formDraft){const el=document.getElementById(f.id);if(el){if(f.preserveValue)el.value=f.value;if(el.type==='checkbox'&&!el.hasAttribute('data-setting'))el.checked=f.checked;if(f.focused){el.focus({preventScroll:true});if(f.start!=null&&el.setSelectionRange)try{el.setSelectionRange(f.start,f.end);}catch(e){}}}}syncModalUI();const panelBody=document.getElementById('segment-panel-scroll');if(panelBody&&segmentPanel)panelBody.scrollTop=segmentPanel.scroll||0;syncFooterLayout();enhanceRendered();lucide.createIcons({attrs:{width:20,height:20}});try{fitMarquee();}catch(e){}
 try{if(pendingSeg!=null){const target=pendingSeg;pendingSeg=null;focusReadingSegment(target);}}catch(__e){}
 // 从听书切入原文/标注：按播放进度跳到对应行（等布局完再滚）
 try{if(window.__jumpToPos!=null&&(page==='raw'||page==='annotated')&&bookId&&chapterId){const __pos=window.__jumpToPos;window.__jumpToPos=null;
@@ -1310,7 +1276,7 @@ async function playStreamSeg(bid,cid,segIdx,offsetMs=0,options={}){
   const idx=b.chapters.indexOf(c);
   playbackRevision++;lastSeekTime=0;miniPlayingState={id:seg.audio,position,playing:false};
   if(page==='listen'&&bookId===bid&&chapterId===cid){render();syncDisplayedPlayback(miniPlayingState,true);}
-  await device.call('play',{bookId:bid,chapterId:cid,segmentId:seg.id,positionBase:doneBefore,...mediaProgress,previousAudio:options.previousAudio||'',pauseMs:options.pauseMs||0,id:seg.audio,title:c.title,bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · 芭蕉',duration:Math.round((seg.durMs||0)),position,startPaused:!playing,speed:engine?.state?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
+  await device.call('play',{bookId:bid,chapterId:cid,segmentId:seg.id,positionBase:doneBefore,...mediaProgress,previousAudio:options.previousAudio||'',pauseMs:options.pauseMs||0,id:seg.audio,title:c.title,bookTitle:b.name,artist:(b.author?b.author+' 著 · ':'')+'边做边听 · 芭蕉',duration:Math.round((seg.durMs||0)),position,startPaused:!playing,speed:engine?.state?.settings?.playbackSpeed||1.0,hasPrev:!!b.chapters[idx-1]?.audio,hasNext:false,coverPath:b.cover||''});
   playingId=seg.audio;playingBookId=bid;playingChapterId=cid;
   if(playing)playbackPrompts?.warm(bid,['waiting',...(idx===b.chapters.length-1?['finished']:[])]);
   engine?.updatePlaybackProgress(bid,cid,doneBefore+position,0,false,{audioId:seg.audio,segmentId:seg.id,offsetMs:position}).catch(()=>{});
@@ -1372,7 +1338,7 @@ async function playCurrentChapter(bid=bookId,cid=chapterId,resumePos=null,option
     duration: Math.round((c.duration||0)*1000),
     position: pos,
     startPaused:!!options.startPaused,
-    speed: engine?.state?.playbackSpeed || 1.0,
+    speed: engine?.state?.settings?.playbackSpeed || 1.0,
     hasPrev: !!(b.chapters[idx-1]&&playablePrefix(b.chapters[idx-1]).length),
     hasNext: !!(b.chapters[idx+1]&&playablePrefix(b.chapters[idx+1]).length),
     coverPath: b.cover||''
@@ -1417,7 +1383,7 @@ function syncDisplayedPlayback(p,forceFollow=false){
   if(syncKey!==window.__syncListenKey){window.__syncListenKey=syncKey;lastActiveStart='';listenUserHoldUntil=0;}
   let pos = p.position || 0;
   if (lastSeekTime && Date.now() - lastSeekTime < 1500) {
-    const expected=lastSeekPos+(p.playing?(Date.now()-lastSeekTime)*(engine?.state?.playbackSpeed||1):0);
+    const expected=lastSeekPos+(p.playing?(Date.now()-lastSeekTime)*(engine?.state?.settings?.playbackSpeed||1):0);
     // Ignore an obsolete native position only until the seek is acknowledged;
     // short sentences must keep advancing immediately after a seek.
     if(Math.abs(pos-expected)>500)pos=lastSeekPos;else lastSeekTime=0;
@@ -1450,7 +1416,7 @@ function syncDisplayedPlayback(p,forceFollow=false){
   }
   const btn=$('#playBtn'),isPlay=active&&playbackIsActive(p);if(btn)btn.setAttribute('aria-label',isPlay?'暂停':'播放');
   if(btn&&btn.dataset.playing!==String(isPlay)){btn.dataset.playing=String(isPlay);btn.innerHTML=`${I(isPlay?'pause':'play')}`;lucide.createIcons({attrs:{width:20,height:20}});}
-  const curSpeed = engine?.state?.playbackSpeed || 1;
+  const curSpeed = engine?.state?.settings?.playbackSpeed || 1;
   if(document.activeElement!==$('#speedRange'))syncSpeedUI(curSpeed);
   const panel = document.getElementById('transcriptPanel');
   if (panel) {
@@ -1528,7 +1494,7 @@ function syncDisplayedPlayback(p,forceFollow=false){
     }else if(existingBanner){existingBanner.remove();}
   }catch(bannerErr){}
 }
-async function applySpeed(sp){if(!Number.isFinite(sp)||sp<.5||sp>3){toast('语速范围为 0.5–3 倍');return;}engine.state.playbackSpeed=sp;await engine.persist();await device.call('playback',{op:'speed',value:sp});syncSpeedUI(sp);toast('已设置 '+sp+'x 倍速');}
+async function applySpeed(sp){if(!Number.isFinite(sp)||sp<.5||sp>3){toast('语速范围为 0.5–3 倍');return;}engine.state.settings.playbackSpeed=sp;await engine.persist();await device.call('playback',{op:'speed',value:sp});syncSpeedUI(sp);toast('已设置 '+sp+'x 倍速');}
 async function seekDisplayedChapter(op,value,delta=null){
   const bid=bookId,cid=chapterId,request=++seekRequest;
   const p=await device.call('playbackState');
@@ -1765,14 +1731,6 @@ if(a==='resumebook'){const [bid,cid]=x.split(':');bookId=bid;chapterId=cid;page=
 if(a==='resumechapter'){playerCatalogOpen=false;const c=book()?.chapters?.find(ch=>ch.id===x);if(c?.audio){chapterId=x;page='listen';render();await playCurrentChapter(bookId,x);return;}const existing=engine.state.tasks.find(t=>t.bookId===bookId&&t.chapterId===x&&!['done','cancelled'].includes(t.status));const job=existing?engine.resume(existing.id):engine.enqueue(bookId,[x]);job.catch(e=>toast(e.message));toast('已开始制作');go('detail');return;}
 if(a==='setspeed'){await applySpeed(parseFloat(x));return;}
 
-if(a==="toggleautoproduce"){
-if(!engine.state.settings)engine.state.settings={};
-engine.state.settings.autoProduceUpcoming=engine.state.settings.autoProduceUpcoming===false?true:false;
-await engine.persist();
-toast("听书自动预制: "+(engine.state.settings.autoProduceUpcoming?"已开启":"已关闭"));
-render();return;}
-if(a==='toggleautodelete'){if(engine.state.settings.autoDeletePlayed){engine.state.settings.autoDeletePlayed=false;await engine.persist();render();}else{uxDialog={title:'开启完播自动释放？',html:'<p>完播或切换章节时，将删除保留范围外的已听音频。原文与标注保留，但重制会重新请求服务。</p><p>当前保留 '+engine.state.settings.keepRecentCount+' 个已完播章节。</p>',confirm:async()=>{engine.state.settings.autoDeletePlayed=true;await engine.persist();}};render();}return;}
-
 if(a==='seekseg'){
   const targetMs=parseInt(x,10)||0;
   await seekDisplayedChapter('seek',targetMs);
@@ -1897,11 +1855,8 @@ if(a==='confirmsplit'){
 if(a==='cancelsplit'){if(!importDraft?.importing)leaveImport();return;}
 if(a==='speedmodal'){resetModalFlags();speedModalOpen=true;render();return;}
 if(a==='closespeed'){speedModalOpen=false;render();return;}
-if(a==='autoproducesettings'){resetModalFlags();listenSettingsOpen='produce';render();return;}
-if(a==='listensettings'){resetModalFlags();listenSettingsOpen='release';render();return;}
-if(a==='closesettings'){listenSettingsOpen=false;render();return;}
-if(a==='setkeepcount'){const n=Math.max(0,Math.min(3,parseInt(x,10)));if(!isNaN(n)){engine.state.settings.keepRecentCount=n;await engine.persist();}render();return;}
-if(a==='setproducecount'){const n=Math.min(3,Math.max(1,parseInt(x,10)));if(!isNaN(n)){engine.state.settings.autoProduceCount=n;await engine.persist();}render();return;}
+if(a==='autoproducesettings'){go('playbackpolicy');return;}
+if(a==='listensettings'){go('storagepolicy');return;}
 if(a==='editbookinfo'){resetModalFlags();pendingCoverColor=null;bookInfoOpen=true;render();return;}
 if(a==='closebookinfo'){bookInfoOpen=false;render();return;}
 if(a==='pickcover'){
@@ -2075,7 +2030,7 @@ async function continueProductionPlayback(){
     }
   }catch(e){}finally{productionPlaybackBusy=false;}
 }
-device.call('load').then(result=>{configured=result;engine=new Bajiao.Engine(device,result.state);engine.restorePlaybackCheckpoint(result.playbackCheckpoint);window.bajiaoEngine=engine;queueMicrotask(()=>engine.refreshProductionNetwork().catch(()=>{}));window.renderApp=render;playbackPrompts=new BajiaoPlaybackPrompts.Controller({engine,call:(...args)=>device.call(...args),canSynthesize:()=>!!configured.ttsConfigured,isCurrent:item=>playingBookId===item.bid&&playingChapterId===item.cid&&playingId===item.audioId&&(item.kind==='waiting'?(!!streamState?.waiting&&!streamState.autoResumePaused||!!waitingForNextChapterId&&!waitingForNextChapterPaused):!streamState&&!waitingForNextChapterId&&engine.state.books.find(b=>b.id===item.bid)?.chapters.at(-1)?.id===item.cid)});window.__applyInitialNav=(nav)=>{try{if(nav!=='tasks_attention'||!engine)return;const hasPend=engine.state.tasks.some(t=>t.status==='waiting'||t.status==='failed');taskTab=engine.state.tasks.some(t=>t.status==='waiting')?'attention':engine.state.tasks.some(t=>t.status==='failed')?'failed':'active';if(page==='tasks')render();else go('tasks');}catch(__e){}};if(result&&result.initialNav)window.__applyInitialNav(result.initialNav);const lastStatus=new Map(engine.state.tasks.map(t=>[t.id,t.status]));
+device.call('load').then(result=>{configured=result;engine=new Bajiao.Engine(device,result.state);engine.restorePlaybackCheckpoint(result.playbackCheckpoint);window.bajiaoEngine=engine;initializeSettings();queueMicrotask(()=>engine.refreshProductionNetwork().catch(()=>{}));window.renderApp=render;playbackPrompts=new BajiaoPlaybackPrompts.Controller({engine,call:(...args)=>device.call(...args),canSynthesize:()=>!!configured.ttsConfigured,isCurrent:item=>playingBookId===item.bid&&playingChapterId===item.cid&&playingId===item.audioId&&(item.kind==='waiting'?(!!streamState?.waiting&&!streamState.autoResumePaused||!!waitingForNextChapterId&&!waitingForNextChapterPaused):!streamState&&!waitingForNextChapterId&&engine.state.books.find(b=>b.id===item.bid)?.chapters.at(-1)?.id===item.cid)});window.__applyInitialNav=(nav)=>{try{if(nav!=='tasks_attention'||!engine)return;const hasPend=engine.state.tasks.some(t=>t.status==='waiting'||t.status==='failed');taskTab=engine.state.tasks.some(t=>t.status==='waiting')?'attention':engine.state.tasks.some(t=>t.status==='failed')?'failed':'active';if(page==='tasks')render();else go('tasks');}catch(__e){}};if(result&&result.initialNav)window.__applyInitialNav(result.initialNav);const lastStatus=new Map(engine.state.tasks.map(t=>[t.id,t.status]));
 // 恢复中断与网络重试的检查点，用户暂停保持不变。
 engine.recoverProduction().catch(()=>{});
 

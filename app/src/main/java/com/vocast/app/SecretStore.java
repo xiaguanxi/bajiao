@@ -31,6 +31,9 @@ final class SecretStore {
     }
     synchronized void save(JSONObject update) throws Exception {
         JSONObject all=read();for(String k:new String[]{"llmKey","ttsKey","llmBase"})if(update.has(k)&&!update.optString(k).isEmpty())all.put(k,update.getString(k));
+        replace(all);
+    }
+    synchronized void replace(JSONObject all) throws Exception {
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());String value=Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(all.toString().getBytes(StandardCharsets.UTF_8)),Base64.NO_WRAP);
         if(!context.getSharedPreferences("vault",0).edit().putString("credentials",value).commit())throw new Exception("密钥保存失败");
     }

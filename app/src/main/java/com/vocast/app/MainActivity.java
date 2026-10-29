@@ -76,16 +76,18 @@ public class MainActivity extends Activity {
     class Bridge {
         @JavascriptInterface public void call(String id,String action,String json){
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
-            ("request".equals(action)?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
+            (("request".equals(action)||"testModelConfiguration".equals(action))?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
                     case "networkState":result=productionNetworkState();break;
-                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
+                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}recoverModelSave(state);JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
                     case "decodeBook":{byte[] bytes=importBytes.get(p.getString("token"));if(bytes==null)throw new IOException("导入草稿已过期，请重新选择文件");String encoding=p.optString("encoding",BookImporter.encoding(bytes));if(!Arrays.asList("UTF-8","GB18030","UTF-16").contains(encoding))throw new IOException("请选择 UTF-8、GB18030 或 UTF-16");result=decodedBook(bytes,encoding);break;}
                     case "loadChapter":result=snapshots.loadChapter(p.getString("id"));break;
                     case "saveSnapshot":snapshots.save(p.getString("header"),p.getString("chapters"));result=true;break;
                     case "saveState":saveState(p.getString("text"));result=true;break;
                     case "saveCredentials":vault.save(p);result=true;break;
                     case "request":result=request(p);break;
+                    case "testModelConfiguration":result=testModelConfiguration(p);break;
+                    case "saveModelConfiguration":result=saveModelConfiguration(p);break;
                     case "saveRawAudio":result=audio.saveRaw(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
                     case "processSpeechAudio":result=audio.processSpeechAudio(p.getString("id"));break;
                     case "truncateRepeatedSpeech":result=audio.truncateRepeatedSpeech(p.getString("id"),p.getJSONObject("evidence"));break;
@@ -156,10 +158,44 @@ public class MainActivity extends Activity {
         }
     }
     private synchronized void saveState(String text) throws Exception {if(text.length()>16*1024*1024)throw new Exception("书库数据过大");new JSONObject(text);FileOutputStream out=null;try{out=store.startWrite();out.write(text.getBytes(StandardCharsets.UTF_8));store.finishWrite(out);}catch(Exception e){if(out!=null)store.failWrite(out);throw e;}}
-    private JSONObject request(JSONObject p) throws Exception {
-        String provider=p.getString("provider");JSONObject st=p.getJSONObject("settings"),body=p.getJSONObject("body"),keys=vault.read();boolean tts=provider.equals("tts");if(!tts&&!provider.equals("llm"))throw new Exception("无效模型类型");String base=tts?"https://api.xiaomimimo.com/v1":st.optString("llmBase","https://api.minimax.cn/v1").replaceAll("/+$","");URL baseUrl=new URL(base);if(!baseUrl.getProtocol().equals("https")||baseUrl.getUserInfo()!=null||baseUrl.getQuery()!=null||baseUrl.getRef()!=null)throw new Exception("模型地址必须是 HTTPS Base URL");String key=keys.optString(tts?"ttsKey":"llmKey");if(key.isEmpty())throw new Exception("请先配置"+(tts?"MiMo":"语言模型")+" API Key");if(!tts&&!base.equals(keys.optString("llmBase","https://api.minimax.cn/v1")))throw new Exception("模型地址已改变，请在配置页保存以确认密钥对应的服务");boolean anthropic=!tts&&st.optString("llmProtocol").equals("anthropic");String suffix=anthropic?(base.endsWith("/v1")?"/messages":"/v1/messages"):"/chat/completions";
-        HttpURLConnection conn=(HttpURLConnection)new URL(base+suffix).openConnection();conn.setInstanceFollowRedirects(false);conn.setRequestMethod("POST");conn.setConnectTimeout(30000);conn.setReadTimeout(240000);conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Authorization","Bearer "+key);if(anthropic){conn.setRequestProperty("x-api-key",key);conn.setRequestProperty("anthropic-version","2023-06-01");}
+    private JSONObject request(JSONObject p) throws Exception {return request(p,vault.read());}
+    private JSONObject request(JSONObject p,JSONObject keys) throws Exception {
+        String provider=p.getString("provider");JSONObject st=p.getJSONObject("settings"),body=p.getJSONObject("body");boolean tts=provider.equals("tts");if(!tts&&!provider.equals("llm"))throw new Exception("无效模型类型");String base=tts?"https://api.xiaomimimo.com/v1":st.optString("llmBase","https://api.minimax.cn/v1").replaceAll("/+$","");base=ModelSettings.base(base);String key=keys.optString(tts?"ttsKey":"llmKey");if(key.isEmpty())throw new Exception("请先配置"+(tts?"MiMo":"语言模型")+" API Key");if(!tts&&!base.equals(keys.optString("llmBase","https://api.minimax.cn/v1")))throw new Exception("模型地址已改变，请在配置页保存以确认密钥对应的服务");boolean anthropic=!tts&&st.optString("llmProtocol").equals("anthropic");String suffix=anthropic?(base.endsWith("/v1")?"/messages":"/v1/messages"):"/chat/completions";
+        HttpURLConnection conn=(HttpURLConnection)new URL(base+suffix).openConnection();conn.setInstanceFollowRedirects(false);conn.setRequestMethod("POST");conn.setConnectTimeout(ModelSettings.timeout(st,"connectTimeoutSeconds",30,5,120));conn.setReadTimeout(ModelSettings.timeout(st,"responseTimeoutSeconds",240,30,600));conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Authorization","Bearer "+key);if(anthropic){conn.setRequestProperty("x-api-key",key);conn.setRequestProperty("anthropic-version","2023-06-01");}
         try{byte[] raw=body.toString().getBytes(StandardCharsets.UTF_8);conn.setFixedLengthStreamingMode(raw.length);try(OutputStream out=conn.getOutputStream()){out.write(raw);}int code=conn.getResponseCode();InputStream in=code>=200&&code<300?conn.getInputStream():conn.getErrorStream();String response=in==null?"":new String(AudioFiles.read(in,40*1024*1024),StandardCharsets.UTF_8);if(code<200||code>=300){String message="HTTP "+code,serviceCode="";try{JSONObject err=new JSONObject(response),detail=err.optJSONObject("error"),baseResp=err.optJSONObject("base_resp");if(detail!=null){message=detail.optString("message",message);serviceCode=detail.optString("code","");}else if(baseResp!=null){message=baseResp.optString("status_msg",message);serviceCode=baseResp.optString("status_code","");}else{message=err.optString("message",message);serviceCode=err.optString("code","");}}catch(Exception ignored){}message=message.replace(key,"[已隐藏]");throw new HttpFailure(message,code,code==408||code==429||code>=500,serviceCode,retryAfter(conn.getHeaderField("Retry-After")));}return new JSONObject(response);}catch(SocketTimeoutException e){throw new HttpFailure("请求超时，已完成音频会保留",408,true);}catch(IOException e){if("文件超过允许大小".equals(e.getMessage())||e instanceof java.net.ProtocolException||e instanceof javax.net.ssl.SSLHandshakeException)throw e;throw new HttpFailure("网络连接中断，已完成进度会保留",0,true);}finally{conn.disconnect();}
+    }
+    private JSONObject testModelConfiguration(JSONObject p) throws Exception {
+        String provider=p.getString("provider");JSONObject settings=p.getJSONObject("settings");
+        JSONObject keys=ModelSettings.credentials(provider,settings,p.optJSONObject("credential")==null?new JSONObject():p.getJSONObject("credential"),vault.read());
+        String key=keys.optString("tts".equals(provider)?"ttsKey":"llmKey");
+        try {
+            JSONObject result=request(p,keys),detail=result.optJSONObject("error"),baseResp=result.optJSONObject("base_resp");
+            if(detail!=null)throw new Exception(detail.optString("message","服务返回错误"));
+            if(baseResp!=null&&baseResp.optInt("status_code",0)!=0)throw new Exception(baseResp.optString("status_msg","服务返回错误"));
+            return result;
+        } catch(Exception error){
+            String message=error.getMessage()==null?"测试失败":error.getMessage();if(!key.isEmpty())message=message.replace(key,"[已隐藏]");
+            if(error instanceof HttpFailure){HttpFailure h=(HttpFailure)error;throw new HttpFailure(message,h.status,h.retryable,h.code,h.retryAfterMs);}throw new Exception(message);
+        }
+    }
+    private synchronized void recoverModelSave(JSONObject state) throws Exception {
+        JSONObject keys=vault.read(),pending=keys.optJSONObject("_modelSave");if(pending==null)return;
+        if(state!=null&&ModelSettings.matches(state.optJSONObject("settings"),pending.getJSONObject("patch"))){keys.remove("_modelSave");vault.replace(keys);}
+        else vault.replace(pending.getJSONObject("previous"));
+    }
+    private synchronized JSONObject saveModelConfiguration(JSONObject p) throws Exception {
+        JSONObject header=snapshots.loadHeader();if(header==null)throw new Exception("请先保存书库，再保存模型配置");
+        recoverModelSave(header);String provider=p.getString("provider");JSONObject patch=p.getJSONObject("patch");
+        JSONObject settings=ModelSettings.apply(provider,header.getJSONObject("settings"),patch),previous=vault.read();
+        JSONObject next=ModelSettings.credentials(provider,settings,p.optJSONObject("credential")==null?new JSONObject():p.getJSONObject("credential"),previous);
+        JSONObject expected=new JSONObject();for(String name:new String[]{"llmBase","llmModel","llmProtocol"})if("llm".equals(provider))expected.put(name,settings.opt(name));
+        // The encrypted journal lets startup finish or roll back a save interrupted
+        // between the credential write and the atomic manifest replacement.
+        next.put("_modelSave",new JSONObject().put("previous",previous).put("patch",expected));vault.replace(next);
+        header.put("settings",settings);
+        try{snapshots.save(header.toString(),"[]");}catch(Exception error){vault.replace(previous);throw error;}
+        next.remove("_modelSave");try{vault.replace(next);}catch(Exception ignored){/* Effective values committed; startup clears the journal. */}
+        return new JSONObject().put("llmConfigured",!next.optString("llmKey").isEmpty()).put("ttsConfigured",!next.optString("ttsKey").isEmpty());
     }
     static Long retryAfter(String value){if(value==null)return null;try{return Math.max(0,(long)(Double.parseDouble(value.trim())*1000));}catch(NumberFormatException ignored){}try{java.text.SimpleDateFormat format=new java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz",java.util.Locale.US);return Math.max(0,format.parse(value).getTime()-System.currentTimeMillis());}catch(java.text.ParseException ignored){return null;}}
     static class HttpFailure extends Exception{final int status;final boolean retryable;final String code;final Long retryAfterMs;HttpFailure(String m,int s,boolean r){this(m,s,r,"",null);}HttpFailure(String m,int s,boolean r,String c){this(m,s,r,c,null);}HttpFailure(String m,int s,boolean r,String c,Long delay){super(m);status=s;retryable=r;code=c;retryAfterMs=delay;}}

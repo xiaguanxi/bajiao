@@ -25,13 +25,15 @@ public class NotificationTestRunner extends Instrumentation {
     private Context context;
     private NotificationManager notifications;
     private int checks;
+    private boolean settingsOnly;
     interface Condition { boolean ready() throws Exception; }
 
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments);start(); }
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments);settingsOnly=arguments!=null&&"true".equals(arguments.getString("settings"));start(); }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if(settingsOnly){int count=SettingsIntegration.verify(this);result.putString("stream","PASS native settings credentials, atomic save, rollback and recovery ("+count+" checks)\n");finish(Activity.RESULT_OK,result);return;}
             verifyNotifications();
             result.putString("stream", "PASS native notification progress, media seeking, background retention, task removal, late work and reopen (" + checks + " checks)\n");
             finish(Activity.RESULT_OK, result);

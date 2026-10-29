@@ -14,9 +14,9 @@ const SILENCE_PROCESSING_VERSION=1;
 const SEGMENT_PACING_VERSION=2;
 const SEGMENT_BREATH_MS=300;
 const PAUSE_POLICY={sentence:350,ellipsis:450,semicolon:220,colon:180,comma:120};
-const PRESETS=['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean'];
+const PRESETS=Settings.PRESETS;
 const COVER_STYLES=[{name:'松墨',color:'#284f3d'},{name:'黛青',color:'#2c4b5a'},{name:'绛朱',color:'#7a3b34'},{name:'陶土',color:'#96552a'},{name:'墨紫',color:'#4a3a56'},{name:'岩灰',color:'#5d615a'}];
-const DEFAULTS={wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',mode:'auto',usePresets:false,retries:3,qualityAutoRetry:true,qualityConfirmRetry:false,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1.0,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast'};
+const DEFAULTS=Settings.DEFAULTS;
 function parseRetryCount(value){
  if(typeof value!=='number'&&(typeof value!=='string'||!/^\d+$/.test(value.trim())))return null;
  const count=Number(value);return Number.isSafeInteger(count)&&count>=0?count:null;
@@ -291,7 +291,7 @@ function voiceAgeOf(description){
 function voiceDemographics(voice){const description=typeof voice==='string'?voice:voice?.description,name=typeof voice==='object'?voice?.name:'';return {gender:genderOf(description)||genderOf(name)||'unknown',age:voiceAgeOf(description)||voiceAgeOf(name)||'unknown'};}
 function voiceMatchesTarget(voice,target){const attrs=voiceDemographics(voice);return (target.gender==='unknown'||attrs.gender===target.gender)&&(target.age==='unknown'||attrs.age===target.age);}
 function featSim(a,b){const clean=s=>String(s||'').replace(/[的了着呢吗是候很非常十分比较有点儿之与和及或、，。；：,.!？?「」『』“”''""（）()…—·\s]/g,'');const grams=s=>{const set=new Set();const t=clean(s);for(let i=0;i+1<t.length;i++)set.add(t.slice(i,i+2));return set;};const A=grams(a),Bs=grams(b);if(!A.size||!Bs.size)return 0;let inter=0;for(const g of A)if(Bs.has(g))inter++;return inter/Math.min(A.size,Bs.size);}
-function presetDesc(id){if(id==='默认嗓音')return '随服务集群选择默认嗓音';const chinese={'冰糖':'中文青年女性','茉莉':'中文成熟女性','苏打':'中文青年男性','白桦':'中文中年男性'};return chinese[id]||(['Mia','Chloe'].includes(id)?'英文女声':'英文男声');}
+function presetDesc(id){if(id==='默认嗓音')return '随服务集群选择默认嗓音';const chinese={'冰糖':'中文青年女性','茉莉':'中文中年女性','苏打':'中文青年男性','白桦':'中文中年男性'};return chinese[id]||(['Mia','Chloe'].includes(id)?'英文女声':'英文男声');}
 // Acoustic vocabulary is used only to derive a short display name.
 const VOICE_WORDS=/奶声奶气|中气十足|颗粒感|气泡音|气声|鼻音|胸腔共鸣|磁性|开朗|清朗|清亮|清脆|清晰|低沉|温润|温柔|温和|亲切|自然|沉稳|稳重|沙哑|嘶哑|粗粝|粗犷|苍老|稚嫩|甜美|甜软|柔软|柔和|柔媚|娇柔|浑厚|醇厚|洪亮|有力|细腻|明亮|尖细|尖锐|轻柔|轻盈|轻细|干净|清冷|冷淡|冷峻|平静|活泼|俏皮|爽朗|慵懒|干练|利落|严肃|慈祥|随性|热情|清越|空灵|通透|圆润|饱满|清澈|轻快|舒缓|缓慢|急促|紧凑|流畅|连贯|铿锵|低哑|中低音|中高音|低音|中音|高音|轻声|重音|气息感|气息充足|咬字清楚|吐字清晰|尾音上扬|尾音下沉|语速适中|语速较快|语速较慢|普通话|粤语|四川话|东北话|上海话|台湾腔|北京口音|英语|英文|中文|美式口音|英式口音/;
 const VOICE_TRAITS=new RegExp('(?:(?:略带|略显|稍带|稍显|有些|有点|轻微|明显|较为|略|稍|偏|微|很|少量|不太|不够|没有|不|无))?(?:'+VOICE_WORDS.source+')','g');
@@ -1489,5 +1489,5 @@ function computeSegmentTimestamps(segments, totalDurationSec,timeline,audio){
   });
 }
 
-return {parseRetryCount,taskRetryMessage,VOICE_REUSE_MAX_CHAPTERS,VOICE_REUSE_RECENT_CHAPTERS,FEATURES,PROMPT_VERSION,DIRECTION_VERSION,FAST_SPEECH_PROMPT,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,SEGMENT_PACING_VERSION,SEGMENT_BREATH_MS,segmentPauseAfter,segmentPausesFor,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,voiceDemographics,voiceMatchesTarget,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,COVER_STYLES,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
+return {Settings,parseRetryCount,taskRetryMessage,VOICE_REUSE_MAX_CHAPTERS,VOICE_REUSE_RECENT_CHAPTERS,FEATURES,PROMPT_VERSION,DIRECTION_VERSION,FAST_SPEECH_PROMPT,directionIssue,ModelPrompts,isNetworkRetryable,nextRetryDelay,NET_RETRY_BASE_MS,NET_RETRY_MAX_MS,NET_RETRY_LIMIT,isContentRejected,segmentAudioIds,normalizeBookMetadata,GENERATION_VERSION,PAUSE_POLICY,SEGMENT_PACING_VERSION,SEGMENT_BREATH_MS,segmentPauseAfter,segmentPausesFor,QualityError,buildSpeechDirection,boundedSpeechParts,voiceConflict,voiceDemographics,voiceMatchesTarget,cleanVoiceDescription,shortVoiceName,Engine,DEFAULTS,PRESETS,COVER_STYLES,ApiError,LlmOutputError,speechParts,pauseAfter,pausesFor,expectedSpeechSec,isAudioTooLong,isPunctOnly,punctSilenceMs,styleTagOf,tagTextOf,units,splitBook,splitChapters,safeTitleRegex,CHAPTER_RULES,SPLIT_PROBE_PROMPT,parseJson,makeState,normalize,chapterWarnings,computeSegmentTimestamps,genderOf,cnAgeNum,featSim,presetDesc,isBitPart,splitEnsemble,bitPartVoiceDesc};
 });

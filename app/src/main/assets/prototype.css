@@ -205,8 +205,17 @@ body.vc-catalog-open{overflow:hidden}
 #app .voice-library-add{min-width:0;padding:8px 6px;gap:4px}
 #app .voice-library-actions svg{width:18px;height:18px;flex:none}
 #app .voice-library-filters{flex-wrap:nowrap;margin:16px 0}
-#app .voice-library-filters>label{flex:1 1 0;color:var(--vc-muted)}
-#app .voice-library-filters select{padding-right:24px}
+#app .voice-library-filter{flex:1 1 0;min-width:0;margin:0}
+#app .voice-library-filter .vc-field-label{font-size:12px;color:var(--vc-muted)}
+#app .voice-library-filter .vc-dropdown{min-height:44px;padding:10px 12px;gap:8px;font-size:14px}
+#app .voice-library-filter .vc-dropdown span{min-width:0;white-space:nowrap}
+#app .voice-library-filter .vc-dropdown[aria-expanded=true]{border-color:var(--vc-accent)}
+#app .voice-library-filter .vc-dropdown[aria-expanded=true] svg{transform:rotate(180deg)}
+#app .vc-dialog.voice-filter-dialog{border-radius:20px;padding:20px}
+#app .voice-filter-options{display:flex;flex-direction:column;gap:4px}
+#app .voice-filter-dialog .vc-opt{min-height:48px;border:0;border-radius:12px;padding:12px 14px}
+#app .voice-filter-dialog .vc-opt.selected{background:var(--vc-soft)}
+#app .voice-library-filter .vc-dropdown:focus-visible,#app .voice-filter-dialog button:focus-visible{outline:2px solid var(--vc-accent);outline-offset:2px}
 #app .vc-main.vc-voice-editing{--voice-delete:#a4342c;padding-bottom:calc(var(--vc-nav-height) + var(--vc-mini-height) + 112px)}
 #app .voice-batch-tools{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:8px 0;color:var(--vc-muted);font-size:14px}
 #app .voice-batch-tools button{min-height:44px;padding:8px;border:0;border-radius:8px;background:transparent;color:var(--vc-accent);font:inherit;font-weight:600;cursor:pointer}

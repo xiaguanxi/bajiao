@@ -19,10 +19,12 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
+    private static final String PROJECT_URL=AppUpdates.PROJECT_URL;
     private WebView web;
     private long appSession;
     private final ExecutorService executor=Executors.newFixedThreadPool(3);
     private final ExecutorService networkExecutor=Executors.newFixedThreadPool(5);
+    private final ExecutorService updateExecutor=Executors.newSingleThreadExecutor();
     private SecretStore vault;private AudioFiles audio;private AtomicFile store;private SnapshotStore snapshots;
     private String pendingId,pickKind,exportFile,pendingNav;
     private ConnectivityManager connectivity;
@@ -53,7 +55,7 @@ public class MainActivity extends Activity {
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0){try{File f=new File(getFilesDir(),"credentials-import.json");if(f.isFile()){vault.save(new JSONObject(new String(AudioFiles.read(f,100000),StandardCharsets.UTF_8)));if(!f.delete())throw new IOException("Credential import cleanup failed");}}catch(Exception e){android.widget.Toast.makeText(this,"测试配置导入失败",android.widget.Toast.LENGTH_SHORT).show();}}
         web=new WebView(this);setContentView(web);web.setBackgroundColor(0xfff8f7f2);WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setMediaPlaybackRequiresUserGesture(true);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);settings.setTextZoom(100);
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
-        web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.bajiao.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
+        web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.bajiao.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;if("/brand-icon.png".equals(path))return brandIconResponse();path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
         web.addJavascriptInterface(new Bridge(),"Native");web.loadUrl("https://app.bajiao.local/index.html");
         connectivity=getSystemService(ConnectivityManager.class);
         networkCallback=new ConnectivityManager.NetworkCallback(){
@@ -76,9 +78,12 @@ public class MainActivity extends Activity {
     class Bridge {
         @JavascriptInterface public void call(String id,String action,String json){
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
-            (("request".equals(action)||"testModelConfiguration".equals(action))?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
+            ("checkAppUpdate".equals(action)?updateExecutor:("request".equals(action)||"testModelConfiguration".equals(action))?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
                     case "networkState":result=productionNetworkState();break;
+                    case "openProject":runOnUiThread(()->openProject(id));return;
+                    case "checkAppUpdate":result=checkAppUpdate(p.optBoolean("automatic"));break;
+                    case "openAppUpdate":{String url=p.getString("url");if(!AppUpdates.allowedDownload(url))throw new IOException("无效的安装包下载地址");runOnUiThread(()->openAppUpdate(id,url));return;}
                     case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}recoverModelSave(state);JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
                     case "decodeBook":{byte[] bytes=importBytes.get(p.getString("token"));if(bytes==null)throw new IOException("导入草稿已过期，请重新选择文件");String encoding=p.optString("encoding",BookImporter.encoding(bytes));if(!Arrays.asList("UTF-8","GB18030","UTF-16").contains(encoding))throw new IOException("请选择 UTF-8、GB18030 或 UTF-16");result=decodedBook(bytes,encoding);break;}
                     case "loadChapter":result=snapshots.loadChapter(p.getString("id"));break;
@@ -201,6 +206,23 @@ public class MainActivity extends Activity {
     static class HttpFailure extends Exception{final int status;final boolean retryable;final String code;final Long retryAfterMs;HttpFailure(String m,int s,boolean r){this(m,s,r,"",null);}HttpFailure(String m,int s,boolean r,String c){this(m,s,r,c,null);}HttpFailure(String m,int s,boolean r,String c,Long delay){super(m);status=s;retryable=r;code=c;retryAfterMs=delay;}}
     private String safeError(Exception e){String m=e.getMessage();if(m==null)m="操作失败，请重试";try{JSONObject k=vault.read();for(String n:new String[]{"llmKey","ttsKey"})if(!k.optString(n).isEmpty())m=m.replace(k.getString(n),"[已隐藏]");}catch(Exception ignored){}m=m.replaceAll("/data/\\S+","[应用数据文件]");return m.length()>500?m.substring(0,500):m;}
     private void reply(String id,Object result,JSONObject error){try{JSONObject value=new JSONObject().put("id",id).put("result",result==null?JSONObject.NULL:result).put("error",error==null?JSONObject.NULL:error);runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.nativeResult("+value+")",null);});}catch(Exception ignored){}}
+    private WebResourceResponse brandIconResponse(){
+        android.graphics.drawable.BitmapDrawable drawable=(android.graphics.drawable.BitmapDrawable)getResources().getDrawable(R.drawable.bajiao_icon,getTheme());
+        ByteArrayOutputStream output=new ByteArrayOutputStream();
+        drawable.getBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,output);
+        return new WebResourceResponse("image/png",null,new ByteArrayInputStream(output.toByteArray()));
+    }
+    private JSONObject checkAppUpdate(boolean automatic)throws Exception{
+        android.content.SharedPreferences preferences=getSharedPreferences("app-updates",MODE_PRIVATE);
+        long now=System.currentTimeMillis(),success=preferences.getLong("successAt",0),attempt=preferences.getLong("attemptAt",0);
+        if(automatic&&((now>=success&&now-success<AppUpdates.SUCCESS_INTERVAL_MS)||(now>=attempt&&now-attempt<AppUpdates.FAILURE_INTERVAL_MS)))return new JSONObject().put("status","skipped");
+        preferences.edit().putLong("attemptAt",now).apply();
+        JSONObject result=AppUpdates.check(getPackageManager().getPackageInfo(getPackageName(),0).versionName);
+        preferences.edit().putLong("successAt",System.currentTimeMillis()).apply();
+        return result;
+    }
+    private void openAppUpdate(String id,String url){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));reply(id,true,null);}catch(ActivityNotFoundException|SecurityException e){reply(id,null,error("无法打开下载链接，请确认已安装可用的浏览器。"));}}
+    private void openProject(String id){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(PROJECT_URL)).addCategory(Intent.CATEGORY_BROWSABLE));reply(id,true,null);}catch(ActivityNotFoundException|SecurityException e){reply(id,null,error("无法打开项目地址，请确认已安装可用的浏览器。"));}}
     private void pick(String id,String kind){if(pendingId!=null){reply(id,null,error("另一个文件选择操作尚未完成"));return;}pendingId=id;pickKind=kind;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,kind.equals("voice")?new String[]{"audio/wav","audio/x-wav","audio/mpeg"}:new String[]{"text/plain","application/epub+zip"});i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,kind.equals("voice"));startActivityForResult(i,100);}
     private void export(String id,JSONObject p){if(pendingId!=null){reply(id,null,error("请先完成当前文件操作"));return;}pendingId=id;exportFile=p.optString("id");Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/wav").putExtra(Intent.EXTRA_TITLE,p.optString("name","芭蕉")+".wav");startActivityForResult(i,101);}
     static JSONObject decodedBook(byte[] bytes,String encoding)throws Exception{String text=BookImporter.text(bytes,encoding);int damaged=0,first=-1;for(int i=0;i<text.length();i++)if(text.charAt(i)=='\ufffd'){damaged++;if(first<0)first=i;}return new JSONObject().put("text",text).put("encoding",encoding).put("damagedCount",damaged).put("firstDamagedAt",first).put("encodingConfidence",damaged==0?"高":damaged<=Math.max(1,text.length()/200)?"存在少量损坏字节":"低");}
@@ -219,5 +241,5 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack&&window.appBack()",null);}
     @Override protected void onStop(){super.onStop();PlaybackService.checkpointNow();if(web!=null)web.evaluateJavascript("window.appBackground&&window.appBackground()",null);}
-    @Override protected void onDestroy(){AppNotifications.close(this,appSession);super.onDestroy();networkHandler.removeCallbacks(refreshNetwork);if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);if(!AppSession.isActive(AppSession.current()))PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}networkExecutor.shutdownNow();executor.shutdown();}
+    @Override protected void onDestroy(){AppNotifications.close(this,appSession);super.onDestroy();networkHandler.removeCallbacks(refreshNetwork);if(connectivity!=null&&networkCallback!=null)connectivity.unregisterNetworkCallback(networkCallback);if(!AppSession.isActive(AppSession.current()))PlaybackService.setEventListener(null);if(web!=null){web.removeJavascriptInterface("Native");web.destroy();web=null;}networkExecutor.shutdownNow();updateExecutor.shutdownNow();executor.shutdown();}
 }

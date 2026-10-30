@@ -1,5 +1,5 @@
 /* The settings surface is deliberately scoped; reading and library styles stay independent. */
-#app .settings-home,#app .settings-editor,#app .settings-help{--settings-muted:var(--vc-sub,#637169);max-width:680px;margin:0 auto;font-size:16px;line-height:1.5}
+#app .settings-home,#app .settings-editor,#app .settings-help,#app .settings-about{--settings-muted:var(--vc-sub,#637169);max-width:680px;margin:0 auto;font-size:16px;line-height:1.5}
 #app .settings-home h1{font-size:28px;margin:8px 0 28px;letter-spacing:-.5px}
 #app .settings-section{margin:0 0 24px}
 #app .settings-section h3{font-size:13px;font-weight:600;color:var(--settings-muted);margin:0 0 8px 4px;letter-spacing:.04em}
@@ -12,6 +12,34 @@
 #app .settings-home-row>svg{flex:none;width:20px}
 #app .settings-home-row>svg:last-child{width:16px;color:var(--settings-muted)}
 #app .settings-about-link{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 4px;background:none;border:0;font:inherit;color:var(--vc-text);min-height:48px}
+#app .settings-footer-links .settings-about-link{gap:12px;min-height:56px;cursor:pointer}
+#app .settings-footer-links .settings-about-link>span{flex:1;text-align:left}
+#app .settings-footer-links .settings-about-link>svg{flex:none;width:20px;height:20px}
+#app .settings-footer-links .settings-about-link+.settings-about-link{border-top:1px solid var(--vc-line)}
+#app .settings-update-auto{display:flex;align-items:center;gap:14px;width:100%;padding:16px 0 0;margin:16px 0 0;border:0;border-top:1px solid var(--vc-line);background:none;color:var(--vc-text);font:inherit;text-align:left;cursor:pointer}
+#app .settings-update-auto>span:first-child{flex:1;min-width:0}
+#app .settings-update-auto strong{display:block;font-size:14px;font-weight:550;line-height:1.5}
+#app .settings-update-auto small{display:block;margin-top:4px;font-size:12px;line-height:1.5;color:var(--settings-muted)}
+#app .settings-update-auto:disabled{opacity:.6}
+#app .settings-update-auto:focus-visible{outline:2px solid var(--vc-accent);outline-offset:4px;border-radius:4px}
+#app .settings-update-switch{display:block;position:relative;width:40px;height:24px;flex:none;border-radius:20px;background:#cbd5c8}
+#app .settings-update-switch:after{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #173f2b15}
+#app .settings-update-auto[aria-checked=true] .settings-update-switch{background:var(--vc-accent)}
+#app .settings-update-auto[aria-checked=true] .settings-update-switch:after{left:19px}
+#app .settings-update-card{padding:20px;margin:18px 0 14px;border:1px solid var(--vc-line);border-radius:20px;background:var(--vc-paper);box-shadow:0 4px 16px #244d3704}
+#app .settings-update-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}
+#app .settings-update-heading>div{flex:1;min-width:0}
+#app .settings-update-heading h3{font-size:16px;line-height:1.5;font-weight:600;margin:0 0 3px}
+#app .settings-update-symbol{display:grid;place-items:center;flex:none;width:38px;height:38px;border-radius:12px;background:var(--vc-soft);color:var(--vc-accent)}
+#app .settings-update-symbol svg{width:19px;height:19px}
+#app .settings-update-status{font-size:12px;line-height:1.6;margin:0;color:var(--settings-muted);overflow-wrap:anywhere}
+#app .settings-update-status.is-error{color:#a43d32}
+#app .settings-update-time{display:block;color:var(--settings-muted);font-size:11px;margin-top:4px}
+#app .settings-update-actions{display:flex;gap:10px;flex-wrap:wrap}
+#app .settings-update-actions .vc-btn{flex:1 1 140px;min-width:0;min-height:46px;border-radius:12px;font-size:14px;font-weight:550;scroll-margin-bottom:110px}
+#app .settings-update-notes{margin:0 0 16px;border:1px solid var(--vc-line);border-radius:12px;background:var(--vc-paper)}
+#app .settings-update-notes>summary{padding:12px 14px;cursor:pointer;font-size:14px}
+#app .settings-update-notes>.settings-help-content{padding:0 14px 14px;font-size:14px}
 #app .settings-header{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:8px;margin:-4px -4px 24px}
 #app .settings-header h2{font-size:19px;font-weight:650;text-align:center;margin:0;line-height:1.4}
 #app .settings-header .vc-icon{width:44px;height:44px;display:grid;place-items:center}
@@ -76,6 +104,33 @@
 #app .settings-picker-option svg{flex:none;width:18px}
 #app .settings-picker-option.selected{background:var(--vc-soft);color:var(--vc-accent)}
 #app .settings-help-intro{font-size:15px;line-height:1.7;color:var(--settings-muted);margin:0 0 20px}
+#app .settings-about{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+#app .settings-about>.settings-header{margin-bottom:14px}
+#app .settings-about>.settings-header h2{font-size:17px;font-weight:600}
+#app .settings-about-hero{position:relative;overflow:hidden;display:flex;align-items:center;flex-direction:column;padding:24px 20px 22px;border-radius:26px;background:radial-gradient(ellipse at 50% 0,#dce8d86b,transparent 75%),#f0f3ec;text-align:center}
+#app .settings-about-hero:before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.22;background:repeating-linear-gradient(112deg,transparent 0,transparent 43px,#78977c18 44px,transparent 45px)}
+#app .settings-about-hero>*{position:relative;z-index:1}
+#app .settings-about-icon{width:88px;height:88px;border-radius:23px;overflow:hidden;box-shadow:0 8px 20px #214a3823,0 0 0 1px #fff9}
+#app .settings-about-icon img{display:block;width:100%;height:100%;object-fit:cover}
+#app .settings-about-wordmark{display:flex;align-items:baseline;justify-content:center;gap:10px;margin:16px 0 4px}
+#app .settings-about-wordmark h1{font-family:"Noto Serif SC","Songti SC",SimSun,serif;font-size:30px;font-weight:700;line-height:1.4;letter-spacing:3px;margin:0}
+#app .settings-about-wordmark>span{font-size:10px;letter-spacing:2px;color:#6e846f}
+#app .settings-about-tagline{font-size:13px;line-height:1.8;color:#536952;margin:0}
+#app .settings-about-hero .settings-version{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-size:11px;line-height:1.5;color:#5c745c;margin-top:12px;padding:3px 10px;border:1px solid #d6e0d2;border-radius:20px;background:#ffffff70}
+#app .settings-project-link{display:flex;align-items:center;gap:12px;min-height:72px;padding:14px 16px;margin-top:0;border:1px solid var(--vc-line);border-radius:18px;background:var(--vc-paper);color:var(--vc-text);text-decoration:none;box-sizing:border-box;scroll-margin-bottom:110px}
+#app .settings-project-link>span{flex:1;min-width:0}
+#app .settings-project-link>.settings-project-symbol{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:11px;background:var(--vc-soft);color:var(--vc-accent)}
+#app .settings-project-symbol svg{width:18px;height:18px}
+#app .settings-project-link strong{display:block;font-size:14px;font-weight:550}
+#app .settings-project-link small{display:block;margin-top:3px;font-size:11px;line-height:1.5;color:var(--settings-muted);overflow-wrap:anywhere}
+#app .settings-project-link>svg{flex:none;color:var(--settings-muted)}
+#app .settings-project-link>svg:last-child{width:17px;height:17px}
+#app .settings-project-link:focus-visible{outline:2px solid var(--vc-accent);outline-offset:3px}
+#app .settings-about-footnote{margin:20px 0 4px;text-align:center;font-size:11px;line-height:1.7;letter-spacing:2px;color:#859081}
+@keyframes settings-update-spin{to{transform:rotate(360deg)}}
+#app .settings-update-card.is-checking .settings-update-symbol svg{animation:settings-update-spin 1.2s linear infinite}
+@media(max-width:374px){#app .settings-about-hero{padding:20px 16px 18px}#app .settings-about-icon{width:76px;height:76px;border-radius:20px}#app .settings-about-wordmark{margin-top:12px}#app .settings-update-card{padding:16px}}
+@media(prefers-reduced-motion:reduce){#app .settings-update-card.is-checking .settings-update-symbol svg{animation:none}}
 #app .settings-help-topic{margin:0 0 12px;border:1px solid var(--vc-line);border-radius:14px;background:var(--vc-paper)}
 #app .settings-help-topic>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;font-weight:550;min-height:52px;box-sizing:border-box;cursor:pointer;list-style:none}
 #app .settings-help-topic>summary::-webkit-details-marker{display:none}

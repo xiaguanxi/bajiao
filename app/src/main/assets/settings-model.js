@@ -4,6 +4,7 @@ const VERSION=3;
 const PRESETS=Object.freeze(['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean']);
 const DEFAULT_VOICES=Object.freeze({narrator:'preset:白桦',maleLead:'preset:苏打',femaleLead:'preset:冰糖'});
 const defaults={settingsVersion:VERSION,wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',voiceAdoptionMode:'auto',speakerUncertaintyMode:'narrator',roleMergeMode:'auto',usePresets:false,llmRetries:3,ttsRetries:3,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast',connectTimeoutSeconds:30,responseTimeoutSeconds:240,defaultVoices:DEFAULT_VOICES};
+defaults.autoCheckUpdates=true;
 Object.defineProperty(defaults,'retries',{get(){return this.llmRetries;}});
 const DEFAULTS=Object.freeze(defaults);
 const PAGE_KEYS=Object.freeze({
@@ -22,6 +23,7 @@ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function integer(value,min,max){if(typeof value!=='number'&&(typeof value!=='string'||!/^\d+$/.test(value.trim())))return null;const n=Number(value);return Number.isSafeInteger(n)&&n>=min&&n<=max?n:null;}
 function normalize(saved={},legacySpeed){
  const s={...clone(DEFAULTS),...saved},manual=saved.mode==='manual';delete s.mode;
+ s.autoCheckUpdates=typeof saved.autoCheckUpdates==='boolean'?saved.autoCheckUpdates:true;
  for(const [key,values,fallback] of [['voiceAdoptionMode',['auto','review'],manual?'review':'auto'],['speakerUncertaintyMode',['narrator','review'],manual?'review':'narrator'],['roleMergeMode',['auto','review'],manual?'review':'auto']])if(!values.includes(s[key])||saved[key]==null)s[key]=fallback;
  const legacyRetries=integer(saved.retries,0,Number.MAX_SAFE_INTEGER);
  for(const key of ['llmRetries','ttsRetries'])s[key]=integer(saved[key],0,Number.MAX_SAFE_INTEGER)??legacyRetries??DEFAULTS[key];

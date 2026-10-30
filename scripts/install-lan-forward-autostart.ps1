@@ -23,7 +23,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'Vocast-LanForward-8787'
+$TaskName = "Bajiao-LanForward-$Port"
+# Retain the old name only to migrate or uninstall an existing task.
+$LegacyTaskName = 'Vocast-LanForward-8787'
 $scriptPath = Join-Path $PSScriptRoot 'ensure-lan-forward.ps1'
 
 function Test-Admin {
@@ -42,6 +44,7 @@ if (-not (Test-Admin)) {
 
 if ($Uninstall) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $LegacyTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Write-Host "[lan-forward][OK] 已移除计划任务 $TaskName" -ForegroundColor Green
     exit 0
 }
@@ -64,6 +67,9 @@ Register-ScheduledTask -TaskName $TaskName `
     -Action $action -Trigger $trigger -Principal $principal `
     -Description "确保 ${Port} 端口的局域网转发在开机后自动生效" `
     -Force | Out-Null
+
+# Remove the previous task only after its replacement was registered successfully.
+Unregister-ScheduledTask -TaskName $LegacyTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
 Write-Host "[lan-forward][OK] 已安装计划任务 $TaskName（SYSTEM，开机后 60 秒执行）" -ForegroundColor Green
 Write-Host ""

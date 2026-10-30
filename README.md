@@ -5,7 +5,7 @@
 <h1 align="center">芭蕉 · Bajiao</h1>
 
 <p align="center">
-  <strong>把喜欢的文字，做成有角色、有声音的故事。</strong><br />
+  <strong>LLM + TTS 驱动的 Android AI 有声书制作与听书应用</strong><br />
   在 Android 上导入小说，识别旁白与对白，为角色选择音色，制作并收听自己的有声书。
 </p>
 
@@ -25,7 +25,9 @@
   <a href="https://github.com/xiaguanxi/bajiao/issues">反馈问题</a>
 </p>
 
-芭蕉将有声书制作和听书放在同一个书架里。AI 帮你分清谁在说话、匹配角色声音；你可以逐句校对、试听和调整，再接着听下去。
+芭蕉（Bajiao）用大语言模型（LLM）识别小说中的旁白、对白与角色，再通过 MiMo 文本转语音（TTS / text-to-speech）制作多角色有声书。支持 TXT / EPUB 导入、角色配音、声音克隆与音色设计；你可以逐句校对、试听和调整，再接着听下去。
+
+Bajiao is an Android AI audiobook creator and player. It uses large language models (LLM) for character recognition and MiMo text-to-speech (TTS) for multi-speaker narration.
 
 **需要自行配置语言模型和 MiMo API Key。** 文字分析与语音合成由你选择的在线服务完成，按服务商规则计费。
 

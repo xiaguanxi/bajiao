@@ -24,7 +24,7 @@ const V=require('../app/src/main/assets/core.js'),{TEXT}=require('../app/src/mai
    else if(action==='saveRawAudio')result={id:'prompt-'+(++audio)+'.wav',duration:2,playable:true};
    else if(action==='processSpeechAudio')result={id:p.id,duration:2,originalDuration:2,supported:true};
    else if(action==='saveSnapshot'){const chapters=new Map(state.books.flatMap(b=>b.chapters).map(c=>[c.id,c]));for(const c of JSON.parse(p.chapters))chapters.set(c.id,c);state=JSON.parse(p.header);for(const b of state.books)b.chapters=b.chapters.map(c=>chapters.get(c.id)||c);}
-   await page.evaluate(v=>window.nativeResult(v),{id,result});
+   await page.evaluate(v=>{window.fixturePlaybackId=v.playbackId;window.nativeResult(v);},{id,result,playbackId:playback.id});
   });await page.addInitScript(()=>{window.Native={call:(...args)=>window.nativeCall(...args)};});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
   await page.evaluate(()=>{window.bajiaoEngine.kick=async()=>{};Object.assign(window.bajiaoEngine.state.tasks[0],{status:'running',pauseRequested:false});});
   const click=act=>page.locator('[data-act="'+act+'"]').first().click(),prompts=()=>calls.filter(c=>c.action==='playbackPrompt');
@@ -54,7 +54,7 @@ const V=require('../app/src/main/assets/core.js'),{TEXT}=require('../app/src/mai
   await page.waitForFunction(()=>document.querySelector('[data-act="miniplaypause"]')?.getAttribute('aria-label')==='播放');const mergePausedPlays=calls.filter(c=>c.action==='play').length;
   await page.evaluate(async()=>{const e=window.bajiaoEngine,c=e.state.books[0].chapters[0];c.audio='merged.wav';c.duration=10;c.status='ready';e.state.tasks[0].status='done';e.touch(c);await e.persist();});
   await page.waitForTimeout(250);assert.equal(calls.filter(c=>c.action==='play').length,mergePausedPlays,'merging respects mini-player pause');
-  await click('miniplaypause');await page.waitForFunction(()=>document.querySelector('[data-act="miniplaypause"]')?.getAttribute('aria-label')==='暂停');assert.equal(playback.id,'last.wav');await click('minigolisten');
+  await click('miniplaypause');await page.waitForFunction(()=>window.fixturePlaybackId==='last.wav');assert.equal(await page.locator('[data-act="miniplaypause"]').getAttribute('aria-label'),'暂停');assert.equal(playback.id,'last.wav');await click('minigolisten');
   await page.waitForFunction(()=>document.querySelector('.vc-slim-titles h2')?.textContent.includes('完结'));assert.equal(playback.id,'last.wav');await page.waitForFunction(()=>window.bajiaoEngine.state.books[0].playbackPrompts?.finished?.file?.id);
   const normalPlays=calls.filter(c=>c.action==='play').length;await complete();await page.waitForFunction(()=>window.fixturePrompts?.at(-1)?.op==='ready');assert.equal(prompts().filter(c=>c.op==='schedule').at(-1).expectedAudioId,'last.wav');assert.equal(prompts().at(-1).op,'ready');assert.equal(calls.filter(c=>c.action==='play').length,normalPlays,'friendly ending uses the separate native prompt player');assert.equal(playback.id,'last.wav');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[1].lastPlayedPosition),10000);
   const endingToken=prompts().at(-1).token;await page.evaluate(()=>window.onNativePlaybackAction('pause',0));assert(prompts().some(c=>c.op==='cancel'&&c.token===endingToken));

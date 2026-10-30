@@ -21,22 +21,22 @@ const V=require('../app/src/main/assets/core.js');
  const act=a=>page.locator('button[data-act="'+a+'"]').first().click(),shot=name=>page.screenshot({path:path.join(out,name+'.png'),animations:'disabled'});
  try{
   await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.bajiaoEngine);
-  await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionRetries').inputValue(),'3');assert.equal(await page.locator('[data-dd="retries"]').count(),0);
+  await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionLlmRetries').inputValue(),'3');assert.equal(await page.locator('#productionTtsRetries').inputValue(),'3');assert.equal(await page.locator('[data-act="settingspick:qualityMode"]').count(),0);assert.match(await page.locator('.settings-editor').innerText(),/仅在发生可重试的异常时自动重试/);
   for(const value of ['','-1','1.5','1e2','文字','Infinity','9007199254740993']){
-   await page.locator('#productionRetries').fill(value);await act('settingssave');
-   assert.match(await page.locator('#error-productionRetries').textContent(),/非负整数/);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3);
-   assert.equal(await page.locator('#productionRetries').getAttribute('aria-invalid'),'true');
+   await page.locator('#productionLlmRetries').fill(value);await act('settingssave');
+   assert.match(await page.locator('#error-productionLlmRetries').textContent(),/非负整数/);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.llmRetries),3);
+   assert.equal(await page.locator('#productionLlmRetries').getAttribute('aria-invalid'),'true');
   }
   for(const value of ['0','12','3']){
-   await page.locator('#productionRetries').fill(value);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3,'draft has no effect until save');
-   if(value==='3')assert(await page.locator('[data-act="settingssave"]').isDisabled(),'unchanged draft cannot save');else await act('settingssave');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),Number(value));
-   if(value!=='3'){await page.locator('#productionRetries').fill('3');await act('settingssave');}
+   await page.locator('#productionLlmRetries').fill(value);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.llmRetries),3,'draft has no effect until save');
+   if(value==='3')assert(await page.locator('[data-act="settingssave"]').isDisabled(),'unchanged draft cannot save');else await act('settingssave');assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.llmRetries),Number(value));assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.ttsRetries),3);
+   if(value!=='3'){await page.locator('#productionLlmRetries').fill('3');await act('settingssave');}
   }
-  await page.locator('#productionRetries').fill('8');await act('settingspick:qualityMode');await page.locator('.settings-picker').getByRole('button',{name:'人工处理',exact:true}).click();assert.equal(await page.locator('#productionRetries').inputValue(),'8');await act('back');await page.getByRole('dialog').waitFor();await page.locator('[data-result="discard"]').click();
-  assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.retries),3);checks.push('default 3; invalid values rejected; 0 and counts above 3 saved; unsaved input survives rendering and discard');
-  await act('go:quality');await page.locator('#productionRetries').fill('7');await act('settingssave');await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionRetries').inputValue(),'7');
+  await page.locator('#productionLlmRetries').fill('8');await page.locator('#productionTtsRetries').fill('2');assert.equal(await page.locator('#productionLlmRetries').inputValue(),'8');await act('back');await page.getByRole('dialog').waitFor();await page.locator('[data-result="discard"]').click();
+  assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.llmRetries),3);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.settings.ttsRetries),3);checks.push('independent defaults 3; no automatic/manual selector; retryable-only reminder; invalid values rejected; 0 and counts above 3 saved; independent drafts discarded');
+  await act('go:quality');await page.locator('#productionLlmRetries').fill('7');await page.locator('#productionTtsRetries').fill('2');await act('settingssave');await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);await act('go:settings');await act('go:quality');assert.equal(await page.locator('#productionLlmRetries').inputValue(),'7');assert.equal(await page.locator('#productionTtsRetries').inputValue(),'2');
   for(const width of [320,393,768]){await page.setViewportSize({width,height:873});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await shot('settings-'+width);}
-  await page.locator('#productionRetries').fill('3');await act('settingssave');await act('back');await act('go:tasks');
+  await act('settingsreset');await act('settingssave');assert.equal(await page.locator('#productionLlmRetries').inputValue(),'3');assert.equal(await page.locator('#productionTtsRetries').inputValue(),'3');await act('back');await act('go:tasks');
   await page.evaluate(async()=>{
    const e=window.bajiaoEngine,b=await e.addBook('调用失败提示测试','甲。乙。'),c=b.chapters[0];c.segments=Bajiao.units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));c.segments[0].audio='saved.wav';e.touch(c);e.state.settings.ttsParallel=1;
    window.retryCalls=0;window.retryFail=true;window.retryWaits=[];
@@ -58,7 +58,11 @@ const V=require('../app/src/main/assets/core.js');
   await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks[0].status),'failed');await act('go:tasks');await act('tasktab:failed');assert.equal(await page.locator('[data-task-retry]').textContent(),'重试3次后仍然失败，请手动处理。');
   await page.evaluate(()=>{const e=window.bajiaoEngine;window.retryCalls=0;e.io.request=async()=>{window.retryCalls++;return {};};e.io.mergeAudio=async()=>({id:'merged.wav',duration:2});e.synthesize=async function(){await this.request('tts',{model:'test'});return {id:'new.wav',duration:1};};});
   const id=await page.evaluate(()=>window.bajiaoEngine.state.tasks[0].id);await act('resume:'+id);await page.waitForFunction(()=>window.bajiaoEngine.state.tasks[0].status==='done');await act('tasktab:done');assert.equal(await page.evaluate(()=>window.retryCalls),1);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.books[0].chapters[0].segments[0].audio),'saved.wav');assert(!/重试|失败/.test(await page.locator('.vc-task-card-header').innerText()));
-  checks.push('exhaustion survives restart; manual resume succeeds with one request and preserves completed audio');assert.deepEqual(errors,[]);
+  checks.push('exhaustion survives restart; manual resume succeeds with one request and preserves completed audio');
+  await page.evaluate(async()=>{const e=window.bajiaoEngine;window.refusalCalls=0;e.state.settings.llmRetries=5;e.io.request=async()=>{window.refusalCalls++;const error=new Bajiao.ApiError('内容审核未通过 (1026)',500,true);error.code='1026';throw error;};const b=await e.addBook('不可重试错误',Array.from({length:50},(_,i)=>'拒绝检查'+i+'。').join(''));await e.enqueue(b.id,[b.chapters[0].id]);window.refusalTaskId=e.state.tasks.find(t=>t.bookId===b.id).id;});
+  await act('tasktab:failed');assert.equal(await page.evaluate(()=>window.refusalCalls),1);assert.match(await page.locator('.vc-task-error').innerText(),/内容审核未通过/);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks.find(t=>t.id===window.refusalTaskId).error.retryable),false);await shot('permanent-refusal');
+  await page.evaluate(()=>window.bajiaoEngine.kick());assert.equal(await page.evaluate(()=>window.refusalCalls),1);await page.reload();await page.waitForFunction(()=>window.bajiaoEngine);assert.equal(await page.evaluate(()=>window.bajiaoEngine.state.tasks.filter(t=>t.status==='failed').length),1);
+  checks.push('permanent LLM refusal stops after one request despite a retry count of 5, displays manual failure and stays failed after restart without smaller-batch retries');assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'ui-report.json'),JSON.stringify({passed:true,checks,errors,paidRequests:0},null,2));console.log(JSON.stringify({passed:true,checks},null,2));
  }catch(error){await shot('failure');throw error;}finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

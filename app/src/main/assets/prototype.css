@@ -597,3 +597,8 @@ body.vc-catalog-open{overflow:hidden}
 #app .vc-stale-notice>span{flex:1;min-width:0}
 #app .vc-stale-notice>.vc-icon{flex:none;width:44px;height:44px;background:transparent}
 #app .vc-reading-preview{height:224px;overflow:auto;scrollbar-gutter:stable}
+
+/* Keep the current spoken sentence visible without changing its text layout. */
+#app .vc-main[data-page=raw] .vc-raw-seg.vc-playing-segment{background:var(--vc-soft);border-radius:4px;box-shadow:0 0 0 2px var(--vc-soft);-webkit-box-decoration-break:clone;box-decoration-break:clone}
+#app .vc-main[data-page=annotated] .vc-quote.vc-playing-segment{box-shadow:inset 3px 0 0 var(--vc-accent);border-color:var(--vc-accent)}
+#app .vc-main[data-page=annotated] .vc-quote.vc-playing-segment:not(.vc-issue-card){background:var(--vc-soft)}

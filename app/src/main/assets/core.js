@@ -87,13 +87,14 @@ class ApiError extends Error{constructor(message,status=0,retryable=false){super
 function isContentRejected(error){return /^(1026|1027)$/.test(String(error?.code||error?.status||''))||/\b(?:input|output)[ _]+(?:new_)?sensitive\b|内容(?:涉敏|审核未通过)|[（(]102[67][）)]/i.test(String(error?.message||error||''));}
 function isNetworkRetryable(e){
  if(isContentRejected(e))return false;
- if([400,401,403,404,405,413,415,422].includes(Number(e?.status)))return false;
+ if([400,401,402,403,404,405,413,415,422].includes(Number(e?.status)))return false;
+ if(/insufficient[_ -]?(?:quota|balance|credit)|(?:quota|balance|credit)[_ -]?(?:exceeded|exhausted)|余额不足|余额用尽|额度(?:不足|已耗尽|用尽|已用完)|payment required|billing/i.test(String(e?.code||'')+' '+String(e?.message||e?.detail||'')))return false;
  if(e?.retryable===true)return true;
  const s=String(e?.message||e?.detail||e?.code||e||'');
  return /网络|超时|timeout|timed out|fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|EPIPE|socket|HTTP (429|5\d\d|408)\b/i.test(s)||e?.status===429||e?.status===408||(e?.status>=500&&e?.status<600);
 }
 // 调用重试遵守用户设置；任务级兜底不能绕过单个请求的上限。
-const NET_RETRY_BASE_MS=30000, NET_RETRY_MAX_MS=600000, NET_RETRY_LIMIT=DEFAULTS.retries;
+const NET_RETRY_BASE_MS=30000, NET_RETRY_MAX_MS=600000, NET_RETRY_LIMIT=DEFAULTS.llmRetries;
 function nextRetryDelay(retryCount){return Math.min(NET_RETRY_MAX_MS,NET_RETRY_BASE_MS*Math.pow(2,Math.max(0,retryCount||0)));}
 function parseJson(text){
   const raw=String(text||'').replace(/<think>[\s\S]*?<\/think>/gi,'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
@@ -627,6 +628,8 @@ class Engine{
   if(!['tts','llm'].includes(provider))throw Error('无效模型类型');
   return this.performRequest(provider,body,{...options,shouldPause});
  }
+ retryLimit(provider,settings=this.state.settings){return parseRetryCount(settings[provider==='llm'?'llmRetries':'ttsRetries'])??DEFAULTS[provider==='llm'?'llmRetries':'ttsRetries'];}
+ speechRetryBudget(options={}){return {id:uid(),used:parseRetryCount(options.retryAttempts??options.qualityAttempts)??0,limit:this.retryLimit('tts'),rawAudioIds:[...(options.rawAudioIds||[])]};}
  taskContext(task){return new Proxy(this,{get(target,key,receiver){return key==='requestTask'?task:Reflect.get(target,key,receiver);}});}
  setTaskRequestRetry(task,id,count){
   if(!task||!this.state.tasks.includes(task))return;
@@ -637,9 +640,9 @@ class Engine{
   this.listeners.forEach(fn=>fn());
  }
  async performRequest(provider,body,options={}){
-  const settings={...this.state.settings},limit=parseRetryCount(settings.retries)??DEFAULTS.retries,task=this.requestTask,id=uid();let last;
+  const settings={...this.state.settings},budget=options.retryBudget||{id:uid(),used:0,limit:this.retryLimit(provider,settings)},task=this.requestTask,id=budget.id;let last;
   const shouldPause=()=>options.shouldPause?.()||!!task&&(task.pauseRequested||task.status==='cancelled'||!this.state.tasks.includes(task)||!!task.frontError);
-  try{for(let n=0;n<=limit;n++){
+  try{while(true){const n=budget.used;
    let slot;const started=Date.now();
    try{
     if(shouldPause())throw Error('任务已暂停');
@@ -651,13 +654,14 @@ class Engine{
     const limited=this.state.modelLimits?.[body.model];if(provider==='tts'&&limited?.limited&&(this.io.now?.()??Date.now())>=limited.until){limited.successes++;if(limited.successes>=10){limited.limited=false;await this.persist();}}
     this.recordMetric({provider,model:body.model,attempt:n+1,queueMs:slot?.queueMs||0,elapsedMs:Date.now()-started,ok:true,usage:r.usage});return r;
    }catch(e){
-    e.provider=provider;if(isContentRejected(e))e.retryable=false;last=e;
+    e.provider=provider;e.retryable=isNetworkRetryable(e);last=e;
     const delay=Number.isFinite(e.retryAfterMs)&&e.retryAfterMs>=0?e.retryAfterMs:Math.min(60000,(e.status===429?10000:1000)*2**n);
-    if(provider==='tts'&&e.status===429){this.state.modelLimits=this.state.modelLimits||{};this.state.modelLimits[body.model]={limited:true,until:(this.io.now?.()??Date.now())+delay,successes:0};await this.persist();}else if(provider==='tts'&&this.state.modelLimits?.[body.model]?.limited)this.state.modelLimits[body.model].successes=0;
+    if(provider==='tts'&&e.status===429&&e.retryable){this.state.modelLimits=this.state.modelLimits||{};this.state.modelLimits[body.model]={limited:true,until:(this.io.now?.()??Date.now())+delay,successes:0};await this.persist();}else if(provider==='tts'&&this.state.modelLimits?.[body.model]?.limited)this.state.modelLimits[body.model].successes=0;
     this.recordMetric({provider,model:body.model,attempt:n+1,queueMs:slot?.queueMs||0,elapsedMs:Date.now()-started,ok:false,status:e.status||0});
     if(e.networkWait||e.checkpointRetryable||e.message==='任务已暂停'||shouldPause())break;
-    if(!isNetworkRetryable(e)||n===limit){e.requestFailed=true;e.requestRetries=n;break;}
-    this.setTaskRequestRetry(task,id,n+1);
+    if(!isNetworkRetryable(e)||n>=budget.limit){e.requestFailed=true;e.requestRetries=n;break;}
+    budget.used++;await options.onRetry?.(budget.used);
+    this.setTaskRequestRetry(task,id,budget.used);
     slot?.release();slot=null;
     await this.waitRequestRetry(delay,shouldPause);
    }finally{slot?.release();}
@@ -687,11 +691,11 @@ class Engine{
    r=await this.request('llm',body);text=r.choices?.[0]?.message?.content;finish=r.choices?.[0]?.finish_reason;
   }
   if(finish==='length'||finish==='max_tokens')throw new LlmOutputError('语言模型输出被截断，请减少批次','truncated');
-  if(['content_filter','refusal'].includes(finish)){const e=new ApiError('内容审核未通过',0,false);e.code='1027';throw e;}
+  if(['content_filter','refusal'].includes(finish)){const e=new ApiError('内容审核未通过',0,false);e.code='1027';e.provider='llm';throw e;}
   try{return parseJson(text);}catch(e){throw new LlmOutputError(e.message);}
  }
  async saveSpeechAudio(base64,text,options={}){
-  options.budget=options.budget||{used:0,rawAudioIds:[]};
+  options.budget=options.budget||this.speechRetryBudget(options);
   if(options.silenceProcessingVersion===SILENCE_PROCESSING_VERSION){
    if(!this.io.processSpeechAudio||!this.io.saveRawAudio)throw Error('当前版本缺少音频处理能力，请更新应用');
    const raw=options.rawFile||await this.io.saveRawAudio(base64,'wav');
@@ -732,8 +736,8 @@ class Engine{
  }
  async resolveRepeatedSpeech(raw,text,evidence,pendingRaw,options){
   const repeatError=(message,retry)=>Object.assign(new QualityError(message,retry),{repetition:true});
-  // Duplicate speech always gets one fresh synthesis before any destructive repair.
-  if(options.budget.used<1&&!options.manualRetry)throw repeatError('合成异常：疑似重复',true);
+  // A repeated return uses the same configured retry budget as transport errors.
+  if(options.budget.used<options.budget.limit&&!options.acceptRepeated)throw repeatError('合成异常：疑似重复',true);
   let correction=options.pendingRaw?.repetitionCheckVersion===AudioQuality.REPETITION_CHECK_VERSION?options.pendingRaw?.repetitionCorrection:null;
   if(!correction){
    correction=evidence.cropEligible&&this.io.truncateRepeatedSpeech?await this.io.truncateRepeatedSpeech(raw.id,{...evidence,version:AudioQuality.REPETITION_CHECK_VERSION}):{applied:false};
@@ -742,7 +746,7 @@ class Engine{
   await options.onQuality?.({pendingRaw});
   if(options.shouldPause?.())throw Error('任务已暂停');
   if(correction.applied){return {correction:{...correction,version:1,sourceAudio:raw.id,text,evidence:{...evidence,base64:undefined}}};}
-  pendingRaw.confirmationRequired=this.state.settings.qualityConfirmRetry===true&&!options.acceptRepeated;
+  pendingRaw.confirmationRequired=!options.acceptRepeated;
   pendingRaw.qualityApproved=!pendingRaw.confirmationRequired;
   await options.onQuality?.({pendingRaw,qualityIssues:['疑似重复']});
   if(options.shouldPause?.())throw Error('任务已暂停');
@@ -787,7 +791,7 @@ class Engine{
   let acquired=false;
   try{
    acquired=await this._acquireTtsSlot(()=>!unchanged(),100);if(!acquired)return false;
-   s.retryDraft={...(options.acceptRepeated?oldDraft:{}),key:JSON.stringify(source),manualRetry:true,qualityAttempts:s.qualityAttempts??oldDraft?.qualityAttempts??0,rawAudioIds:oldRefs,generationVersion:GENERATION_VERSION};
+   s.retryDraft={...(options.acceptRepeated?oldDraft:{}),key:JSON.stringify(source),manualRetry:true,retryAttempts:options.acceptRepeated?(oldDraft?.retryAttempts??s.qualityAttempts??0):0,qualityAttempts:options.acceptRepeated?(s.qualityAttempts??oldDraft?.qualityAttempts??0):0,rawAudioIds:oldRefs,generationVersion:GENERATION_VERSION};
    this.touch(c);await this.persist();
    const update=async fields=>{if(unchanged()){s.retryDraft={...s.retryDraft,...fields};this.touch(c);await this.persist();}};
    const file=await this.synthesize(source.text,source.voice,source.emotion,{...s.retryDraft,acceptRepeated:!!options.acceptRepeated,speaker:source.speaker,scene:source.scene,delivery:source.delivery,directionVersion:source.directionVersion,prompt:source.prompt,promptMode:source.promptMode,voiceDescription:source.description,shouldPause:()=>!unchanged(),onQuality:update,onPart:files=>update({files:[...files],pendingRaw:null})});
@@ -832,16 +836,19 @@ class Engine{
    }
    else{
     const messages=[...(options.speechPrompt?[{role:'user',content:options.speechPrompt}]:[]),{role:'assistant',content:text}];
-    let r;try{r=await this.request('tts',{model,messages,audio:{format:'wav',voice:ref}},options.shouldPause,{priority:options.priority});}catch(e){if(isTextLengthError(e))e.ttsTextLength=true;throw e;}
+    let r;try{r=await this.request('tts',{model,messages,audio:{format:'wav',voice:ref}},options.shouldPause,{priority:options.priority,retryBudget:options.budget,onRetry:used=>options.onQuality?.({retryAttempts:used,qualityAttempts:used,qualityStatus:'checking'})});}catch(e){if(isTextLengthError(e))e.ttsTextLength=true;throw e;}
     data=r.choices?.[0]?.message?.audio?.data;finishReason=r.choices?.[0]?.finish_reason;
     data=typeof data==='string'?data:'';
     silenceProcessingVersion=this.io.processSpeechAudio?SILENCE_PROCESSING_VERSION:undefined;
    }
+   if(['content_filter','refusal'].includes(finishReason)){const error=new ApiError('内容审核未通过',0,false);error.code='1027';error.provider='tts';error.requestRetries=options.budget.used;throw error;}
    try{return {...await this.saveSpeechAudio(data,text,{...options,pendingRaw:pending,rawFile:pending?.file,finishReason,silenceProcessingVersion}),speechPrompt:options.speechPrompt};}
    catch(e){
-    if(!e.qualityPending||!e.retryQuality||options.manualRetry||(!e.repetition&&(this.state.settings.qualityAutoRetry===false||this.state.settings.qualityConfirmRetry===true))||options.budget.used>=1)throw e;
+    e.provider='tts';e.requestRetries=options.budget.used;
+    if(!e.qualityPending||!e.retryQuality||options.budget.used>=options.budget.limit)throw e;
     options.budget.used++;pending=null;
-    await options.onQuality?.({rawAudioIds:[...options.budget.rawAudioIds],qualityAttempts:options.budget.used,pendingRaw:null,silenceProcessing:null,qualityStatus:'checking'});
+    await options.onQuality?.({rawAudioIds:[...options.budget.rawAudioIds],retryAttempts:options.budget.used,qualityAttempts:options.budget.used,pendingRaw:null,silenceProcessing:null,qualityStatus:'checking'});
+    this.setTaskRequestRetry(this.requestTask,options.budget.id,options.budget.used);
    }
   }
  }
@@ -879,8 +886,9 @@ class Engine{
    const sample=await this.referenceAudio(v.sample);if(!sample.base64||sample.base64.length+32>10000000)throw Error('参考样本缺失或超过大小限制');
    model='mimo-v2.5-tts-voiceclone';ref='data:audio/'+(v.format==='mp3'?'mpeg':'wav')+';base64,'+sample.base64;description=description||v.description;
   }
-  const budget={used:options.qualityAttempts||0,rawAudioIds:[...(options.rawAudioIds||[])]};
+  const budget=this.speechRetryBudget(options);
   const partOptions={...options,budget,voiceDescription:description,speechPrompt:this.speechDirection(voice,style,description,options.prompt,{...options,text})};
+  try{
   if(!options.forceSplit&&text.length<=600&&!options.splitDraft){
    try{return await this.synthesizePart(text,model,ref,style,partOptions);}
    catch(e){if(options.shouldPause?.()||!e.ttsTextLength)throw e;}
@@ -904,16 +912,25 @@ class Engine{
   const silenceProcessing=processed.length?{version:SILENCE_PROCESSING_VERSION,originalDuration:merged.duration+processed.reduce((n,f)=>n+(f.silenceProcessing.removedMs||0)/1000,0),duration:merged.duration,removedMs:processed.reduce((n,f)=>n+(f.silenceProcessing.removedMs||0),0),parts:files.map(f=>({id:f.id,...f.silenceProcessing}))}:undefined;
   const correctedParts=files.filter(f=>f.repetitionCorrection).map(f=>f.repetitionCorrection);
   return {...merged,silenceProcessing,repetitionCorrection:correctedParts.length?{version:1,parts:correctedParts}:undefined,repetitionUnresolved:files.some(f=>f.repetitionUnresolved),repetitionConfirmed:files.some(f=>f.repetitionConfirmed),speechPrompt:partOptions.speechPrompt,rawAudioIds:[...new Set([...budget.rawAudioIds,...files.flatMap(f=>f.rawAudioIds||[])])],generationVersion:GENERATION_VERSION,qualityStatus:files.some(f=>f.qualityStatus==='corrected')?'corrected':files.some(f=>f.qualityStatus==='passed_with_warnings')?'passed_with_warnings':'passed',qualityIssues:[...new Set(files.flatMap(f=>f.qualityIssues||[]))],qualityAttempts:budget.used,speechChecked:files.every(f=>f.speechChecked)};
+  }finally{this.setTaskRequestRetry(this.requestTask,budget.id,0);}
  }
  async design(description,text,options={}){
   description=cleanVoiceDescription(description);if(!description)throw Error('请填写音色描述');
   const custom=typeof text==='string'&&!!text.trim(),messages=[{role:'user',content:description}];
   if(custom)messages.push({role:'assistant',content:text});
-  const r=await this.request('tts',{model:'mimo-v2.5-tts-voicedesign',messages,audio:{format:'wav',optimize_text_preview:!custom}},options.shouldPause,{priority:options.priority});
-  const message=r.choices?.[0]?.message,data=message?.audio?.data;if(!data)throw Error('音色设计没有返回样本');
+  const budget=this.speechRetryBudget(options);
+  try{while(true){
+  const r=await this.request('tts',{model:'mimo-v2.5-tts-voicedesign',messages,audio:{format:'wav',optimize_text_preview:!custom}},options.shouldPause,{priority:options.priority,retryBudget:budget});
+  const message=r.choices?.[0]?.message,data=message?.audio?.data;
+  if(['content_filter','refusal'].includes(r.choices?.[0]?.finish_reason)){const error=new ApiError('内容审核未通过',0,false);error.code='1027';error.provider='tts';error.requestRetries=budget.used;throw error;}
+  if(!data){
+   if(budget.used>=budget.limit){const error=new QualityError('音色设计没有返回样本，请人工处理',true);error.provider='tts';error.requestRetries=budget.used;throw error;}
+   budget.used++;this.setTaskRequestRetry(this.requestTask,budget.id,budget.used);continue;
+  }
   if(data.length+32>10000000)throw Error('设计样本编码后超过 10 MB，请缩短试听文本后重新设计');
   const file=await this.io.saveAudio(data,'wav');
   return {id:uid(),name:shortVoiceName(description),description,sample:file.id,format:'wav',source:'design',enabled:true,tested:false,previewText:custom?text:(message.final_text_preview||''),previewCustomized:custom,generationVersion:GENERATION_VERSION};
+  }}finally{this.setTaskRequestRetry(this.requestTask,budget.id,0);}
  }
  async saveVoice(v){this.invalidateReferences();if(!v.sample)throw Error('请先生成样本');normalizeVoice(v);if(!this.state.voices.some(x=>x.id===v.id))this.state.voices.push(v);await this.persist();return v;}
  async deleteVoice(id){this.invalidateReferences();const i=this.state.voices.findIndex(x=>x.id===id);if(i<0)throw Error('音色不存在');const removed=this.state.voices.splice(i,1)[0];for(const b of this.state.books){for(const ch of b.characters){if(ch.voice===id)ch.voice=null;if(ch.candidate?.id===id)ch.candidate=null;if(ch.suggestedVoice===id)ch.suggestedVoice=null;}}await this.persist();return removed;}
@@ -933,16 +950,10 @@ class Engine{
   if(!batch.length)return true;
   let result,error='';
   try{
-   try{result=await this.llm(ModelPrompts.direction({batch,context:job.targetOnly?batch:nearbyContext(input,batch.map(s=>s.id))}),{task:'direction',maxTokens:4000});}
-   catch(e){
-    if(!isContentRejected(e)||job.targetOnly)throw e;
-    if(shouldPause?.())return false;
-    job.targetOnly=true;this.touch(c);await this.persist();
-    result=await this.llm(ModelPrompts.direction({batch,context:batch}),{task:'direction',maxTokens:4000});
-   }
+   result=await this.llm(ModelPrompts.direction({batch,context:job.targetOnly?batch:nearbyContext(input,batch.map(s=>s.id))}),{task:'direction',maxTokens:4000});
   }catch(e){
    if(shouldPause?.())return false;
-   if(!['structure','truncated'].includes(e.kind)&&!isContentRejected(e)){e.stage='补写导演指导';throw e;}
+   if(!['structure','truncated'].includes(e.kind)||isContentRejected(e)){e.stage='补写导演指导';throw e;}
    error=e.message||'导演指导生成失败';
   }
   if(shouldPause?.())return false;
@@ -1047,8 +1058,7 @@ try{
   result=await this.llm(promptText,{task:'annotation',maxTokens:12000});
 }catch(err){
   if(shouldPause?.())return null;
-  if(this.features.direction&&isContentRejected(err)&&job.isolated&&!job.targetOnly){queue.unshift({...job,targetOnly:true});c.analysisDraft.pending=queue;this.touch(c);await this.persist();continue;}
-  if(!['structure','truncated'].includes(err.kind)&&!isContentRejected(err)){err.stage='标注角色';err.batchStart=batch[0].id+1;err.batchEnd=batch[batch.length-1].id+1;throw err;}
+  if(!['structure','truncated'].includes(err.kind)||isContentRejected(err)){err.stage='标注角色';err.batchStart=batch[0].id+1;err.batchEnd=batch[batch.length-1].id+1;throw err;}
   result={characters:[],lines:[],annotationError:String(err.message||err)};
 }
 
@@ -1243,7 +1253,7 @@ try{
  wakeChapter(t){const waiters=this._chapterWaiters?.get(t)||[];this._chapterWaiters?.delete(t);for(const w of waiters)w();}
  waitChapter(t){this._chapterWaiters=this._chapterWaiters||new WeakMap();return new Promise(resolve=>{const waiters=this._chapterWaiters.get(t)||[];waiters.push(resolve);this._chapterWaiters.set(t,waiters);});}
  async taskFailure(t,e){
-  const limit=parseRetryCount(this.state.settings.retries)??DEFAULTS.retries;
+  const limit=this.retryLimit(e.provider==='llm'?'llm':'tts');
   if((e.networkWait||e.checkpointRetryable||isNetworkRetryable(e)&&!e.requestFailed&&(t.retryCount||0)<limit)&&!t.pauseRequested&&t.status!=='cancelled'&&this.state.tasks.includes(t)){
    t.status='queued';t.retryWaiting=!e.networkWait;t.networkWaiting=!!e.networkWait;t.retryKind=e.checkpointRetryable?'checkpoint':'network';
    if(!e.networkWait)t.retryCount=(t.retryCount||0)+1;
@@ -1425,7 +1435,7 @@ try{
   if(this._startTaskId!==id)return;
   return this.resumeTasks([id],true);
  }
- async resumeTasks(ids,front=false){const tasks=ids.map(id=>this.state.tasks.find(t=>t.id===id)).filter(t=>t&&!['done','cancelled'].includes(t.status)&&!(t.status==='running'&&!t.pauseRequested)).sort((a,b)=>this.queueOrder(a,b));const mx=Math.max(0,...this.state.tasks.map(t=>t.prio||0));tasks.forEach((t,i)=>{if(t.status==='failed'){t.retryExhausted=false;t.retryAttempts=0;t.retryCount=0;}delete t.requestRetryCount;delete t.yieldRequested;delete t.pauseReason;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;if(front)t.prio=mx+tasks.length-i;if(this._frontActive.has(t)||t.synthActive){t.resumeRequested=true;t.phase='当前请求结束后继续';}else{t.resumeRequested=false;t.pauseRequested=false;t.synthQueued=false;t.status='queued';t.phase='排队等待';t.message='';t.error=null;}});await this.persist();await this.kick();}
+ async resumeTasks(ids,front=false){const tasks=ids.map(id=>this.state.tasks.find(t=>t.id===id)).filter(t=>t&&!['done','cancelled'].includes(t.status)&&!(t.status==='running'&&!t.pauseRequested)).sort((a,b)=>this.queueOrder(a,b));for(const t of tasks){if(t.status!=='failed')continue;await this.ensureChapter(t.bookId,t.chapterId);const c=this.chapter(t.bookId,t.chapterId);for(const segment of c.segments||[]){if(segment.speechDraft&&segment.qualityStatus!=='pending'){segment.speechDraft.retryAttempts=0;segment.speechDraft.qualityAttempts=0;this.touch(c);}}}const mx=Math.max(0,...this.state.tasks.map(t=>t.prio||0));tasks.forEach((t,i)=>{if(t.status==='failed'){t.retryExhausted=false;t.retryAttempts=0;t.retryCount=0;}delete t.requestRetryCount;delete t.yieldRequested;delete t.pauseReason;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;if(front)t.prio=mx+tasks.length-i;if(this._frontActive.has(t)||t.synthActive){t.resumeRequested=true;t.phase='当前请求结束后继续';}else{t.resumeRequested=false;t.pauseRequested=false;t.synthQueued=false;t.status='queued';t.phase='排队等待';t.message='';t.error=null;}});await this.persist();await this.kick();}
  async cancel(id){const t=this.state.tasks.find(t=>t.id===id);if(!t||t.status==='done')return;t.resumeRequested=false;delete t.yieldRequested;t.retryWaiting=false;t.networkWaiting=false;delete t.nextRetryAt;t.synthQueued=false;t.pauseRequested=true;this.wakeChapter(t);t.status='cancelled';t.phase='已取消';t.message='任务已取消';this._wakeTtsWaiters();this.wakeRequestRetries();this.scheduleProductionRetry();try{const c=this.chapter(t.bookId,t.chapterId);if(c.status!=='ready'){c.status=(c.segments||[]).length?'annotated':'raw';this.touch(c);}}catch(e){}await this.persist();}
  async removeTask(id){const i=this.state.tasks.findIndex(t=>t.id===id);if(i>=0){const t=this.state.tasks[i];t.synthQueued=false;t.pauseRequested=true;this.state.tasks.splice(i,1);this._wakeTtsWaiters();this.wakeRequestRetries();this.scheduleProductionRetry();this.wakeChapter(t);await this.persist();}}
  async accept(bid,name,resume=true){const ch=this.book(bid).characters.find(r=>r.name===name);if(!ch?.candidate)throw Error('没有可确认的样本');const candidate=ch.candidate;await this.saveVoice(candidate);await this.bind(bid,name,candidate.id,resume);}

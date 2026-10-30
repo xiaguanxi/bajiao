@@ -6,12 +6,12 @@ for(const response of [
  {base_resp:{status_code:1026,status_msg:'input new_sensitive (1026)'}},
  {error:{code:'1027',message:'output new_sensitive (1027)'}},
  'http'
-])test('rejected annotation requests narrow to single sentences and other chapters complete: '+JSON.stringify(response),async()=>{
+])test('rejected annotation stops for manual handling while other chapters complete: '+JSON.stringify(response),async()=>{
  const e=new V.Engine(io());e.state.settings.mode='manual';const b=await e.addBook('测试','第1章 失败\n'+Array.from({length:50},(_,i)=>'原文'+i+'。').join('')+'\n第2章 继续\n后续。');
  const [c,next]=b.chapters;next.segments=[{id:0,text:next.text,speaker:'旁白',confidence:1,audio:'saved.wav'}];let calls=0;
  e.io.request=async()=>{calls++;if(response==='http'){const err=new V.ApiError('input new_sensitive (1026)',500,true);err.code='1026';throw err;}return response;};
  const text=c.text;await e.enqueue(b.id,[c.id,next.id]);const [waiting,done]=e.state.tasks;
- assert.equal(calls,61,'45 + groups of five + singles, then final five + singles');assert.equal(waiting.total,50);assert.equal(waiting.status,'waiting');assert.equal(waiting.phase,'标注待处理');assert.equal(c.segments.length,50);assert(c.segments.every(s=>s.annotationStatus==='failed'));assert.equal(waiting.error,null);
+ assert.equal(calls,1,'a permanent refusal cannot trigger smaller-batch requests');assert.equal(waiting.total,50);assert.equal(waiting.status,'failed');assert.equal(waiting.phase,'内容审核未通过');assert.equal(c.segments.length,50);assert(c.segments.every(s=>s.annotationStatus==='pending'));assert.equal(waiting.error.retryable,false);assert(c.analysisDraft.pending.length);
  assert.equal(c.text,text);assert.equal(done.status,'done');assert.equal(next.segments[0].audio,'saved.wav');assert.equal(next.audio,'chapter.wav');
 });
 
@@ -19,7 +19,7 @@ test('legacy analyzed batch stays intact while only unresolved annotation senten
  const e=new V.Engine(io());e.state.settings.mode='manual';const b=await e.addBook('测试',Array.from({length:50},(_,i)=>'原文'+i+'。').join('')),c=b.chapters[0],input=V.units(c.text);
  c.analysisDraft={segments:input.slice(0,45).map(x=>({...x,speaker:'旁白',emotion:'',confidence:1,audio:'saved-'+x.id})),next:45,batchSize:45};const strip=o=>JSON.stringify(o,(k,v)=>k==='promptMode'?undefined:v);const checkpoint=strip(c.analysisDraft.segments);
  e.io.request=async()=>({base_resp:{status_code:1026,status_msg:'input new_sensitive (1026)'}});await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
- assert.equal(strip(c.segments.slice(0,45)),checkpoint);assert.equal(c.segments.filter(s=>s.annotationStatus==='failed').length,5);assert.equal(c.analysisDraft,undefined);assert.equal(t.done,45);
+ assert.equal(strip(c.segments.slice(0,45)),checkpoint);assert.equal(c.segments.filter(s=>s.annotationStatus==='pending').length,5);assert.equal(t.status,'failed');assert(c.analysisDraft.pending.length);assert.equal(c.segments.filter(s=>s.audio).length,45);
  let calls=0;e.io.request=async()=>{calls++;throw Error('successful annotations must not be repeated');};e.synthesize=async text=>({id:text,duration:1});
  for(const s of c.segments.slice(45))await e.correct(b.id,c.id,s.id,'旁白','自然朗读');await e.resume(t.id);
  assert.equal(t.status,'done');assert.equal(calls,0);assert.equal(t.message,'');assert.equal(t.error,null);assert.equal(c.segments.length,50);assert.equal(c.analysisDraft,undefined);assert.equal(strip(c.segments.slice(0,45)),checkpoint);

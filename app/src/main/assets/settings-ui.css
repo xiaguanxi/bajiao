@@ -58,7 +58,8 @@
 #app .settings-save .vc-btn{flex:1;min-height:46px;min-width:116px;padding:10px 16px}
 #app .settings-save .vc-btn:disabled{opacity:.45;cursor:default}
 #app .settings-editor{padding-bottom:16px}
-#app main.settings-main{padding-bottom:calc(var(--vc-nav-height,74px) + var(--vc-mini-height,0px) + 120px)}
+/* Keep Save's space when the shared .vc-main.with-mini-player rule also applies. */
+#app main.vc-main.settings-main{padding-bottom:calc(var(--vc-nav-height,74px) + var(--vc-mini-height,0px) + 120px)}
 #app .settings-management{border:1px solid var(--vc-line);border-radius:14px;margin:0 0 24px}
 #app .settings-reader-preview{padding:20px;border-radius:14px;background:var(--vc-soft);margin-bottom:24px}
 #app .settings-reader-preview>small{font:12px/1.5 sans-serif;color:var(--settings-muted)}
@@ -74,9 +75,32 @@
 #app .settings-picker-option span{overflow-wrap:anywhere}
 #app .settings-picker-option svg{flex:none;width:18px}
 #app .settings-picker-option.selected{background:var(--vc-soft);color:var(--vc-accent)}
-#app .settings-help-topic{padding:0 0 24px;margin-bottom:24px;border-bottom:1px solid var(--vc-line)}
-#app .settings-help-topic h3{font-size:17px;margin:0 0 12px}
-#app .settings-help-topic p{font-size:15px;line-height:1.85;margin:0;color:var(--settings-muted)}
+#app .settings-help-intro{font-size:15px;line-height:1.7;color:var(--settings-muted);margin:0 0 20px}
+#app .settings-help-topic{margin:0 0 12px;border:1px solid var(--vc-line);border-radius:14px;background:var(--vc-paper)}
+#app .settings-help-topic>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;font-weight:550;min-height:52px;box-sizing:border-box;cursor:pointer;list-style:none}
+#app .settings-help-topic>summary::-webkit-details-marker{display:none}
+#app .settings-help-topic>summary svg{width:18px;flex:none;color:var(--settings-muted)}
+#app .settings-help-topic[open]>summary svg{transform:rotate(180deg)}
+#app .settings-help-topic>.settings-help-content{padding:0 16px 20px}
+#app .settings-help-topic>h3{padding:16px 16px 0;margin:0 0 16px;font-size:18px}
+#app .settings-help-content{font-size:15px;line-height:1.8;color:var(--vc-text);overflow-wrap:anywhere;word-break:normal;text-align:left}
+#app .settings-help-content h3{font-size:16px;line-height:1.5;font-weight:650;margin:24px 0 10px;color:var(--vc-text)}
+#app .settings-help-content h3:first-child{margin-top:0}
+#app .settings-help-content p{font-size:inherit;line-height:inherit;margin:0 0 14px;color:inherit}
+#app .settings-help-content ul,#app .settings-help-content ol{margin:0 0 16px;padding-left:24px}
+#app .settings-help-content li{margin:0 0 8px;padding-left:2px}
+#app .settings-help-content li::marker{color:var(--vc-accent)}
+#app .settings-help-content strong{font-weight:650;color:var(--vc-text)}
+#app .settings-help-content code{font-family:inherit;font-size:.95em;background:var(--vc-soft);border-radius:4px;padding:1px 4px}
+#app .settings-help-content blockquote{margin:16px 0;padding:12px 14px;border-left:3px solid var(--vc-accent);border-radius:0 8px 8px 0;background:var(--vc-soft)}
+#app .settings-help-content blockquote p{margin:0}
+#app .settings-help-content>:last-child{margin-bottom:0}
+#app .production-dialog.settings-help-dialog{display:flex;flex-direction:column;gap:0;max-width:620px;max-height:calc(100vh - 32px)!important;max-height:calc(100dvh - 32px)!important;padding:0;overflow:hidden}
+#app .settings-help-dialog>header{flex:none;padding:12px 16px;border-bottom:1px solid var(--vc-line)}
+#app .settings-help-dialog>.production-dialog-copy{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px}
+#app .settings-help-dialog>.od-stack{flex:none;padding:12px 20px 16px;border-top:1px solid var(--vc-line)}
+#app .settings-help-dialog .production-dialog-copy:focus-visible{outline:2px solid var(--vc-accent);outline-offset:-3px}
+#app .settings-help-topic>summary:focus-visible{outline:2px solid var(--vc-accent);outline-offset:-3px;border-radius:14px}
 #app .settings-version{font-size:13px;color:var(--settings-muted)}
 #app :is(.settings-choice,.settings-home-row,.settings-picker-option,.settings-text-button):focus-visible{outline:2px solid var(--vc-accent);outline-offset:-3px}
 @media(max-width:374px){#app .settings-choice{padding:13px 12px;gap:8px;font-size:15px}#app .settings-current{font-size:13px}#app .settings-input{padding:13px 12px}#app .settings-home-row.vc-menu{padding:12px;gap:10px}}

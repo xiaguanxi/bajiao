@@ -61,7 +61,7 @@ function fixture(t,handler){
  io.readAudio=async id=>{reads.push(id);return read(id);};
  const saveState=io.saveState;
  io.saveState=async data=>{snapshots.push(JSON.parse(data));return saveState(data);};
- const e=new Engine(io);e.state.settings.retries=0;e.state.settings.ttsParallel=1;
+ const e=new Engine(io);e.state.settings.retries=0;e.state.settings.ttsRetries=1;e.state.settings.ttsParallel=1;
  return {e,io,dir,calls,events,processed,reads,snapshots,bytes:id=>fs.readFileSync(path.join(dir,id))};
 }
 async function chapter(e,texts){

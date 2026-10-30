@@ -30,8 +30,8 @@ const bytes=Buffer.alloc(44+16000);bytes.write('RIFF');bytes.writeUInt32LE(bytes
   assert((await page.locator('main').innerText()).includes('输出被截断'));assert.equal(await page.locator('[data-act="nextissue"]').innerText(),'定位待确认');assert.equal(await page.locator('[data-act="regenerateprompt:1"]').count(),1);await click('play:raw-return.wav');assert.equal(calls.filter(c=>c.action==='play').at(-1).payload.id,'raw-return.wav');
   const baseline=calls.filter(c=>c.action==='request').length;
   await click('closesegment');await click('back');await click('back');await click('go:settings');await click('go:quality');
-  assert.match(await page.locator('[data-act="settingspick:qualityMode"]').innerText(),/自动重合成一次/);await click('settingspick:qualityMode');await page.locator('.settings-picker').getByRole('button',{name:'人工处理',exact:true}).click();await click('settingssave');
-  assert.equal(calls.filter(c=>c.action==='request').length,baseline);const settings=await page.evaluate(()=>window.bajiaoEngine.state.settings);assert.equal(settings.qualityAutoRetry,false);assert.equal(settings.qualityConfirmRetry,true);
+  assert.equal(await page.locator('[data-act="settingspick:qualityMode"]').count(),0);await page.locator('#productionLlmRetries').fill('5');await page.locator('#productionTtsRetries').fill('0');await click('settingssave');
+  assert.equal(calls.filter(c=>c.action==='request').length,baseline);const settings=await page.evaluate(()=>window.bajiaoEngine.state.settings);assert.equal(settings.llmRetries,5);assert.equal(settings.ttsRetries,0);assert(!Object.hasOwn(settings,'qualityAutoRetry'));assert(!Object.hasOwn(settings,'qualityConfirmRetry'));
   await click('go:shelf');await click('book:b');await click('confirm:pending');
   await click('go:listen');assert.equal(await page.locator('[data-act="streamseek:1"]').count(),0,'unchecked sentence excluded from streaming controls');
   await click('go:annotated');await click('opensegment:1');await click('regenerateprompt:1');await page.waitForFunction(()=>window.bajiaoEngine.state.books[0].chapters[1].segments[1].audio==='new-line.wav');

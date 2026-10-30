@@ -29,8 +29,8 @@ test('timeouts enforce integer ranges and extend bridge wait beyond native limit
  const settings={...S.normalize(),connectTimeoutSeconds:120,responseTimeoutSeconds:600};assert(S.validate('productionpolicy',settings).valid);assert.equal(S.requestTimeoutMs(settings),750000);
 });
 test('retry validation retains zero and values above three; invalid forms stay invalid',()=>{
- for(const n of [0,3,17,Number.MAX_SAFE_INTEGER])assert(S.validate('quality',{...S.normalize(),retries:String(n)}).valid);
- for(const n of ['',-1,'1.0','1e2','abc',Number.MAX_SAFE_INTEGER+1])assert(!S.validate('quality',{...S.normalize(),retries:n}).valid);
+ for(const key of ['llmRetries','ttsRetries'])for(const n of [0,3,17,Number.MAX_SAFE_INTEGER])assert(S.validate('quality',{...S.normalize(),[key]:String(n)}).valid);
+ for(const key of ['llmRetries','ttsRetries'])for(const n of ['',-1,'1.0','1e2','abc',Number.MAX_SAFE_INTEGER+1])assert(!S.validate('quality',{...S.normalize(),[key]:n}).valid);
 });
 test('default choices reject missing voices and shared samples but allow explicit disabled voices',()=>{
  const settings=S.normalize(),voices=[{id:'one',sample:'same.wav',enabled:false},{id:'alias',sample:'same.wav'}];settings.defaultVoices.maleLead='one';assert(S.validate('voicepolicy',settings,voices).valid);settings.defaultVoices.femaleLead='alias';assert(!S.validate('voicepolicy',settings,voices).valid);settings.defaultVoices.femaleLead=null;assert(S.validate('voicepolicy',settings,voices).valid);settings.defaultVoices.maleLead='missing';assert(!S.validate('voicepolicy',settings,voices).valid);settings.defaultVoices.maleLead='preset:invented';assert(!S.validate('voicepolicy',settings,voices).valid);

@@ -55,20 +55,22 @@ test('manual role correction wins during repair and keeps explicit custom prompt
  const s=c.segments[0];assert.equal(s.speaker,'新角色');assert.equal(s.delivery,undefined);assert.equal(s.directionVersion,undefined);assert.equal(s.ttsPrompt,'用户自己的指导');
 });
 
-test('isolated annotation adds two neighbours and rejects context before target-only retry',async()=>{
+test('isolated annotation retains two neighbours and stops on a permanent context refusal',async()=>{
  const {e,b,c}=await fixture(6),seen=[];e.llm=async(p,options)=>{const batch=batchOf(p);seen.push(p);
   if(seen.length===1)return {lines:labels(batch).lines.filter(s=>s.id!==3)};
   if(p.includes('仅供理解')&&p.includes('原文1。'))throw new ApiError('内容审核未通过 (1026)',1026,false);
   return labels(batch);
- };await e.analyze(b.id,c.id);assert.equal(seen.length,3);assert(seen[1].includes('原文1。'));assert(seen[1].includes('原文5。'));assert(!seen[2].includes('原文1。'));assert.equal(c.segments[3].directionVersion,1);
+ };await assert.rejects(e.analyze(b.id,c.id),/内容审核未通过/);assert.equal(seen.length,2);assert(seen[1].includes('原文1。'));assert(seen[1].includes('原文5。'));assert.equal(c.analysisDraft.pending[0].ids[0],3);assert.equal(c.segments[3].annotationStatus,'pending');
+ e.llm=async p=>{seen.push(p);return labels(batchOf(p));};await e.analyze(b.id,c.id);assert.equal(seen.length,3);assert(seen[2].includes('原文1。'));assert.equal(c.segments[3].directionVersion,1);
 });
 
-test('repair context rejection falls back to target-only without losing queue or speakers',async()=>{
+test('repair context refusal waits for manual continuation without losing queue or speakers',async()=>{
  const {e,b,c}=await fixture(3),jobs=[];e.llm=async(p,options)=>{const batch=batchOf(p);jobs.push(options.task);
   if(options.task==='annotation')return {lines:labels(batch).lines.map(s=>s.id===1?{id:1,speaker:'林晚',confidence:1,emotion:'担忧'}:s)};
   if(p.includes('原文0。'))throw new ApiError('内容审核未通过 (1026)',1026,false);
   return labels(batch);
- };await e.analyze(b.id,c.id);assert.deepEqual(jobs,['annotation','direction','direction']);assert.equal(c.segments[1].directionVersion,1);
+ };await assert.rejects(e.analyze(b.id,c.id),/内容审核未通过/);assert.deepEqual(jobs,['annotation','direction']);assert.equal(c.analysisDraft.pending[0].kind,'direction');assert.equal(c.segments[1].speaker,'林晚');assert.equal(c.segments[1].directionStatus,'pending');
+ e.llm=async(p,options)=>{jobs.push(options.task);return labels(batchOf(p));};await e.analyze(b.id,c.id);assert.deepEqual(jobs,['annotation','direction','direction']);assert.equal(c.segments[1].directionVersion,1);
 });
 
 test('truncated repair degrades once; authentication errors retain the pending job',async()=>{

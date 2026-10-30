@@ -1,15 +1,17 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BajiaoSettings=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
-const VERSION=2;
+const VERSION=3;
 const PRESETS=Object.freeze(['默认嗓音','冰糖','茉莉','苏打','白桦','Mia','Chloe','Milo','Dean']);
 const DEFAULT_VOICES=Object.freeze({narrator:'preset:白桦',maleLead:'preset:苏打',femaleLead:'preset:冰糖'});
-const DEFAULTS=Object.freeze({settingsVersion:VERSION,wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',voiceAdoptionMode:'auto',speakerUncertaintyMode:'narrator',roleMergeMode:'auto',usePresets:false,retries:3,qualityAutoRetry:true,qualityConfirmRetry:false,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast',connectTimeoutSeconds:30,responseTimeoutSeconds:240,defaultVoices:DEFAULT_VOICES});
+const defaults={settingsVersion:VERSION,wifiOnlyProduction:false,llmBase:'',llmModel:'',llmProtocol:'openai',voiceAdoptionMode:'auto',speakerUncertaintyMode:'narrator',roleMergeMode:'auto',usePresets:false,llmRetries:3,ttsRetries:3,speakerThreshold:0.5,autoDeletePlayed:false,keepRecentCount:2,autoProduceCount:2,playbackSpeed:1,sleepTimer:0,autoProduceUpcoming:true,readerFontSize:16,readerLineHeight:1.6,taskParallel:1,ttsParallel:2,splitRule:'auto',splitCustom:'',promptMode:'fast',connectTimeoutSeconds:30,responseTimeoutSeconds:240,defaultVoices:DEFAULT_VOICES};
+Object.defineProperty(defaults,'retries',{get(){return this.llmRetries;}});
+const DEFAULTS=Object.freeze(defaults);
 const PAGE_KEYS=Object.freeze({
  llm:['llmProtocol','llmBase','llmModel'],mimo:[],
  productionmode:['promptMode','speakerUncertaintyMode','speakerThreshold','roleMergeMode'],
  voicepolicy:['voiceAdoptionMode','usePresets','defaultVoices'],
  productionpolicy:['wifiOnlyProduction','taskParallel','ttsParallel','connectTimeoutSeconds','responseTimeoutSeconds'],
- quality:['retries','qualityAutoRetry','qualityConfirmRetry'],
+ quality:['llmRetries','ttsRetries'],
  playbackpolicy:['playbackSpeed','autoProduceUpcoming','autoProduceCount'],
  readerpolicy:['readerFontSize','readerLineHeight'],importpolicy:['splitRule','splitCustom'],
  storagepolicy:['autoDeletePlayed','keepRecentCount']
@@ -21,7 +23,11 @@ function integer(value,min,max){if(typeof value!=='number'&&(typeof value!=='str
 function normalize(saved={},legacySpeed){
  const s={...clone(DEFAULTS),...saved},manual=saved.mode==='manual';delete s.mode;
  for(const [key,values,fallback] of [['voiceAdoptionMode',['auto','review'],manual?'review':'auto'],['speakerUncertaintyMode',['narrator','review'],manual?'review':'narrator'],['roleMergeMode',['auto','review'],manual?'review':'auto']])if(!values.includes(s[key])||saved[key]==null)s[key]=fallback;
- for(const [key,min,max] of [['retries',0,Number.MAX_SAFE_INTEGER],['keepRecentCount',0,3],['autoProduceCount',1,3],['taskParallel',1,3],['ttsParallel',1,4],['connectTimeoutSeconds',5,120],['responseTimeoutSeconds',30,600]])s[key]=integer(s[key],min,max)??DEFAULTS[key];
+ const legacyRetries=integer(saved.retries,0,Number.MAX_SAFE_INTEGER);
+ for(const key of ['llmRetries','ttsRetries'])s[key]=integer(saved[key],0,Number.MAX_SAFE_INTEGER)??legacyRetries??DEFAULTS[key];
+ delete s.retries;delete s.qualityAutoRetry;delete s.qualityConfirmRetry;
+ Object.defineProperty(s,'retries',{configurable:true,get(){return this.llmRetries;},set(value){this.llmRetries=value;this.ttsRetries=value;}});
+ for(const [key,min,max] of [['keepRecentCount',0,3],['autoProduceCount',1,3],['taskParallel',1,3],['ttsParallel',1,4],['connectTimeoutSeconds',5,120],['responseTimeoutSeconds',30,600]])s[key]=integer(s[key],min,max)??DEFAULTS[key];
  if(!Number.isFinite(Number(s.speakerThreshold))||s.speakerThreshold<0||s.speakerThreshold>1)s.speakerThreshold=0.5;else s.speakerThreshold=Number(s.speakerThreshold);
  const speed=Number(legacySpeed??s.playbackSpeed);s.playbackSpeed=Number.isFinite(speed)&&speed>=0.5&&speed<=3?speed:1;
  if(![16,18,20,22,24].includes(Number(s.readerFontSize)))s.readerFontSize=16;else s.readerFontSize=Number(s.readerFontSize);
@@ -46,7 +52,7 @@ function validate(page,draft,voices=[]){
  if(page==='productionmode'){
   const n=Number(value.speakerThreshold);if(String(value.speakerThreshold).trim()===''||!Number.isFinite(n)||n<0||n>1)errors.speakerThreshold='阈值请输入 0–1 之间的数值。';else value.speakerThreshold=n;
  }
- if(page==='quality')range('retries',0,Number.MAX_SAFE_INTEGER,'重试次数请输入非负整数，0 表示不重试。');
+ if(page==='quality')for(const key of ['llmRetries','ttsRetries'])range(key,0,Number.MAX_SAFE_INTEGER,'重试次数请输入非负整数，0 表示不重试。');
  if(page==='playbackpolicy'){
   const n=Number(value.playbackSpeed);if(!Number.isFinite(n)||n<0.5||n>3)errors.playbackSpeed='倍速范围为 0.5–3。';else value.playbackSpeed=n;
   range('autoProduceCount',1,3,'提前制作章数请选择 1–3 章。');

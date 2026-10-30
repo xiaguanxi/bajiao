@@ -6,7 +6,7 @@ const V=require('../app/src/main/assets/core.js'),{wav}=require('./native-speech
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({channel:'msedge',headless:true});
  try{
   const page=await browser.newPage({viewport:{width:412,height:915}}),errors=[],calls=[],audio=new Map();page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
-  const text='宛如白莲宗的悬骰宫一般！',raw=wav([{seed:3,seconds:3},{silence:true,seconds:.6},{seed:3,seconds:3,gain:.8}]),state=V.makeState();state.settings.autoProduceUpcoming=false;state.settings.qualityConfirmRetry=true;
+  const text='宛如白莲宗的悬骰宫一般！',raw=wav([{seed:3,seconds:3},{silence:true,seconds:.6},{seed:3,seconds:3,gain:.8}]),state=V.makeState();state.settings.autoProduceUpcoming=false;state.settings.ttsRetries=1;
   state.books=[{id:'b',name:'重复朗读确认',characters:[{name:'旁白',voice:'preset:白桦'}],chapters:[{id:'c',title:'第一章 核验',text,segments:[{id:0,text,speaker:'旁白',confidence:1}],status:'annotated'}]}];
   await page.exposeFunction('nativeCall',async(id,action,payload)=>{const p=JSON.parse(payload||'{}');calls.push({action,payload:p});let result=true;
    if(action==='load')result={state,llmConfigured:true,ttsConfigured:true};

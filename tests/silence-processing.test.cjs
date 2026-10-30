@@ -37,18 +37,18 @@ const badReturns=[
  ['empty response',audioReply(Buffer.alloc(0)),/损坏|空音频|解码/],
  ['residual excessive duration',audioReply(wav([{seed:4,seconds:8},{seed:7,seconds:8},{seed:9,seconds:9}])),/时长/]
 ];
-for(const [name,reply,issue] of badReturns)for(const auto of [false,true])for(const confirm of [false,true]){
- test(`${name}: qualityAutoRetry=${auto}, qualityConfirmRetry=${confirm} bounds native quality retries`,async t=>{
-  const f=fixture(t,()=>reply);Object.assign(f.e.state.settings,{qualityAutoRetry:auto,qualityConfirmRetry:confirm});
-  const {b,c}=await chapter(f.e,[text]);await f.e.enqueue(b.id,[c.id]);const s=c.segments[0],expected=auto&&!confirm?2:1;
+for(const [name,reply,issue] of badReturns)for(const count of [0,1,2,4]){
+ test(`${name}: TTS count=${count} bounds all native quality retries`,async t=>{
+  const f=fixture(t,()=>reply);f.e.state.settings.ttsRetries=count;
+  const {b,c}=await chapter(f.e,[text]);await f.e.enqueue(b.id,[c.id]);const s=c.segments[0],expected=count+1;
   assert.equal(f.calls.length,expected);assert.equal(f.processed.length,expected);assert.equal(f.reads.length,0);
   assert.equal(s.qualityStatus,'pending');assert.equal(s.qualityAttempts,expected-1);assert.match(s.failReason,issue);assert(!s.audio);assert(!c.audio);
   assert.equal(s.speechDraft.pendingRaw.silenceProcessingVersion,1);
   for(const id of s.speechDraft.rawAudioIds){assert(fs.existsSync(path.join(f.dir,id)));assert(f.e.collectReferencedAudio().includes(id));}
-  const count=f.calls.length;await f.e.resume(f.e.state.tasks[0].id);await f.e.resumeWaiting(b.id);await f.e.bind(b.id,'旁白','preset:白桦');
-  assert.equal(f.calls.length,count,'resume and voice confirmation cannot grant another paid quality retry');
+  const callsBeforeResume=f.calls.length;await f.e.resume(f.e.state.tasks[0].id);await f.e.resumeWaiting(b.id);await f.e.bind(b.id,'旁白','preset:白桦');
+  assert.equal(f.calls.length,callsBeforeResume,'resume and voice confirmation cannot grant another paid quality retry');
   const restored=new Engine(f.io,JSON.parse(JSON.stringify(f.e.state)));
-  assert.equal(restored.state.settings.qualityAutoRetry,auto);assert.equal(restored.state.settings.qualityConfirmRetry,confirm);
+  assert.equal(restored.state.settings.ttsRetries,count);
   assert.equal(restored.chapter(b.id,c.id).segments[0].speechDraft.pendingRaw.silenceProcessingVersion,1);
  });
 }
@@ -63,7 +63,7 @@ test('a native quality retry retains both original returns and accepts the corre
 
 test('native correction still hard-rejects excessive residual speech duration',async t=>{
  const source=wav([{seconds:5},{seconds:6,silence:true,noise:2},{seconds:5,seed:5}]);
- const f=fixture(t,()=>audioReply(source));f.e.state.settings.qualityAutoRetry=false;
+ const f=fixture(t,()=>audioReply(source));f.e.state.settings.ttsRetries=0;
  await assert.rejects(f.e.synthesize('甲。','preset:白桦'),/处理后时长仍异常/);
  assert.equal(f.calls.length,1);assert.equal(f.processed[0].file.corrected,true);
  assert(f.processed[0].file.duration>8);assert(f.bytes(f.processed[0].rawId).equals(source));
@@ -148,7 +148,7 @@ test('manual native quality failure preserves old playable segment and chapter r
  const priorMetadata=JSON.stringify(c.segments[0].silenceProcessing);
  await assert.rejects(f.e.regenerateSegment(b.id,c.id,0),/全近静音/);
  const s=c.segments[0];assert.equal(s.audio,old.id);assert.equal(c.audio,oldChapter.id);assert.equal(JSON.stringify(s.silenceProcessing),priorMetadata);
- assert.equal(f.calls.length,1,'manual retry cannot purchase an automatic quality retry');assert.match(s.retryError,/全近静音/);
+ assert.equal(f.calls.length,2,'explicit regeneration starts a fresh budget with one configured extra attempt');assert.match(s.retryError,/全近静音/);
  assert(s.retryDraft.pendingRaw);for(const id of [old.id,oldChapter.id,...s.retryDraft.rawAudioIds])assert(f.e.collectReferencedAudio().includes(id));
  await f.e.garbageCollectAudio();assert(f.bytes(old.id).equals(normal));assert.equal(waveInfo(f.bytes(oldChapter.id)).duration,4);assert(s.retryDraft.rawAudioIds.every(id=>fs.existsSync(path.join(f.dir,id))));
 });

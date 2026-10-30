@@ -20,7 +20,7 @@ function memoryEngine(handler){
   saveAudio:async data=>{const bytes=Buffer.from(data,'base64'),id=crypto.createHash('sha256').update(bytes).digest('hex')+'.wav';stored.set(id,bytes);return {id,duration:waveInfo(bytes).duration};},
   readAudio:async id=>({base64:stored.get(id).toString('base64')}),
   mergeAudio:async ids=>{const bytes=mergeWave(ids.map(id=>stored.get(id)));const id=crypto.createHash('sha256').update(bytes).digest('hex')+'.wav';stored.set(id,bytes);return {id,duration:waveInfo(bytes).duration};},sleep:async()=>{}});
- e.state.settings.retries=0;return {e,stored,calls,snapshots};
+ e.state.settings.retries=0;e.state.settings.ttsRetries=1;return {e,stored,calls,snapshots};
 }
 const audioReply=(data,finish_reason='stop')=>({choices:[{finish_reason,message:{audio:{data:data.toString('base64')}}}]});
 const textReply=content=>({choices:[{finish_reason:'stop',message:{content}}]});
@@ -46,7 +46,7 @@ test('long pauses alone warn without another request; repeated speech cannot pas
   const {e,stored,calls}=memoryEngine(()=>audioReply(source)),f=await e.synthesize(text,'preset:白桦');
   assert.equal(f.qualityStatus,'passed_with_warnings');assert(f.qualityIssues.length);assert(stored.get(f.id).equals(source));assert.equal(calls.length,1);
  }
- const {e,calls,stored}=memoryEngine(()=>audioReply(dup));e.state.settings.qualityConfirmRetry=true;let draft={};
+ const {e,calls,stored}=memoryEngine(()=>audioReply(dup));let draft={};
  await assert.rejects(e.synthesize(text,'preset:白桦','自然',{onQuality:d=>draft={...draft,...d}}),/疑似重复/);
  assert.equal(calls.length,2);assert(draft.rawAudioIds.every(id=>stored.has(id)));assert.equal(draft.pendingRaw.qualityApproved,false);
 });
@@ -57,15 +57,15 @@ test('intentional full and partial repetitions are preserved',async()=>{
  }
  assert(intentionalRepeat('回来！回来！'));
 });
-test('all four retry/confirmation combinations bound quality requests',async()=>{
- for(const auto of [true,false])for(const confirm of [true,false]){
-  const {e,calls}=memoryEngine(()=>audioReply(silent));Object.assign(e.state.settings,{qualityAutoRetry:auto,qualityConfirmRetry:confirm});
+test('configured TTS counts bound quality retries and survive reload',async()=>{
+ for(const count of [0,1,2,4]){
+  const {e,calls}=memoryEngine(()=>audioReply(silent));e.state.settings.ttsRetries=count;
   const {b,c}=await chapter(e,[text]);await e.enqueue(b.id,[c.id]);
-  assert.equal(calls.length,auto&&!confirm?2:1);assert.equal(c.segments[0].qualityStatus,'pending');assert(!c.audio);
-  const saved=JSON.parse(JSON.stringify(e.state)),restored=new Engine(e.io,saved);
-  assert.equal(restored.state.settings.qualityAutoRetry,auto);assert.equal(restored.state.settings.qualityConfirmRetry,confirm);
+  assert.equal(calls.length,count+1);assert.equal(c.segments[0].qualityStatus,'pending');assert(!c.audio);
+  const restored=new Engine(e.io,JSON.parse(JSON.stringify(e.state)));assert.equal(restored.state.settings.ttsRetries,count);
  }
 });
+
 test('explicit truncation, invalid structure and empty return retry only once',async()=>{
  for(const reply of [audioReply(normal,'length'),audioReply(Buffer.from('invalid')),audioReply(Buffer.alloc(0))]){
   const {e,calls,stored}=memoryEngine(()=>reply);let draft={};
@@ -88,10 +88,10 @@ test('pending sentence does not stop other sentences and ordinary resume never p
  assert(e.collectReferencedAudio().includes(c.segments[0].speechDraft.rawAudioIds[0]));
 });
 test('confirmation can never be bypassed by resume or accepting a role',async()=>{
- const {e,calls}=memoryEngine(()=>audioReply(silent));e.state.settings.qualityConfirmRetry=true;
+ const {e,calls}=memoryEngine(()=>audioReply(silent));
  const {b,c}=await chapter(e,[text]);await e.enqueue(b.id,[c.id]);const count=calls.length;
  await e.resume(e.state.tasks[0].id);await e.bind(b.id,'旁白','preset:白桦');
- assert.equal(calls.length,count);assert.equal(c.segments[0].qualityAttempts,0);
+ assert.equal(calls.length,count);assert.equal(c.segments[0].qualityAttempts,1);
 });
 test('manual retry affects exactly the selected sentence, leaving another pending',async()=>{
  const {e,calls}=memoryEngine(()=>audioReply(normal));const {b,c}=await chapter(e);
@@ -100,16 +100,16 @@ test('manual retry affects exactly the selected sentence, leaving another pendin
  assert(c.segments[0].audio);assert(!c.segments[1].audio);assert(!c.audio);assert.equal(calls.length,1);
  assert.equal(calls[0].body.messages.find(m=>m.role==='assistant').content,text);
 });
-test('manual retry never adds another quality retry',async()=>{
+test('manual retry uses a fresh configured quality budget',async()=>{
  const {e,calls}=memoryEngine(()=>audioReply(silent)),{b,c}=await chapter(e,[text]);
  await assert.rejects(e.regenerateSegment(b.id,c.id,0),/合成异常/);
- assert.equal(calls.length,1);assert.equal(c.segments[0].qualityStatus,'pending');assert(c.segments[0].speechDraft.pendingRaw);
+ assert.equal(calls.length,2);assert.equal(c.segments[0].qualityStatus,'pending');assert(c.segments[0].speechDraft.pendingRaw);
 });
 test('manual failure preserves old playable references and diagnostics',async()=>{
  const {e,calls,stored}=memoryEngine(()=>audioReply(silent)),{b,c}=await chapter(e,[text]);
  const old=await e.io.saveAudio(normal.toString('base64'));c.segments[0].audio=old.id;c.audio='old-chapter.wav';c.status='ready';
  await assert.rejects(e.regenerateSegment(b.id,c.id,0));assert.equal(c.segments[0].audio,old.id);assert.equal(c.audio,'old-chapter.wav');
- assert(c.segments[0].retryError);assert.equal(calls.length,1);assert(c.segments[0].retryDraft.rawAudioIds.every(id=>stored.has(id)));
+ assert(c.segments[0].retryError);assert.equal(calls.length,2);assert(c.segments[0].retryDraft.rawAudioIds.every(id=>stored.has(id)));
 });
 test('successful manual replacement stages the affected chapter and preserves other segments',async()=>{
  const {e,calls}=memoryEngine(()=>audioReply(normal)),{b,c}=await chapter(e);
@@ -153,11 +153,11 @@ test('legacy repair and unsupported provider cannot touch audio or call a servic
  assert.equal(await e.repairChapterAudio(),0);await assert.rejects(e.request('asr',{}),/无效模型/);assert.equal(e.transcribeAudio,undefined);
 });
 test('authentication, quotas and local persistence errors do not split or retry quality',async()=>{
- for(const status of [401,403,402,429]){const {e,calls}=memoryEngine(()=>{throw new (require('../app/src/main/assets/core.js').ApiError)('HTTP '+status,status,false);});await assert.rejects(e.synthesize('甲。乙。','preset:白桦'));assert.equal(calls.length,1);}
+ for(const status of [401,403,402,429]){const {e,calls}=memoryEngine(()=>{throw Object.assign(new (require('../app/src/main/assets/core.js').ApiError)('HTTP '+status,status,false),status===429?{code:'insufficient_quota'}:{});});await assert.rejects(e.synthesize('甲。乙。','preset:白桦'));assert.equal(calls.length,1);}
  const {e,calls}=memoryEngine(()=>audioReply(normal));e.io.saveRawAudio=async()=>{throw Error('disk full');};await assert.rejects(e.synthesize('甲。乙。','preset:白桦'),/disk full/);assert.equal(calls.length,1);
 });
 test('repetition in split synthesis shares one retry and cannot publish a bad merged result',async()=>{
- const {e,calls}=memoryEngine((_,__,calls)=>audioReply(calls.length===2?normal:dup));e.state.settings.qualityConfirmRetry=true;let merged=0,files=[];e.io.mergeAudio=async()=>{merged++;throw Error('bad merge');};
+ const {e,calls}=memoryEngine((_,__,calls)=>audioReply(calls.length===2?normal:dup));let merged=0,files=[];e.io.mergeAudio=async()=>{merged++;throw Error('bad merge');};
  await assert.rejects(e.synthesize(text+text,'preset:白桦','自然',{forceSplit:true,onPart:parts=>files=[...parts]}),/疑似重复/);
  assert.equal(calls.length,3);assert.equal(files.length,1);assert.equal(merged,0);
 });

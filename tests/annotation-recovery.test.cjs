@@ -5,15 +5,15 @@ const batch=prompt=>JSON.parse(prompt.split('本批片段：')[1]);
 const labels=lines=>({characters:[],lines:lines.map(s=>({id:s.id,speaker:'旁白',emotion:'自然',confidence:1}))});
 const setup=async(n=95)=>{const e=new V.Engine(io()),b=await e.addBook('逐句恢复',Array.from({length:n},(_,i)=>'原文'+i+'。').join(''));return {e,b,c:b.chapters[0]};};
 
-for(const mode of ['manual','auto'])test(mode+': whole-context rejection isolates one failed line, preserving all other annotations and audio',async()=>{
+for(const mode of ['manual','auto'])test(mode+': non-retryable context rejection waits for manual resume without narrowing the batch',async()=>{
  const {e,b,c}=await setup();e.state.settings.mode=mode;e.state.settings.ttsParallel=1;const calls=[],spoken=[];
  e.llm=async prompt=>{const lines=batch(prompt);calls.push(lines.map(s=>s.id));if(prompt.includes('本章完整上下文')||lines.some(s=>s.id===48))throw new V.ApiError('input new_sensitive (1026)',1026,false);return labels(lines);};
  e.synthesize=async text=>{spoken.push(text);return {id:'audio-'+text,duration:1};};await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
- assert.equal(c.segments.length,95);assert.equal(V.normalize(c.segments.map(s=>s.text).join('')),V.normalize(c.text));assert(calls.some(ids=>ids.length===90));assert(calls.some(ids=>ids.length===5));assert(calls.some(ids=>ids.length===1&&ids[0]===48));
- assert.equal(c.segments.filter(s=>s.annotationStatus===(mode==='auto'?'fallback':'failed')).length,1);assert.equal(c.segments[48].annotationStatus,mode==='auto'?'fallback':'failed');assert.equal(new Set(spoken).size,spoken.length);
- for(const s of c.segments.filter(s=>s.id!==48))assert.equal(s.annotationStatus,'complete');
- if(mode==='auto'){assert.equal(t.status,'done');assert.equal(spoken.length,95);assert.equal(c.segments[48].speaker,'旁白');assert.equal(c.segments[48].confidence,0);}
- else{assert.equal(t.status,'waiting');assert.equal(t.phase,'标注待处理');assert.equal(t.done,94);assert.equal(spoken.length,94);const saved=c.segments.filter(s=>s.id!==48).map(s=>s.audio),count=calls.length;await e.correct(b.id,c.id,48,'旁白','自然');await e.resume(t.id);assert.equal(t.status,'done');assert.equal(calls.length,count);assert.equal(spoken.length,95);assert.deepEqual(c.segments.filter(s=>s.id!==48).map(s=>s.audio),saved);}
+ assert.equal(c.segments.length,95);assert.equal(V.normalize(c.segments.map(s=>s.text).join('')),V.normalize(c.text));assert.deepEqual(calls,[Array.from({length:90},(_,i)=>i)]);assert.equal(spoken.length,0);
+ assert.equal(t.status,'failed');assert.equal(t.phase,'内容审核未通过');assert(c.segments.every(s=>s.annotationStatus==='pending'));assert(c.analysisDraft.pending.length);
+ await e.kick();assert.equal(calls.length,1,'ordinary scheduling cannot restart a refused batch');
+ e.llm=async prompt=>{const lines=batch(prompt);calls.push(lines.map(s=>s.id));return labels(lines);};await e.resume(t.id);
+ assert.equal(t.status,'done');assert.equal(calls.length,3);assert(c.segments.every(s=>s.annotationStatus==='complete'));assert.equal(spoken.length,95);assert.equal(new Set(spoken).size,95);
 });
 
 test('partial malformed responses retry only missing, duplicate or malformed IDs',async()=>{

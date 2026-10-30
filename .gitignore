@@ -12,4 +12,5 @@ test-results/
 node_modules/
 
 books/
-界面截图/
+# 临时截图放在 artifacts/；README 展示素材保留在 docs/images/。
+/界面截图*/

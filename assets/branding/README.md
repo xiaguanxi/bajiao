@@ -1,10 +1,10 @@
 # 芭蕉品牌资源
 
-当前图标采用项目根目录 `aurora-blue-alpha_a_为有声书app：芭蕉设计_3_个_app.webp` 中间的方案：深青绿色雨景、芭蕉叶、米白色耳机与书本，以及水面涟漪。
+当前图标由深青绿色雨景、芭蕉叶、米白色耳机与书本，以及水面涟漪组成。
 
-`bajiao-rain-headphones.png` 是 imagegen 从参考图中间方案提取并补齐四角的方形源图，保留水彩质感，不预加圆角。`bajiao-master.png` 是统一导出的 1024 × 1024 图标。
+`bajiao-rain-headphones.png` 是当前图标的方形源图，保留水彩质感，不预加圆角。`bajiao-master.png` 是统一导出的 1024 × 1024 图标，也用于生成 README 横幅。
 
-之前的「听雨」矢量方案保留为 `bajiao-icon.svg`，更早的「叶页成书」原图保留为 `bajiao-leaf-book-original.png`，均不再用于当前导出。已有提示词仅作为探索记录。
+仓库仅保留当前使用的图标资源；旧设计方案、参考图与探索提示词可通过 Git 历史查阅。
 
 运行 `./scripts/build-brand-icons.ps1` 或 `node scripts/build-brand-icons.cjs` 从当前 PNG 源图重新导出 Android 资源。需要 Node、Playwright 和 Edge；`PLAYWRIGHT_MODULE` 可指定 Playwright 模块路径，默认沿用项目 UI 验证使用的本地运行库。
 

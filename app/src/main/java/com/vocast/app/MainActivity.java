@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0){try{File f=new File(getFilesDir(),"credentials-import.json");if(f.isFile()){vault.save(new JSONObject(new String(AudioFiles.read(f,100000),StandardCharsets.UTF_8)));if(!f.delete())throw new IOException("Credential import cleanup failed");}}catch(Exception e){android.widget.Toast.makeText(this,"测试配置导入失败",android.widget.Toast.LENGTH_SHORT).show();}}
         web=new WebView(this);setContentView(web);web.setBackgroundColor(0xfff8f7f2);WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setMediaPlaybackRequiresUserGesture(true);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);settings.setTextZoom(100);
         if((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
-        web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.bajiao.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;if("/brand-icon.png".equals(path))return brandIconResponse();path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
+        web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){Uri uri=r.getUrl();if(!"app.bajiao.local".equals(uri.getHost()))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));String path=uri.getPath();if(path==null||path.contains(".."))return null;if("/brand-icon.png".equals(path))return brandIconResponse();path=path.equals("/")?"index.html":path.substring(1);try{String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".jpg")?"image/jpeg":path.endsWith(".png")?"image/png":"text/html";return new WebResourceResponse(mime,"UTF-8",getAssets().open(path));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not found",null,new ByteArrayInputStream(new byte[0]));}}});
         web.addJavascriptInterface(new Bridge(),"Native");web.loadUrl("https://app.bajiao.local/index.html");
         connectivity=getSystemService(ConnectivityManager.class);
         networkCallback=new ConnectivityManager.NetworkCallback(){
@@ -78,13 +78,14 @@ public class MainActivity extends Activity {
     class Bridge {
         @JavascriptInterface public void call(String id,String action,String json){
             if(!id.matches("[a-zA-Z0-9_-]{1,60}"))return;
-            ("checkAppUpdate".equals(action)?updateExecutor:("request".equals(action)||"testModelConfiguration".equals(action))?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
+            ("checkAppUpdate".equals(action)?updateExecutor:("request".equals(action)||"testModelConfiguration".equals(action)||"listModels".equals(action))?networkExecutor:executor).execute(()->{if(!AppSession.isActive(appSession))return;try{JSONObject p=new JSONObject(json);Object result;
                 switch(action){
                     case "networkState":result=productionNetworkState();break;
                     case "openProject":runOnUiThread(()->openProject(id));return;
+                    case "openHelpLink":{String url=HelpLinks.url(p.getString("link"));runOnUiThread(()->openHelpLink(id,url));return;}
                     case "checkAppUpdate":result=checkAppUpdate(p.optBoolean("automatic"));break;
                     case "openAppUpdate":{String url=p.getString("url");if(!AppUpdates.allowedDownload(url))throw new IOException("无效的安装包下载地址");runOnUiThread(()->openAppUpdate(id,url));return;}
-                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}recoverModelSave(state);JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",!keys.optString("llmKey").isEmpty()).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
+                    case "load":{JSONObject state=snapshots.loadHeader();try{if(state==null)state=new JSONObject(new String(store.readFully(),StandardCharsets.UTF_8));}catch(FileNotFoundException ignored){}recoverModelSave(state);JSONObject keys=vault.read();String nav0=getIntent()!=null?getIntent().getStringExtra("nav"):null;if(nav0==null)nav0=pendingNav;pendingNav=null;result=new JSONObject().put("state",state==null?JSONObject.NULL:state).put("playbackCheckpoint",new PlaybackCheckpoint(getFilesDir()).load()).put("llmConfigured",ModelSettings.configured(keys)).put("llmKeyConfigured",!keys.optString("llmKey").isEmpty()).put("llmHeaders",ModelSettings.headers(keys.optJSONArray("llmHeaders"))).put("ttsConfigured",!keys.optString("ttsKey").isEmpty()).put("version",getPackageManager().getPackageInfo(getPackageName(),0).versionName).put("versionCode",getPackageManager().getPackageInfo(getPackageName(),0).versionCode).put("initialNav",nav0==null?JSONObject.NULL:nav0);break;}
                     case "decodeBook":{byte[] bytes=importBytes.get(p.getString("token"));if(bytes==null)throw new IOException("导入草稿已过期，请重新选择文件");String encoding=p.optString("encoding",BookImporter.encoding(bytes));if(!Arrays.asList("UTF-8","GB18030","UTF-16").contains(encoding))throw new IOException("请选择 UTF-8、GB18030 或 UTF-16");result=decodedBook(bytes,encoding);break;}
                     case "loadChapter":result=snapshots.loadChapter(p.getString("id"));break;
                     case "saveSnapshot":snapshots.save(p.getString("header"),p.getString("chapters"));result=true;break;
@@ -92,6 +93,7 @@ public class MainActivity extends Activity {
                     case "saveCredentials":vault.save(p);result=true;break;
                     case "request":result=request(p);break;
                     case "testModelConfiguration":result=testModelConfiguration(p);break;
+                    case "listModels":result=listModels(p);break;
                     case "saveModelConfiguration":result=saveModelConfiguration(p);break;
                     case "saveRawAudio":result=audio.saveRaw(Base64.decode(p.getString("base64"),Base64.DEFAULT),p.getString("format"));break;
                     case "processSpeechAudio":result=audio.processSpeechAudio(p.getString("id"));break;
@@ -165,9 +167,37 @@ public class MainActivity extends Activity {
     private synchronized void saveState(String text) throws Exception {if(text.length()>16*1024*1024)throw new Exception("书库数据过大");new JSONObject(text);FileOutputStream out=null;try{out=store.startWrite();out.write(text.getBytes(StandardCharsets.UTF_8));store.finishWrite(out);}catch(Exception e){if(out!=null)store.failWrite(out);throw e;}}
     private JSONObject request(JSONObject p) throws Exception {return request(p,vault.read());}
     private JSONObject request(JSONObject p,JSONObject keys) throws Exception {
-        String provider=p.getString("provider");JSONObject st=p.getJSONObject("settings"),body=p.getJSONObject("body");boolean tts=provider.equals("tts");if(!tts&&!provider.equals("llm"))throw new Exception("无效模型类型");String base=tts?"https://api.xiaomimimo.com/v1":st.optString("llmBase","https://api.minimax.cn/v1").replaceAll("/+$","");base=ModelSettings.base(base);String key=keys.optString(tts?"ttsKey":"llmKey");if(key.isEmpty())throw new Exception("请先配置"+(tts?"MiMo":"语言模型")+" API Key");if(!tts&&!base.equals(keys.optString("llmBase","https://api.minimax.cn/v1")))throw new Exception("模型地址已改变，请在配置页保存以确认密钥对应的服务");boolean anthropic=!tts&&st.optString("llmProtocol").equals("anthropic");String suffix=anthropic?(base.endsWith("/v1")?"/messages":"/v1/messages"):"/chat/completions";
-        HttpURLConnection conn=(HttpURLConnection)new URL(base+suffix).openConnection();conn.setInstanceFollowRedirects(false);conn.setRequestMethod("POST");conn.setConnectTimeout(ModelSettings.timeout(st,"connectTimeoutSeconds",30,5,120));conn.setReadTimeout(ModelSettings.timeout(st,"responseTimeoutSeconds",240,30,600));conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Authorization","Bearer "+key);if(anthropic){conn.setRequestProperty("x-api-key",key);conn.setRequestProperty("anthropic-version","2023-06-01");}
-        try{byte[] raw=body.toString().getBytes(StandardCharsets.UTF_8);conn.setFixedLengthStreamingMode(raw.length);try(OutputStream out=conn.getOutputStream()){out.write(raw);}int code=conn.getResponseCode();InputStream in=code>=200&&code<300?conn.getInputStream():conn.getErrorStream();String response=in==null?"":new String(AudioFiles.read(in,40*1024*1024),StandardCharsets.UTF_8);if(code<200||code>=300){String message="HTTP "+code,serviceCode="";try{JSONObject err=new JSONObject(response),detail=err.optJSONObject("error"),baseResp=err.optJSONObject("base_resp");if(detail!=null){message=detail.optString("message",message);serviceCode=detail.optString("code","");}else if(baseResp!=null){message=baseResp.optString("status_msg",message);serviceCode=baseResp.optString("status_code","");}else{message=err.optString("message",message);serviceCode=err.optString("code","");}}catch(Exception ignored){}message=message.replace(key,"[已隐藏]");throw new HttpFailure(message,code,code==408||code==429||code>=500,serviceCode,retryAfter(conn.getHeaderField("Retry-After")));}return new JSONObject(response);}catch(SocketTimeoutException e){throw new HttpFailure("请求超时，已完成音频会保留",408,true);}catch(IOException e){if("文件超过允许大小".equals(e.getMessage())||e instanceof java.net.ProtocolException||e instanceof javax.net.ssl.SSLHandshakeException)throw e;throw new HttpFailure("网络连接中断，已完成进度会保留",0,true);}finally{conn.disconnect();}
+        return request(p,keys,false,"");
+    }
+    private JSONObject request(JSONObject p,JSONObject keys,boolean models,String after) throws Exception {
+        String provider=p.getString("provider");JSONObject st=p.getJSONObject("settings");boolean tts=provider.equals("tts");if(!tts&&!provider.equals("llm"))throw new Exception("无效模型类型");
+        if(tts?keys.optString("ttsKey").isEmpty():!ModelSettings.configured(keys))throw new Exception("请先配置"+(tts?"MiMo API Key":"语言模型 API Key 或认证 Headers"));
+        if(!tts&&!ModelSettings.base(st.optString("llmBase")).equals(keys.optString("llmBase","https://api.minimax.cn/v1")))throw new Exception("模型地址已改变，请在配置页保存以确认密钥对应的服务");
+        if(!tts&&!ModelSettings.protocol(st.optString("llmProtocol")))throw new Exception("无效 API 格式");
+        String endpoint=tts?"https://api.xiaomimimo.com/v1/chat/completions":ModelSettings.endpoint(st,models);if(!after.isEmpty())endpoint+="?after_id="+URLEncoder.encode(after,"UTF-8");
+        HttpURLConnection conn=(HttpURLConnection)new URL(endpoint).openConnection();conn.setInstanceFollowRedirects(false);conn.setRequestMethod(models?"GET":"POST");conn.setConnectTimeout(ModelSettings.timeout(st,"connectTimeoutSeconds",30,5,120));conn.setReadTimeout(ModelSettings.timeout(st,"responseTimeoutSeconds",240,30,600));conn.setDoOutput(!models);
+        try{
+            for(Map.Entry<String,String> header:ModelSettings.requestHeaders(st,keys,tts).entrySet())conn.setRequestProperty(header.getKey(),header.getValue());
+            if(!models){byte[] raw=p.getJSONObject("body").toString().getBytes(StandardCharsets.UTF_8);conn.setFixedLengthStreamingMode(raw.length);try(OutputStream out=conn.getOutputStream()){out.write(raw);}}
+            int code=conn.getResponseCode();InputStream in=code>=200&&code<300?conn.getInputStream():conn.getErrorStream();String response=in==null?"":new String(AudioFiles.read(in,40*1024*1024),StandardCharsets.UTF_8);
+            if(code<200||code>=300){String message="HTTP "+code,serviceCode="";try{JSONObject err=new JSONObject(response),detail=err.optJSONObject("error"),baseResp=err.optJSONObject("base_resp");if(detail!=null){message=detail.optString("message",message);serviceCode=detail.optString("code","");}else if(baseResp!=null){message=baseResp.optString("status_msg",message);serviceCode=baseResp.optString("status_code","");}else{message=err.optString("message",message);serviceCode=err.optString("code","");}}catch(Exception ignored){}throw new HttpFailure(ModelSettings.redact(message,keys),code,code==408||code==429||code>=500,serviceCode,retryAfter(conn.getHeaderField("Retry-After")));}
+            return new JSONObject(response);
+        }catch(SocketTimeoutException e){throw new HttpFailure("请求超时，已完成音频会保留",408,true);}catch(IOException e){if("文件超过允许大小".equals(e.getMessage())||e instanceof java.net.ProtocolException||e instanceof javax.net.ssl.SSLHandshakeException)throw e;throw new HttpFailure("网络连接中断，已完成进度会保留",0,true);}finally{conn.disconnect();}
+    }
+    private JSONArray listModels(JSONObject p) throws Exception {
+        if(!"llm".equals(p.optString("provider")))throw new Exception("无效模型类型");
+        JSONObject settings=p.getJSONObject("settings"),keys=ModelSettings.credentials("llm",settings,p.optJSONObject("credential")==null?new JSONObject():p.getJSONObject("credential"),vault.read(),false);
+        Set<String> ids=new LinkedHashSet<>(),cursors=new HashSet<>();String after="";long start=System.currentTimeMillis(),limit=ModelSettings.timeout(settings,"connectTimeoutSeconds",30,5,120)+ModelSettings.timeout(settings,"responseTimeoutSeconds",240,30,600);
+        try{
+            for(int page=0;page<100;page++){
+                JSONObject response=request(p,keys,true,after);if(response.has("error"))throw new Exception(response.optJSONObject("error")==null?"获取模型失败":response.getJSONObject("error").optString("message","获取模型失败"));
+                JSONArray data=response.optJSONArray("data");if(data==null)throw new Exception("服务未返回模型列表，请手动添加模型");
+                for(int i=0;i<data.length();i++){JSONObject item=data.optJSONObject(i);if(item!=null&&!item.optString("id").trim().isEmpty())ids.add(item.getString("id").trim());}
+                if(!response.optBoolean("has_more"))return new JSONArray(ids);
+                after=response.optString("last_id");if(after.isEmpty()||!cursors.add(after))throw new Exception("模型列表分页无效，请手动添加模型");
+                if(System.currentTimeMillis()-start>limit)throw new Exception("获取模型列表超时，请手动添加模型");
+            }throw new Exception("模型列表过长，请手动添加模型");
+        }catch(Exception error){throw new Exception(ModelSettings.redact(error.getMessage()==null?"获取模型失败":error.getMessage(),keys));}
     }
     private JSONObject testModelConfiguration(JSONObject p) throws Exception {
         String provider=p.getString("provider");JSONObject settings=p.getJSONObject("settings");
@@ -179,7 +209,7 @@ public class MainActivity extends Activity {
             if(baseResp!=null&&baseResp.optInt("status_code",0)!=0)throw new Exception(baseResp.optString("status_msg","服务返回错误"));
             return result;
         } catch(Exception error){
-            String message=error.getMessage()==null?"测试失败":error.getMessage();if(!key.isEmpty())message=message.replace(key,"[已隐藏]");
+            String message=ModelSettings.redact(error.getMessage()==null?"测试失败":error.getMessage(),keys);
             if(error instanceof HttpFailure){HttpFailure h=(HttpFailure)error;throw new HttpFailure(message,h.status,h.retryable,h.code,h.retryAfterMs);}throw new Exception(message);
         }
     }
@@ -193,18 +223,18 @@ public class MainActivity extends Activity {
         recoverModelSave(header);String provider=p.getString("provider");JSONObject patch=p.getJSONObject("patch");
         JSONObject settings=ModelSettings.apply(provider,header.getJSONObject("settings"),patch),previous=vault.read();
         JSONObject next=ModelSettings.credentials(provider,settings,p.optJSONObject("credential")==null?new JSONObject():p.getJSONObject("credential"),previous);
-        JSONObject expected=new JSONObject();for(String name:new String[]{"llmBase","llmModel","llmProtocol"})if("llm".equals(provider))expected.put(name,settings.opt(name));
+        JSONObject expected=new JSONObject();for(String name:ModelSettings.FIELDS)if("llm".equals(provider))expected.put(name,settings.opt(name));
         // The encrypted journal lets startup finish or roll back a save interrupted
         // between the credential write and the atomic manifest replacement.
         next.put("_modelSave",new JSONObject().put("previous",previous).put("patch",expected));vault.replace(next);
         header.put("settings",settings);
         try{snapshots.save(header.toString(),"[]");}catch(Exception error){vault.replace(previous);throw error;}
         next.remove("_modelSave");try{vault.replace(next);}catch(Exception ignored){/* Effective values committed; startup clears the journal. */}
-        return new JSONObject().put("llmConfigured",!next.optString("llmKey").isEmpty()).put("ttsConfigured",!next.optString("ttsKey").isEmpty());
+        return new JSONObject().put("llmConfigured",ModelSettings.configured(next)).put("llmKeyConfigured",!next.optString("llmKey").isEmpty()).put("llmHeaders",ModelSettings.headers(next.optJSONArray("llmHeaders"))).put("ttsConfigured",!next.optString("ttsKey").isEmpty());
     }
     static Long retryAfter(String value){if(value==null)return null;try{return Math.max(0,(long)(Double.parseDouble(value.trim())*1000));}catch(NumberFormatException ignored){}try{java.text.SimpleDateFormat format=new java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz",java.util.Locale.US);return Math.max(0,format.parse(value).getTime()-System.currentTimeMillis());}catch(java.text.ParseException ignored){return null;}}
     static class HttpFailure extends Exception{final int status;final boolean retryable;final String code;final Long retryAfterMs;HttpFailure(String m,int s,boolean r){this(m,s,r,"",null);}HttpFailure(String m,int s,boolean r,String c){this(m,s,r,c,null);}HttpFailure(String m,int s,boolean r,String c,Long delay){super(m);status=s;retryable=r;code=c;retryAfterMs=delay;}}
-    private String safeError(Exception e){String m=e.getMessage();if(m==null)m="操作失败，请重试";try{JSONObject k=vault.read();for(String n:new String[]{"llmKey","ttsKey"})if(!k.optString(n).isEmpty())m=m.replace(k.getString(n),"[已隐藏]");}catch(Exception ignored){}m=m.replaceAll("/data/\\S+","[应用数据文件]");return m.length()>500?m.substring(0,500):m;}
+    private String safeError(Exception e){String m=e.getMessage();if(m==null)m="操作失败，请重试";try{JSONObject k=vault.read();m=ModelSettings.redact(m,k);}catch(Exception ignored){}m=m.replaceAll("/data/\\S+","[应用数据文件]");return m.length()>500?m.substring(0,500):m;}
     private void reply(String id,Object result,JSONObject error){try{JSONObject value=new JSONObject().put("id",id).put("result",result==null?JSONObject.NULL:result).put("error",error==null?JSONObject.NULL:error);runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.nativeResult("+value+")",null);});}catch(Exception ignored){}}
     private WebResourceResponse brandIconResponse(){
         android.graphics.drawable.BitmapDrawable drawable=(android.graphics.drawable.BitmapDrawable)getResources().getDrawable(R.drawable.bajiao_icon,getTheme());
@@ -223,6 +253,7 @@ public class MainActivity extends Activity {
     }
     private void openAppUpdate(String id,String url){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));reply(id,true,null);}catch(ActivityNotFoundException|SecurityException e){reply(id,null,error("无法打开下载链接，请确认已安装可用的浏览器。"));}}
     private void openProject(String id){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(PROJECT_URL)).addCategory(Intent.CATEGORY_BROWSABLE));reply(id,true,null);}catch(ActivityNotFoundException|SecurityException e){reply(id,null,error("无法打开项目地址，请确认已安装可用的浏览器。"));}}
+    private void openHelpLink(String id,String url){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));reply(id,true,null);}catch(ActivityNotFoundException|SecurityException e){reply(id,null,error("无法打开官网，请确认已安装浏览器，或复制说明中的网址。"));}}
     private void pick(String id,String kind){if(pendingId!=null){reply(id,null,error("另一个文件选择操作尚未完成"));return;}pendingId=id;pickKind=kind;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,kind.equals("voice")?new String[]{"audio/wav","audio/x-wav","audio/mpeg"}:new String[]{"text/plain","application/epub+zip"});i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,kind.equals("voice"));startActivityForResult(i,100);}
     private void export(String id,JSONObject p){if(pendingId!=null){reply(id,null,error("请先完成当前文件操作"));return;}pendingId=id;exportFile=p.optString("id");Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/wav").putExtra(Intent.EXTRA_TITLE,p.optString("name","芭蕉")+".wav");startActivityForResult(i,101);}
     static JSONObject decodedBook(byte[] bytes,String encoding)throws Exception{String text=BookImporter.text(bytes,encoding);int damaged=0,first=-1;for(int i=0;i<text.length();i++)if(text.charAt(i)=='\ufffd'){damaged++;if(first<0)first=i;}return new JSONObject().put("text",text).put("encoding",encoding).put("damagedCount",damaged).put("firstDamagedAt",first).put("encodingConfidence",damaged==0?"高":damaged<=Math.max(1,text.length()/200)?"存在少量损坏字节":"低");}

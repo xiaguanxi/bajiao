@@ -38,3 +38,51 @@ test('legacy queued refusal is moved to failed on reload without altering audio'
  const e=new V.Engine(io(),state);assert.equal(e.state.tasks[0].status,'failed');assert.equal(e.state.tasks[0].done,120);assert.equal(e.state.tasks[1].status,'queued');assert.equal(e.state.voices[0].sample,'original.wav');
  assert.equal(V.isContentRejected(new V.ApiError('网络错误',429,true)),false);assert.equal(V.isContentRejected({code:1026,message:'拒绝'}),true);
 });
+
+for(const pipeline of [false,true])test('automatic skip preserves text and completed audio, pipeline='+pipeline,async()=>{
+ const merges=[],e=new V.Engine({...io(),features:{direction:false,pipeline},mergeAudio:async ids=>{merges.push(ids);return {id:'merged.wav',duration:2};}});
+ e.state.settings.ttsContentRejectedMode='skip';
+ const b=await e.addBook('审核跳过','甲。乙。丙。'),c=b.chapters[0],source=c.text;
+ c.segments=V.units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));c.segments[0].audio='saved.wav';const calls=[];
+ e.synthesize=async text=>{calls.push(text);if(text==='乙。')throw new V.ApiError('input new_sensitive (1026)',1026,false);return {id:'after.wav',duration:1};};
+ await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];
+ assert.equal(t.status,'done');assert.equal(c.audio,'merged.wav');assert.equal(c.text,source);assert.equal(c.segments[1].text,'乙。');assert.equal(c.segments[1].skip,true);assert.equal(c.segments[1].audio,'skip');
+ assert.deepEqual(calls.sort(),['丙。','乙。'].sort());assert.deepEqual(merges,[['saved.wav','after.wav']]);
+ const reloaded=new V.Engine(io(),JSON.parse(JSON.stringify(e.state)));assert.equal(reloaded.chapter(b.id,c.id).segments[1].audio,'skip');
+});
+
+test('manual skip resolves refusals one by one and can be undone after reload',async()=>{
+ const e=new V.Engine(io()),b=await e.addBook('手动跳过','甲。乙。丙。'),c=b.chapters[0];
+ c.segments=V.units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));c.segments[0].audio='keep.wav';let calls=0;
+ e.synthesize=async()=>{calls++;throw new V.ApiError('output new_sensitive (1027)',1027,false);};
+ await e.enqueue(b.id,[c.id]);const t=e.state.tasks[0];assert.equal(t.status,'waiting');
+ await e.setSegmentSkipped(b.id,c.id,1,true);await e.resumeTasks([t.id]);assert.equal(t.status,'waiting');assert.equal(calls,2);
+ await e.setSegmentSkipped(b.id,c.id,2,true);await e.resumeTasks([t.id]);assert.equal(t.status,'done');assert.equal(calls,2);assert.equal(c.segments[0].audio,'keep.wav');
+ const reload=new V.Engine(io(),JSON.parse(JSON.stringify(e.state)));await reload.setSegmentSkipped(b.id,c.id,1,false);
+ const restored=reload.chapter(b.id,c.id);assert.equal(restored.segments[1].audio,null);assert.equal(restored.segments[1].skip,false);assert.equal(restored.segments[1].qualityStatus,'pending');assert.equal(reload.state.tasks[0].status,'paused');assert.equal(restored.audioStale,true);
+});
+
+test('automatic skip of every sentence completes without merging empty audio',async()=>{
+ const e=new V.Engine({...io(),mergeAudio:async()=>{throw Error('empty audio must not merge');}}),b=await e.addBook('全跳过','甲。'),c=b.chapters[0];
+ e.state.settings.ttsContentRejectedMode='skip';c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:1}];
+ e.synthesize=async()=>{const error=new V.ApiError('拒绝',0,false);error.code='1027';throw error;};await e.enqueue(b.id,[c.id]);
+ assert.equal(c.status,'skipped');assert.equal(c.audio,null);assert.equal(e.state.tasks[0].status,'done');assert.equal(e.state.tasks[0].skipped,1);
+});
+
+for(const error of [new V.ApiError('参数错误',400,false),new V.QualityError('音频需检查'),new V.ApiError('HTTP 503',503,false)])test('automatic skip excludes other errors: '+error.message,async()=>{
+ const e=new V.Engine(io()),b=await e.addBook('保留异常','甲。'),c=b.chapters[0];e.state.settings.ttsContentRejectedMode='skip';
+ c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:1}];e.synthesize=async()=>{throw error;};await e.enqueue(b.id,[c.id]);
+ assert.notEqual(e.state.tasks[0].status,'done');assert.notEqual(c.segments[0].skip,true);assert.notEqual(c.segments[0].audio,'skip');
+});
+
+test('switching an existing refusal to automatic skip does not call TTS again',async()=>{
+ const e=new V.Engine(io()),b=await e.addBook('切换策略','甲。乙。'),c=b.chapters[0];c.segments=V.units(c.text).map(s=>({...s,speaker:'旁白',confidence:1}));
+ let calls=0;e.synthesize=async()=>{calls++;const error=new V.ApiError('审核拒绝',0,false);error.code='1026';throw error;};
+ await e.enqueue(b.id,[c.id]);assert.equal(e.state.tasks[0].status,'waiting');e.state.settings.ttsContentRejectedMode='skip';await e.resumeTasks([e.state.tasks[0].id]);
+ assert.equal(calls,2);assert.equal(e.state.tasks[0].status,'done');assert.equal(c.status,'skipped');
+});
+
+test('skip is blocked while the sentence is being synthesized',async()=>{
+ const e=new V.Engine(io()),b=await e.addBook('合成中','甲。'),c=b.chapters[0];c.segments=[{id:0,text:'甲。',speaker:'旁白',confidence:1}];
+ e._activeSegments=new Set([JSON.stringify([b.id,c.id,0])]);await assert.rejects(e.setSegmentSkipped(b.id,c.id,0,true),/正在合成/);assert.equal(c.segments[0].skip,undefined);
+});

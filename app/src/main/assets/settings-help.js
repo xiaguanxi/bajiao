@@ -5,16 +5,26 @@ const TOPICS={
  llm:{title:'语言模型',markdown:`语言模型负责读懂原文、识别角色。要让小说发出声音，还需要配置「语音引擎」。
 
 ## 第一次怎么填？
-1. 从服务商后台复制**服务地址**和**模型 ID**。
-2. 按服务商说明选择**接口协议**，粘贴 **API Key（账户密钥）**。
-3. 点**测试连接**检查，再点**保存设置**。
+1. 选择**提供商**，使用网关时选**其他**并填写提供商名称。
+2. 按服务商说明选择 **API 格式**：OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages。
+3. 填入**接口地址**和 **API Key（账户密钥）**。地址支持 API 基础地址，也支持完整请求地址。
+4. 手动**添加**模型 ID，或点**自动获取**后选择要添加的模型。当前模型用于之后的制作。
+5. 点**测试连接**检查，再点**保存设置**。
+
+## 网关要求自定义 Headers 怎么填？
+在**自定义 Headers**中点**添加**，分别填写名称和值，可添加多项或删除。自定义值会覆盖同名默认 Header，例如 Authorization、x-api-key 或 anthropic-version。
+
+只用 Headers 认证时，可以不填 API Key。更换地址时先点**清除已保存的密钥**，再填入新服务的 Headers，避免沿用旧服务的密钥。Header 值跟随密钥显示／隐藏，保存后重启仍可编辑。
+
+## 自动获取失败怎么办？
+有些网关没有模型列表接口，或需要额外权限。核对地址、认证与 API 格式后重试，也可以直接手动添加服务商提供的模型 ID。自动获取不会保存配置。
 
 ## 测试成功就保存了吗？
 没有。测试只检查当前填写的内容，会调用服务、产生用量；保存后才用于制作。
 
 ## 密钥怎么改？
 - 输入框留空：保留已经保存的密钥。
-- 更换服务地址：同时填写新服务的密钥。
+- 更换服务地址：同时填写新服务的密钥，或清除旧密钥并填写新服务的认证 Headers。
 - 点**清除已保存的密钥**，再保存：移除密钥。
 
 测试失败时，先核对地址、模型名称、密钥和账户余额。`},
@@ -37,7 +47,7 @@ const TOPICS={
 
 ## 快速和导演怎么选？
 - **快速模式**：使用简洁的朗读指导，适合希望先做出来、尽快听书。
-- **导演模式**：为对白补充场景和演绎指导，适合更在意角色表现。
+- **导演模式（默认）**：为对白补充场景和演绎指导，适合更在意角色表现。
 
 切换后用于新标注的章节。已经标注好的章节继续使用原来的模式。
 
@@ -96,7 +106,14 @@ const TOPICS={
 - 断网、超时、临时限流或服务暂时出错。
 - 空音频、损坏等可以重新合成的音频异常。
 
-密钥错误、余额不足、参数错误、内容被拒绝或本地保存失败时，需要先处理原因。
+密钥错误、余额不足、参数错误或本地保存失败时，需要先处理原因。内容审核拒绝不会自动重试。
+
+## TTS 句子审核不通过时怎么办？
+在本页选择处理方式，默认**用户确认**。
+- **直接跳过**：保留原文，不生成这句音频，自动继续其余句子。
+- **用户确认**：这句转为待处理，其余句子继续制作。进入标注页，可重新合成或选择「跳过本句合成」。
+
+跳过后仍可在本句朗读设置中取消跳过。该设置只处理 TTS 句子的审核拒绝，其他异常仍按重试规则处理。
 
 ## 次数用完以后呢？
 会转为待处理或失败，保留已经做好的内容。到「制作」查看原因，处理后手动继续；某一句声音有问题，也可以到标注页重新合成那一句。`},
@@ -160,6 +177,18 @@ const TOPICS={
 
 统计中还包含分句音频、原始返回和音色样本，所以文件数可能比章节数多。`}
 };
+// Official Chinese onboarding links. Android resolves the same IDs to fixed URLs.
+const MIMO_LINKS={
+ keys:{label:'打开 MiMo 中国官网 · API Keys',url:'https://platform.xiaomimimo.com/#/console/api-keys'},
+ account:{label:'注册小米账号',url:'https://id.mi.com/'},
+ docs:{label:'查看官方申请说明',url:'https://mimo.mi.com/docs/zh-CN/quick-start/summary/first-api-call'},
+ pricing:{label:'查看官方价格与免费说明',url:'https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go'}
+};
+const MIMO_STEPS=[
+ {title:'注册或登录 MiMo 账号',markdown:'打开 MiMo 中国官网入口，使用**小米账号**登录。没有账号时，点登录页的**注册**，按提示完成注册，再登录 MiMo 开放平台。已有小米账号可以直接使用；首次进入平台时，按官网提示完成开通。',image:'help/mimo/login.jpg',alt:'小米账号登录页，顶部有登录和注册入口',caption:'官网登录页截图：没有账号时选择「注册」。'},
+ {title:'创建 API Key',markdown:'登录后进入控制台的 **API Keys** 页面，点**创建 API Key**，按页面提示填写名称并确认创建，然后复制完整密钥。这里使用普通 API Key；无需为语音服务购买订阅套餐。',image:'help/mimo/api-keys.jpg',alt:'MiMo 官方文档提供 API Keys 链接并说明创建 API Key',caption:'官方申请文档截图：从「API Keys」进入创建页面。'},
+ {title:'回到芭蕉，粘贴并保存',markdown:'关闭本说明，将复制的密钥粘贴到 **API Key** 输入框，点**测试合成**，成功后试听，再点**保存设置**。请妥善保管密钥，不要将它发到群聊或公开截图中。'}
+];
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function inline(value){return value.split(/(`[^`]+`)/g).map(part=>part.startsWith('`')?'<code>'+escape(part.slice(1,-1))+'</code>':escape(part).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')).join('');}
 // This local guide needs paragraphs, headings, lists, emphasis and examples only.
@@ -177,5 +206,5 @@ function render(markdown){
  }
  flush();return html.join('');
 }
-return {TOPICS,render};
+return {TOPICS,render,MIMO_LINKS,MIMO_STEPS};
 });

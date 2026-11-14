@@ -9,9 +9,9 @@ function fixture(response,ttsRetries=2){
   saveAudio:async data=>{const id='audio-'+serial++;stored.set(id,data);return {id,duration:3};},readAudio:async id=>({base64:stored.get(id)}),mergeAudio:async()=>({id:'merged.wav',duration:6})});
  Object.assign(e.state.settings,{llmRetries:1,ttsRetries,ttsParallel:1});return {e,calls,stored};
 }
-test('v3 migrates the old count to both providers and drops the conflicting quality policies',()=>{
+test('current settings migrate the old count to both providers and drop conflicting quality policies',()=>{
  const saved=S.normalize({retries:2,qualityAutoRetry:false,qualityConfirmRetry:true,future:'preserved'});
- assert.equal(saved.llmRetries,2);assert.equal(saved.ttsRetries,2);assert.equal(saved.settingsVersion,3);assert.equal(saved.future,'preserved');
+ assert.equal(saved.llmRetries,2);assert.equal(saved.ttsRetries,2);assert.equal(saved.settingsVersion,S.VERSION);assert.equal(saved.future,'preserved');
  const json=JSON.parse(JSON.stringify(saved));for(const key of ['retries','qualityAutoRetry','qualityConfirmRetry'])assert(!Object.hasOwn(json,key));
  const split=S.normalize({...json,llmRetries:0,ttsRetries:7,retries:2});assert.equal(split.llmRetries,0);assert.equal(split.ttsRetries,7);
 });

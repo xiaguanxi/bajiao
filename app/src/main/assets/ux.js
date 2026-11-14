@@ -6,7 +6,7 @@ function friendlyError(error){
  if(V.isContentRejected(error)){
   const service=error?.provider==='llm'?'语言模型':error?.provider==='tts'?'语音服务':'服务商';
   const location=error?.stage?'（'+error.stage+(error.batchStart?'，请求批次第 '+error.batchStart+'–'+error.batchEnd+' 段，含上下文':'')+'）':'';
-  return service+'内容审核未通过'+location+'。已保留原文和完成进度，请检查相关内容或联系服务商确认后再重试。';
+  return service+'内容审核未通过'+location+'。已保留原文和完成进度，'+(error?.provider==='tts'?'可重新合成或跳过本句合成，继续制作。':'请检查相关内容或联系服务商确认后再重试。');
  }
  if(/model.*(?:not found|not exist|invalid|unknown)|invalid.*model/i.test(message))return '模型 ID 不可用，请到模型配置检查名称并保存后测试。';
  if(/(?:number|count|length).*mismatch|返回.*(?:数量|条数)|标注.*(?:数量|条数)/i.test(message))return '模型返回的标注数量与原文不一致。已保留原文和完成片段，请重试或更换模型。';

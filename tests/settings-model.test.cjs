@@ -2,6 +2,47 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const S=require('../app/src/main/assets/settings-model.js'),V=require('../app/src/main/assets/core.js');
 const io=()=>({saveState:async()=>{},features:{direction:false},mergeAudio:async()=>({id:'merged.wav',duration:2})});
 
+test('legacy model configuration migrates into an independent model list',()=>{
+ const settings=S.normalize({llmBase:'https://proxy.example/v1',llmProtocol:'anthropic',llmModel:'legacy-model'});
+ assert.equal(settings.llmProvider,'other');assert.equal(settings.llmBase,'https://proxy.example/v1');assert.equal(settings.llmProtocol,'anthropic');assert.deepEqual(settings.llmModels,['legacy-model']);
+ assert.deepEqual(S.normalize({...settings,llmModels:[' one ','one',null,'two']}).llmModels,['one','two','legacy-model']);
+ const next=S.normalize();settings.llmModels.push('custom');assert.deepEqual(next.llmModels,[]);
+});
+test('header credentials stay outside snapshots, participate in dirty checks and preserve key changes',()=>{
+ const settings=S.normalize(),headers=[{name:'x-token',value:'private-header'}],draft=new S.Draft('llm',settings,headers);
+ assert(!draft.dirty);draft.setHeaders([{name:'Authorization',value:'Bearer another-private-header'}]);assert(draft.dirty);
+ draft.setCredential('replace','private-key');assert.equal(draft.credential.headers[0].name,'Authorization');
+ assert(!JSON.stringify(draft.changes()).includes('private'));assert(!JSON.stringify(settings).includes('private'));
+ draft.setHeaders(headers);draft.setCredential('keep');assert(!draft.dirty);
+});
+test('headers validate duplicate names, injection and restricted transport fields',()=>{
+ assert.equal(S.validateHeaders([{name:'Authorization',value:'Bearer gateway'},{name:'anthropic-version',value:'2023-06-01'}]),'');
+ for(const headers of [[{name:'',value:'x'}],[{name:'X-Token',value:'a'},{name:'x-token',value:'b'}],[{name:'X-Token',value:'a\r\nInjected: yes'}],[{name:'Host',value:'other'}],[{name:'Content-Length',value:'0'}],[{name:'X',value:'中文'}]])assert(S.validateHeaders(headers));
+});
+test('model discovery does not require a model, and selected model is included when saving',()=>{
+ const settings=S.normalize({llmBase:'https://proxy.example/v1',llmProtocol:'responses'});
+ assert(!S.validate('llm',settings).valid);assert(S.validate('llm',settings,[],{requireModel:false}).valid);
+ const checked=S.validate('llm',{...settings,llmModel:' chosen ',llmModels:['first','first']});assert(checked.valid);assert.deepEqual(checked.value.llmModels,['first','chosen']);
+});
+test('Responses uses its own request schema and reads message output after reasoning',async()=>{
+ let sent;const e=new V.Engine({...io(),request:async(provider,body)=>{sent={provider,body};return {status:'completed',output:[{type:'reasoning',summary:[]},{type:'message',content:[{type:'output_text',text:'{"ok":true}'}]}]};}});
+ Object.assign(e.state.settings,{llmProtocol:'responses',llmModel:'test-model'});assert.deepEqual(await e.llm('Return JSON',{maxTokens:512}),{ok:true});
+ assert.equal(sent.provider,'llm');assert.equal(sent.body.model,'test-model');assert.equal(sent.body.input,'Return JSON');assert.equal(sent.body.max_output_tokens,512);assert.equal(sent.body.store,false);assert(!sent.body.messages);assert(!sent.body.max_tokens);
+});
+test('Responses refuses incomplete, filtered and refused output',async()=>{
+ for(const result of [{status:'incomplete',incomplete_details:{reason:'max_output_tokens'}},{status:'incomplete',incomplete_details:{reason:'content_filter'}},{status:'completed',output:[{type:'message',content:[{type:'refusal',refusal:'Denied'}]}]},{status:'failed',error:{message:'failure'}}]){
+  const e=new V.Engine({...io(),request:async()=>result});e.state.settings.llmProtocol='responses';await assert.rejects(e.llm('test'));
+ }
+});
+
+test('TTS refusal policy defaults to confirmation and persists independently of retry counts',()=>{
+ for(const saved of [{},{mode:'auto'},{ttsContentRejectedMode:'invalid'},{ttsContentRejectedMode:null}])assert.equal(S.normalize(saved).ttsContentRejectedMode,'review');
+ const settings=S.normalize({ttsContentRejectedMode:'skip',ttsRetries:7}),draft=new S.Draft('quality',settings);
+ assert.equal(S.normalize(JSON.parse(JSON.stringify(settings))).ttsContentRejectedMode,'skip');assert.equal(settings.ttsRetries,7);
+ draft.set('ttsContentRejectedMode','review');assert.deepEqual(draft.changes(),{ttsContentRejectedMode:'review'});assert(S.validate('quality',draft.value).valid);
+ draft.set('ttsContentRejectedMode','other');assert(!S.validate('quality',draft.value).valid);draft.reset();assert.equal(draft.value.ttsContentRejectedMode,'review');
+});
+
 test('legacy automatic/manual choices migrate once into independent policies',()=>{
  for(const mode of ['auto','manual']){
   const s=S.normalize({mode,retries:11,speakerThreshold:.65,ttsParallel:4,keepRecentCount:0});
@@ -14,6 +55,12 @@ test('legacy playback speed migrates to the sole persisted settings field',()=>{
  const state=V.makeState();state.playbackSpeed=1.75;state.settings.playbackSpeed=1;const e=new V.Engine(io(),state);
  assert.equal(e.state.settings.playbackSpeed,1.75);assert(!Object.hasOwn(e.state,'playbackSpeed'));assert.equal(new V.Engine(io(),JSON.parse(JSON.stringify(e.state))).state.settings.playbackSpeed,1.75);
 });
+test('director defaults preserve saved mode choices and replace invalid modes',()=>{
+ for(const saved of [{},{promptMode:null},{promptMode:'invalid'}])assert.equal(S.normalize(saved).promptMode,'director');
+ for(const promptMode of ['fast','director'])assert.equal(S.normalize({promptMode}).promptMode,promptMode);
+ const draft=new S.Draft('productionmode',S.normalize({promptMode:'fast'}));draft.reset();assert.equal(draft.value.promptMode,'director');
+});
+
 test('normalization preserves unknown settings and does not share nested defaults',()=>{
  const first=S.normalize({futureSetting:{enabled:true}}),second=S.normalize();first.defaultVoices.narrator='mine';assert.equal(second.defaultVoices.narrator,'preset:白桦');assert.equal(S.DEFAULT_VOICES.narrator,'preset:白桦');assert.deepEqual(first.futureSetting,{enabled:true});
 });

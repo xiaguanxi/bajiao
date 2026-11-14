@@ -22,9 +22,9 @@ async function createFixture(handler){
  return {e,io,calls,snapshots,merges};
 }
 
-test('default settings has promptMode fast and FAST_SPEECH_PROMPT defined', ()=>{
+test('new installations default to director mode and keep the fast speech prompt available', ()=>{
  const e=new Engine({});
- assert.equal(e.state.settings.promptMode, 'fast');
+ assert.equal(e.state.settings.promptMode, 'director');
  assert.equal(FAST_SPEECH_PROMPT, '流利，吐字清晰。');
 });
 
@@ -47,6 +47,7 @@ test('fast mode model prompt omits emotion, scene and delivery from schema and r
 
 test('fast mode chapter analysis does not require emotion/scene/delivery and synthesizes with FAST_SPEECH_PROMPT', async()=>{
  const {e,calls}=await createFixture();
+ e.state.settings.promptMode='fast';
  assert.equal(e.state.settings.promptMode, 'fast');
 
  const b=await e.addBook('快慢测试','第一章\n他问：“去哪里？”');

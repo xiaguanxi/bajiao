@@ -30,7 +30,7 @@ function taskRetryMessage(t){
  }
  return '';
 }
-function chapterPromptMode(c,defaultMode='fast'){
+function chapterPromptMode(c,defaultMode=DEFAULTS.promptMode){
  if(c?.promptMode&&['fast','director'].includes(c.promptMode))return c.promptMode;
  if(c?.audio||(c?.segments&&c.segments.some(s=>s.audio||s.directionVersion===DIRECTION_VERSION||s.delivery)))return 'director';
  return defaultMode;
@@ -683,6 +683,12 @@ class Engine{
   if(st.llmProtocol==='anthropic'){
    r=await this.request('llm',{model:st.llmModel,max_tokens:budget,system:ModelPrompts.system,messages:[{role:'user',content:prompt}]});
    text=(r.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('');finish=r.stop_reason;
+  }else if(st.llmProtocol==='responses'){
+   r=await this.request('llm',{model:st.llmModel,instructions:ModelPrompts.system,input:prompt,max_output_tokens:budget,store:false});
+   const content=(r.output||[]).filter(x=>x.type==='message').flatMap(x=>x.content||[]);
+   if(content.some(x=>x.type==='refusal')){const e=new ApiError('内容审核未通过',0,false);e.code='1027';e.provider='llm';throw e;}
+   if(r.status==='failed')throw new ApiError(r.error?.message||'语言模型请求失败',0,false);
+   text=content.filter(x=>x.type==='output_text').map(x=>x.text).join('');finish=r.incomplete_details?.reason==='max_output_tokens'?'length':r.incomplete_details?.reason==='content_filter'?'content_filter':r.status==='incomplete'?'length':r.status;
   }else{
    const body={model:st.llmModel,temperature:0.3,messages:[{role:'system',content:ModelPrompts.system},{role:'user',content:prompt}]};
    body[isMiMo?'max_completion_tokens':'max_tokens']=budget;
@@ -778,7 +784,7 @@ class Engine{
    if(options.prompt===null)delete s.ttsPrompt;else s.ttsPrompt=options.prompt;
   }
   this._activeSegments.add(lock);
-  const source={text:s.text,speaker:s.speaker,emotion:s.emotion,...this.speechIdentity(s,role),voice:role.voice,description:role.description,prompt:s.ttsPrompt,promptMode:s.promptMode||c.promptMode||chapterPromptMode(c,this.state.settings.promptMode||'fast'),audio:s.audio,skip:s.skip,isAd:s.isAd};
+  const source={text:s.text,speaker:s.speaker,emotion:s.emotion,...this.speechIdentity(s,role),voice:role.voice,description:role.description,prompt:s.ttsPrompt,promptMode:s.promptMode||c.promptMode||chapterPromptMode(c,this.state.settings.promptMode||DEFAULTS.promptMode),audio:s.audio,skip:s.skip,isAd:s.isAd};
   const unchanged=()=>this.state.books.includes(b)&&b.chapters.includes(c)&&c.segments.includes(s)&&s.audio===source.audio&&s.skip===source.skip&&s.isAd===source.isAd&&s.text===source.text&&s.speaker===source.speaker&&s.emotion===source.emotion&&JSON.stringify(this.speechIdentity(s,role))===JSON.stringify(Object.fromEntries(Object.entries(source).filter(([k])=>['scene','delivery','directionVersion','promptVersion','effectiveDirection'].includes(k))))&&s.ttsPrompt===source.prompt&&role.voice===source.voice&&role.description===source.description&&b.characters.includes(role);
   const oldRefs=segmentAudioIds(s),oldDraft=s.speechDraft;
   if(options.acceptRepeated){
@@ -808,7 +814,7 @@ class Engine{
    for(const key of ['repetitionCorrection','repetitionUnresolved','repetitionConfirmed']){if(file[key])s[key]=file[key];else delete s[key];}
    s.speechCheckedAudio=file.id;s.speechCheckedText=source.text;
    if(typeof file.speechPrompt==='string')s.lastSpeechRequest={promptVersion:PROMPT_VERSION,prompt:file.speechPrompt,text:source.text,voice:source.voice,audio:file.id};
-   delete s.speechDraft;delete s.retryDraft;delete s.retryError;delete s.failReason;
+   delete s.speechDraft;delete s.retryDraft;delete s.retryError;delete s.failReason;delete s.contentRejected;
    c.audio=merged?.id||null;if(merged){c.duration=merged.duration;c.audioTimeline=makeAudioTimeline(c.segments,merged);c.status='ready';c.pacingVersion=SEGMENT_PACING_VERSION;c.audioStale=false;}
    else if(!this.state.tasks.some(t=>t.bookId===bid&&t.chapterId===cid&&t.status==='running'))c.status='waiting';
    for(const t of this.state.tasks.filter(t=>t.bookId===bid&&t.chapterId===cid&&!['cancelled'].includes(t.status))){t.done=c.segments.filter(x=>x.audio).length;if(merged&&!t.synthActive&&!this._frontActive.has(t)){t.status='done';t.phase='完成';t.message='';}}
@@ -816,7 +822,7 @@ class Engine{
   }catch(e){
    if(unchanged()){
     s.retryError=e.message||'重新合成失败';
-    if(!s.audio){s.qualityStatus='pending';s.failReason=s.retryError;s.speechDraft={...s.retryDraft,qualityStatus:'pending',qualityFailure:'local'};delete s.retryDraft;}
+    if(!s.audio){s.qualityStatus='pending';s.failReason=s.retryError;s.contentRejected=isContentRejected(e);s.speechDraft={...s.retryDraft,qualityStatus:'pending',qualityFailure:'local'};delete s.retryDraft;}
    }
    if(e.message!=='任务已暂停')throw e;
    return false;
@@ -1040,7 +1046,7 @@ class Engine{
   if(!this.analysisJobs.has(key))this.analysisJobs.set(key,this.withBookLock(bid,()=>this.analyzeChapter(bid,cid,shouldPause)).finally(()=>this.analysisJobs.delete(key)));
   return this.analysisJobs.get(key);
  }
- async analyzeChapter(bid,cid,shouldPause){await this.prepareAnnotations(bid,cid);const b=this.book(bid),c=this.chapter(bid,cid);if(!c.analysisDraft){if(this.fallbackUncertain(c)){this.touch(c);await this.persist();}return c;}if(!c.promptMode)c.promptMode=chapterPromptMode(c,this.state.settings.promptMode||'fast');const isDirector=c.promptMode==='director';const input=units(c.text);for(const task of this.state.tasks)if(task.bookId===bid&&task.chapterId===cid&&task.status==='running')task.total=input.length;const all=c.segments,batchSize=this.features.direction?Math.min(ANNOTATION_BATCH_LIMIT,c.analysisDraft.batchSize||ANNOTATION_BATCH_LIMIT):(c.analysisDraft.batchSize||45);
+ async analyzeChapter(bid,cid,shouldPause){await this.prepareAnnotations(bid,cid);const b=this.book(bid),c=this.chapter(bid,cid);if(!c.analysisDraft){if(this.fallbackUncertain(c)){this.touch(c);await this.persist();}return c;}if(!c.promptMode)c.promptMode=chapterPromptMode(c,this.state.settings.promptMode||DEFAULTS.promptMode);const isDirector=c.promptMode==='director';const input=units(c.text);for(const task of this.state.tasks)if(task.bookId===bid&&task.chapterId===cid&&task.status==='running')task.total=input.length;const all=c.segments,batchSize=this.features.direction?Math.min(ANNOTATION_BATCH_LIMIT,c.analysisDraft.batchSize||ANNOTATION_BATCH_LIMIT):(c.analysisDraft.batchSize||45);
  const queue=c.analysisDraft.pending?.flatMap(job=>{const size=job.kind==='direction'?5:batchSize;return Array.from({length:Math.ceil(job.ids.length/size)},(_,i)=>({...job,ids:job.ids.slice(i*size,(i+1)*size),...(job.targets?{targets:job.targets.filter(t=>job.ids.slice(i*size,(i+1)*size).includes(t.id))}:{})}));})||Array.from({length:Math.ceil((input.length-(c.analysisDraft.next||0))/batchSize)},(_,i)=>({ids:input.slice((c.analysisDraft.next||0)+i*batchSize,(c.analysisDraft.next||0)+(i+1)*batchSize).map(s=>s.id),isolated:false}));
  const covered=new Set(queue.flatMap(job=>job.ids)),missing=all.filter(s=>s.annotationStatus==='pending'&&!covered.has(s.id)).map(s=>s.id);
  for(let i=missing.length;i>0;i-=batchSize)queue.unshift({ids:missing.slice(Math.max(0,i-batchSize),i),isolated:true});
@@ -1281,7 +1287,7 @@ try{
  async workFront(t){
   const b=this.book(t.bookId),c=this.chapter(t.bookId,t.chapterId),policy=this.state.settings;
   const narrator=b.characters.find(r=>r.name==='旁白');if(narrator&&!narrator.voice)narrator.voice=this.resolveDefaultVoice(b.voiceDefaults?.narrator,true);
-  if(!c.promptMode)c.promptMode=chapterPromptMode(c,policy.promptMode||'fast');
+  if(!c.promptMode)c.promptMode=chapterPromptMode(c,policy.promptMode||DEFAULTS.promptMode);
   if(c.audio&&!c.audioStale&&!t.repace){t.status='done';t.phase='完成';t.message='';await this.persist();return;}
   const stopped=()=>!this.state.tasks.includes(t)||t.status==='cancelled'||t.pauseRequested||!!t.frontError;
   const stop=async()=>{if(t.pauseRequested&&t.status!=='cancelled'){t.status='paused';t.phase='已暂停';}await this.persist();};
@@ -1337,6 +1343,7 @@ try{
    const segment=this.features.pipeline?await take():pending.shift();if(!segment)break;
    if(skipSymbolSegment(segment)){this.touch(c);continue;}
    if(segment.audio&&!(t.repace&&segment.audio!=='skip'&&speechParts(segment.text).length>1&&segment.pacingVersion!==1))continue;
+   if(policy.ttsContentRejectedMode==='skip'&&segment.qualityStatus==='pending'&&(segment.contentRejected||isContentRejected(segment.failReason))){segment.skip=true;segment.isAd=false;segment.audio='skip';this.touch(c);t.done=c.segments.filter(s=>s.audio).length;await this.persist();continue;}
    if((segment.qualityStatus==='pending'&&(segment.generationVersion===GENERATION_VERSION||segment.speechDraft?.generationVersion===GENERATION_VERSION))||segment.retryDraft?.generationVersion===GENERATION_VERSION){blocked=true;continue;}
    if(segment.skip||segment.isAd||segment.speaker==='广告'){segment.audio='skip';this.touch(c);continue;}
    const role=b.characters.find(r=>r.name===segment.speaker);
@@ -1347,7 +1354,7 @@ try{
    if(!(await this._acquireTtsSlot(aborted,this.taskPriority(t)))){this._activeSegments.delete(lock);break;}
    try{
     if(aborted())break;
-    const original={text:segment.text,speaker:segment.speaker,emotion:segment.emotion,...this.speechIdentity(segment,role),voice:role.voice,description:role.description,prompt:segment.ttsPrompt,promptMode:segment.promptMode||c.promptMode||chapterPromptMode(c,this.state.settings.promptMode||'fast')};
+    const original={text:segment.text,speaker:segment.speaker,emotion:segment.emotion,...this.speechIdentity(segment,role),voice:role.voice,description:role.description,prompt:segment.ttsPrompt,promptMode:segment.promptMode||c.promptMode||chapterPromptMode(c,this.state.settings.promptMode||DEFAULTS.promptMode)};
     const key=JSON.stringify(original),unchanged=()=>this.state.books.includes(b)&&b.chapters.includes(c)&&segment.text===original.text&&segment.speaker===original.speaker&&segment.emotion===original.emotion&&JSON.stringify(this.speechIdentity(segment,role))===JSON.stringify(Object.fromEntries(Object.entries(original).filter(([k])=>['scene','delivery','directionVersion','promptVersion','effectiveDirection'].includes(k))))&&segment.ttsPrompt===original.prompt&&role.voice===original.voice&&role.description===original.description&&b.characters.includes(role)&&c.segments.includes(segment);
     const draft=segment.speechDraft?.key===key?segment.speechDraft:{};
     const update=async fields=>{if(unchanged()){segment.speechDraft={...(segment.speechDraft?.key===key?segment.speechDraft:{}),key,...fields};this.touch(c);await this.persist();}};
@@ -1370,12 +1377,13 @@ try{
     for(const key of ['repetitionCorrection','repetitionUnresolved','repetitionConfirmed']){if(file[key])segment[key]=file[key];else delete segment[key];}
     if(file.speechChecked){segment.speechCheckedAudio=file.id;segment.speechCheckedText=original.text;}
     if(typeof file.speechPrompt==='string')segment.lastSpeechRequest={promptVersion:PROMPT_VERSION,prompt:file.speechPrompt,text:original.text,voice:original.voice,audio:file.id};
-    delete segment.speechDraft;delete segment.failReason;segment.pacingVersion=1;
+    delete segment.speechDraft;delete segment.failReason;delete segment.contentRejected;segment.pacingVersion=1;
     this.touch(c);t.done=c.segments.filter(s=>s.audio).length;if(!t.total||t.total<c.segments.length)t.total=c.segments.length;await this.persist();
    }catch(e){
     if(aborted()||e.message==='任务已暂停'){halt=true;throw e;}
     if(e.qualityPending||isContentRejected(e)||e.status===400||/Param Incorrect|参数被拒绝|超长被拒绝|音色参数不被支持/.test(e.message||'')){
-     blocked=true;segment.generationVersion=GENERATION_VERSION;segment.qualityStatus='pending';segment.failReason=e.message||'音频待处理';if(segment.speechDraft){segment.speechDraft.qualityFailure='local';segment.qualityAttempts=segment.speechDraft.qualityAttempts||0;segment.qualityIssues=segment.speechDraft.qualityIssues||[];}
+     segment.generationVersion=GENERATION_VERSION;segment.qualityStatus='pending';segment.failReason=e.message||'音频待处理';segment.contentRejected=isContentRejected(e);if(segment.speechDraft){segment.speechDraft.qualityFailure='local';segment.qualityAttempts=segment.speechDraft.qualityAttempts||0;segment.qualityIssues=segment.speechDraft.qualityIssues||[];}
+     if(segment.contentRejected&&policy.ttsContentRejectedMode==='skip'){segment.skip=true;segment.isAd=false;segment.audio='skip';t.done=c.segments.filter(s=>s.audio).length;}else blocked=true;
      this.touch(c);await this.persist();
     }else{halt=true;throw e;}
    }finally{this._releaseTtsSlot();this._activeSegments.delete(lock);}
@@ -1391,10 +1399,10 @@ try{
    const confirmation=c.segments.some(s=>!s.audio&&!s.skip&&!s.isAd&&(!b.characters.find(r=>r.name===s.speaker)?.voice||policy.speakerUncertaintyMode==='review'&&s.confidence<this.spkThr()));
    if(this.canContinueAutomatically(c)&&!annotation.length&&!pending.length&&!confirmation){t.status='queued';t.nextRetryAt=Date.now()+1000;}
    t.phase=t.status==='queued'?'修改后自动继续':annotation.length?'标注待处理':pending.length?'音频待处理':confirmation?'等待确认':'制作待继续';
-   t.message=t.status==='queued'?'正在等待修改稳定后自动继续，已完成音频会保留':annotation.length?annotation.length+' 句标注待处理，请在标注页修改说话人或使用旁白；其他句子已继续制作'+(pending.length?'，另有 '+pending.length+' 句音频待处理':''):pending.length?pending.length+' 句音频待处理，请在标注页重新合成对应句子；其他片段已继续制作':confirmation?'请确认角色音色或校对说话人后继续制作':'有未完成的句子，请在标注页定位并继续制作；已完成音频会保留';
+   t.message=t.status==='queued'?'正在等待修改稳定后自动继续，已完成音频会保留':annotation.length?annotation.length+' 句标注待处理，请在标注页修改说话人或使用旁白；其他句子已继续制作'+(pending.length?'，另有 '+pending.length+' 句音频待处理':''):pending.length?pending.length+' 句音频待处理，请在标注页重新合成或跳过对应句子；其他片段已继续制作':confirmation?'请确认角色音色或校对说话人后继续制作':'有未完成的句子，请在标注页定位并继续制作；已完成音频会保留';
   }else{
    const audible=c.segments.filter(s=>s.audio&&s.audio!=='skip'&&!s.skip&&!s.isAd);
-   if(!audible.length){c.audio=null;c.status='skipped';t.status='done';t.phase='全部跳过';t.skipped=c.segments.length;t.done=0;t.message='本章 '+c.segments.length+' 段全部跳过，未生成音频。请检查广告标注，可取消跳过后重新制作';}
+   if(!audible.length){c.audio=null;c.audioStale=false;c.duration=0;delete c.audioTimeline;c.status='skipped';t.status='done';t.phase='全部跳过';t.skipped=c.segments.length;t.done=0;t.message='本章 '+c.segments.length+' 段全部跳过，未生成音频。可检查原文并取消跳过后重新制作';}
    else{
     t.phase='合并章节';await this.persist();const version=JSON.stringify(c.segments);
     const result=await this.io.mergeAudio(audible.map(s=>s.audio),segmentPausesFor(audible.map(s=>s.text)));
@@ -1447,6 +1455,22 @@ try{
   ch.voice=voice;ch.candidate=null;delete ch.suggestedVoice;for(const t of this.state.tasks)if(t.bookId===bid)this.wakeChapter(t);await this.persist();if(resume)await this.resumeWaiting(bid);
  }
  async correct(bid,cid,id,speaker,emotion){await this.ensureChapter(bid,cid);const c=this.chapter(bid,cid);if(!this.book(bid).characters.some(x=>x.name===speaker))throw Error('请先创建或选择角色');const seg=c.segments.find(s=>s.id===id);if(!seg)throw Error('片段不存在');if(seg.speaker!==speaker)clearDirection(seg);seg.speaker=speaker;seg.emotion=emotion;seg.confidence=1;seg.annotationStatus='resolved';delete seg.annotationError;if(seg.audio&&seg.audio!=='skip')seg.originalAudio=seg.originalAudio||seg.audio;seg.audio=null;delete seg.speechDraft;delete seg.retryDraft;delete seg.retryError;delete seg.qualityStatus;delete seg.qualityIssues;delete seg.qualityAttempts;if(c.audio)c.originalAudio=c.originalAudio||c.audio;c.audioStale=!!c.audio;c.status='annotated';for(const t of this.state.tasks.filter(t=>t.bookId===bid&&t.chapterId===cid)){t.done=c.segments.filter(s=>s.audio).length;if(t.status==='done'){t.status='paused';t.phase='标注已修改，等待重制';}}this.touch(c);await this.persist();}
+ async setSegmentSkipped(bid,cid,id,skipped){
+  const c=await this.ensureChapter(bid,cid),s=c.segments.find(s=>String(s.id)===String(id));
+  if(!s)throw Error('片段不存在');
+  if(this.segmentBusy(bid,cid,s.id))throw Error('本句正在合成，请结束后再操作');
+  if(s.audio&&s.audio!=='skip')s.originalAudio=s.originalAudio||s.audio;
+  s.skip=!!skipped;s.isAd=false;
+  if(s.speaker==='广告'&&!skipped){s.speaker='旁白';s.confidence=1;}
+  s.audio=skipped?'skip':null;
+  if(c.audio)c.originalAudio=c.originalAudio||c.audio;
+  c.audioStale=!!c.audio;c.status='annotated';
+  for(const t of this.state.tasks.filter(t=>t.bookId===bid&&t.chapterId===cid)){
+   t.done=c.segments.filter(s=>s.audio).length;delete t.skipped;
+   if(t.status==='done'){t.status='paused';t.pauseRequested=true;t.phase='跳过设置已修改，等待重制';t.message='';}
+  }
+  this.touch(c);await this.persist();
+ }
  async resumeWaiting(bid,front=false){const tasks=this.state.tasks.filter(t=>t.bookId===bid&&t.status==='waiting');await this.resumeTasks(tasks.map(t=>t.id),front);}
  async calibrateDurations(bid,cid){
   try{await this.ensureChapter(bid,cid);}catch(e){/* 无正文也可用内存分句校准 */}

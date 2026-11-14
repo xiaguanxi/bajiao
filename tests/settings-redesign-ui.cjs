@@ -56,9 +56,9 @@ const promptTexts=Object.values(require('../app/src/main/assets/playback-prompts
   const production=page.locator('.settings-section').filter({has:page.getByRole('heading',{name:'制作',exact:true})});assert.equal(await production.locator('[data-act="go:voicepolicy"]').count(),1);
   assert.equal(await page.locator('.settings-home-row').count(),10);await shot('home-393');checks.push('ten independently routed settings pages, voice allocation belongs to production, navigation renamed');
 
-  await act('go:productionmode');await choose('promptMode','导演模式');assert.equal(await page.evaluate(()=>bajiaoEngine.state.settings.promptMode),'fast');
+  await act('go:productionmode');assert.match(await page.locator('#setting-promptMode').innerText(),/导演模式/);await choose('promptMode','快速模式');assert.equal(await page.evaluate(()=>bajiaoEngine.state.settings.promptMode),'director');
   await act('back');await page.getByRole('dialog').waitFor();await page.locator('[data-result="cancel"]').click();assert.equal(await on('productionmode').count(),1);
-  await act('back');await page.locator('[data-result="save"]').click();await on('settings').waitFor();assert.equal(state.settings.promptMode,'director');assert.equal(state.settings.speakerUncertaintyMode,'narrator');
+  await act('back');await page.locator('[data-result="save"]').click();await on('settings').waitFor();assert.equal(state.settings.promptMode,'fast');assert.equal(state.settings.speakerUncertaintyMode,'narrator');
   await act('go:productionmode');await choose('speakerUncertaintyMode','等待人工确认');await act('back');await page.locator('[data-result="discard"]').click();assert.equal(state.settings.speakerUncertaintyMode,'narrator');
   checks.push('save-and-leave, discard, continue editing; changing production mode does not change confirmation policies');
 
@@ -107,7 +107,7 @@ const promptTexts=Object.values(require('../app/src/main/assets/playback-prompts
     assert(await page.locator('[data-act="settingssave"]').isVisible());await shot(route+'-'+width);await act('back');await on('settings').waitFor();
    }
   }
-  await page.setViewportSize({width:873,height:393});await open('voicepolicy');await act('settingspick:defaultVoices.narrator');assert(await page.locator('.settings-picker-options').evaluate(el=>el.scrollHeight>el.clientHeight));await page.keyboard.press('Escape');await home();await act('settingshelp:all');await on('settingshelp').waitFor();assert.equal(await on('settingshelp').locator('[data-help-topic]').count(),10);await page.locator('[data-help-topic="mimo"] summary').click();assert.match(await on('settingshelp').innerText(),/怎么开始使用/);assert(!/mimo-v2\.5-tts-voiceclone/.test(await on('settingshelp').innerText()));await shot('help-landscape');
+  await page.setViewportSize({width:873,height:393});await open('voicepolicy');await act('settingspick:defaultVoices.narrator');assert(await page.locator('.settings-picker-options').evaluate(el=>el.scrollHeight>el.clientHeight));await page.keyboard.press('Escape');await home();await act('settingshelp:all');await on('settingshelp').waitFor();assert.equal(await on('settingshelp').locator('[data-help-topic]').count(),10);await page.locator('[data-help-topic="mimo"] > summary').click();assert.match(await on('settingshelp').innerText(),/怎么开始使用/);assert(!/mimo-v2\.5-tts-voiceclone/.test(await on('settingshelp').innerText()));await shot('help-landscape');
   checks.push('all pages at 320/393/768 widths, scrollable landscape picker, offline help and dynamic version');
   assert.equal(calls.filter(c=>c.action==='request').length,0,'settings navigation and saves do not start production');
 

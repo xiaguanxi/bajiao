@@ -31,6 +31,8 @@ Bajiao is an Android AI audiobook creator and player. It uses large language mod
 
 **需要自行配置语言模型和 MiMo API Key。** 文字分析与语音合成由你选择的在线服务完成，按服务商规则计费。
 
+默认使用导演模式，为对白生成场景与演绎指导；也可在设置中切换到更省用量的快速模式。
+
 ## 界面预览
 
 <p align="center">
@@ -89,7 +91,7 @@ Bajiao is an Android AI audiobook creator and player. It uses large language mod
 
 | 配置项 | 用途 | 需要填写 |
 | --- | --- | --- |
-| **语言模型** | 理解原文、识别角色、匹配音色与生成演绎指导 | 接口协议、服务地址、模型 ID、API Key；支持 OpenAI 兼容与 Anthropic Messages 协议。 |
+| **语言模型** | 理解原文、识别角色、匹配音色与生成演绎指导 | 提供商、API 格式、接口地址、API Key 与自定义 Headers；支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages，模型可手动添加或自动获取。 |
 | **语音引擎** | 语音合成、音色设计与参考音频克隆 | MiMo API Key。 |
 
 先测试连接或合成，再点击**保存设置**。测试会产生服务用量，测试成功后仍需保存。
